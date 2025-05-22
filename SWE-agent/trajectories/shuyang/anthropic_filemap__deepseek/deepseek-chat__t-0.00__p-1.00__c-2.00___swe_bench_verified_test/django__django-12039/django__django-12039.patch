@@ -1,0 +1,59 @@
+diff --git a/django/db/models/fields/__init__.py b/django/db/models/fields/__init__.py
+index d610dc86f0..39f9b19830 100644
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -2,6 +2,7 @@ import collections.abc
+ import copy
+ import datetime
+ import decimal
++import enum
+ import operator
+ import uuid
+ import warnings
+@@ -27,6 +28,12 @@ from django.utils.itercompat import is_iterable
+ from django.utils.text import capfirst
+ from django.utils.translation import gettext_lazy as _
+ 
++
++
++
++
++
++
+ __all__ = [
+     'AutoField', 'BLANK_CHOICE_DASH', 'BigAutoField', 'BigIntegerField',
+     'BinaryField', 'BooleanField', 'CharField', 'CommaSeparatedIntegerField',
+@@ -790,6 +797,8 @@ class Field(RegisterLookupMixin):
+ 
+     def get_prep_value(self, value):
+         """Perform preliminary non-db specific value checks and conversions."""
++        if isinstance(value, enum.Enum):
++            return value.value
+         if isinstance(value, Promise):
+             value = value._proxy____cast()
+         return value
+@@ -916,7 +925,8 @@ class Field(RegisterLookupMixin):
+ 
+     def value_from_object(self, obj):
+         """Return the value of this field in the given model instance."""
+-        return getattr(obj, self.attname)
++        value = getattr(obj, self.attname)
++        return self.to_python(value)
+ 
+ 
+ class BooleanField(Field):
+@@ -972,6 +982,14 @@ class CharField(Field):
+         super().__init__(*args, **kwargs)
+         self.validators.append(validators.MaxLengthValidator(self.max_length))
+ 
++    def to_python(self, value):
++        if isinstance(value, enum.Enum):
++            return value.value
++        return str(value) if value is not None else value
++
++
++
++
+     def check(self, **kwargs):
+         return [
+             *super().check(**kwargs),

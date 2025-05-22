@@ -1,0 +1,53 @@
+diff --git a/astropy/io/ascii/cds.py b/astropy/io/ascii/cds.py
+index 7a83fc39be..146c1c1c62 100644
+--- a/astropy/io/ascii/cds.py
++++ b/astropy/io/ascii/cds.py
+@@ -130,7 +130,15 @@ class CdsHeader(core.BaseHeader):
+                 if unit == "---":
+                     col.unit = None  # "---" is the marker for no unit in CDS/MRT table
+                 else:
+-                    col.unit = Unit(unit, format="cds", parse_strict="warn")
++                    # Ensure the unit is parsed correctly by explicitly handling divisions
++                    if "/" in unit:
++                        parts = unit.split("/")
++                        numerator = Unit(parts[0], format="cds", parse_strict="warn")
++                        for part in parts[1:]:
++                            numerator /= Unit(part, format="cds", parse_strict="warn")
++                        col.unit = numerator
++                    else:
++                        col.unit = Unit(unit, format="cds", parse_strict="warn")
+                 col.description = (match.group("descr") or "").strip()
+                 col.raw_type = match.group("format")
+                 col.type = self.get_col_type(col)
+diff --git a/astropy/units/format/cds.py b/astropy/units/format/cds.py
+index 307e987ed6..4f09a8f488 100644
+--- a/astropy/units/format/cds.py
++++ b/astropy/units/format/cds.py
+@@ -181,10 +181,13 @@ class CDS(Base):
+ 
+         def p_division_of_units(p):
+             """
+-            division_of_units : DIVISION unit_expression
+-                              | unit_expression DIVISION combined_units
++            division_of_units : unit_expression DIVISION unit_expression
++                              | division_of_units DIVISION unit_expression
++                              | DIVISION unit_expression
+             """
+-            if len(p) == 3:
++            if len(p) == 4:
++                p[0] = p[1] / p[3]
++            elif len(p) == 3:
+                 p[0] = p[2] ** -1
+             else:
+                 p[0] = p[1] / p[3]
+diff --git a/pyproject.toml b/pyproject.toml
+index 5b691556b8..f24abc3b05 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,5 +1,5 @@
+ [build-system]
+-requires = ["setuptools",
++requires = ["setuptools==68.0.0",
+             "setuptools_scm>=6.2",
+             "wheel",
+             "cython==0.29.30",

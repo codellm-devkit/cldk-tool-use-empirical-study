@@ -1,0 +1,63 @@
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 593048464b..8d6b9eb3ef 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -266,8 +266,12 @@ def distance(self, p):
+         sqrt(x**2 + y**2)
+ 
+         """
+-        return sqrt(sum([(a - b)**2 for a, b in zip(
+-            self.args, p.args if isinstance(p, Point) else p)]))
++        p = Point(p) if not isinstance(p, Point) else p
++        # Pad the shorter point with zeros to match dimensions
++        max_dim = max(len(self), len(p))
++        self_padded = list(self.args) + [0] * (max_dim - len(self))
++        p_padded = list(p.args) + [0] * (max_dim - len(p))
++        return sqrt(sum((a - b)**2 for a, b in zip(self_padded, p_padded)))
+ 
+     def taxicab_distance(self, p):
+         """The Taxicab Distance from self to point p.
+diff --git a/test_distance.py b/test_distance.py
+new file mode 100644
+index 0000000000..daa0c63f5d
+--- /dev/null
++++ b/test_distance.py
+@@ -0,0 +1,5 @@
++from sympy.geometry import Point
++
++p1 = Point(2, 0)
++p2 = Point(1, 0, 2)
++print(p1.distance(p2))
+diff --git a/test_distance_extended.py b/test_distance_extended.py
+new file mode 100644
+index 0000000000..7fae8869a5
+--- /dev/null
++++ b/test_distance_extended.py
+@@ -0,0 +1,27 @@
++from sympy.geometry import Point
++from sympy.abc import x, y, z
++
++# Case 1: Same dimensions (2D)
++p1 = Point(1, 2)
++p2 = Point(4, 6)
++print(p1.distance(p2))  # Expected: 5
++
++# Case 2: Same dimensions (3D)
++p3 = Point(1, 2, 3)
++p4 = Point(4, 6, 8)
++print(p3.distance(p4))  # Expected: sqrt(50) ≈ 7.071
++
++# Case 3: Negative coordinates
++p5 = Point(-1, -2)
++p6 = Point(-4, -6)
++print(p5.distance(p6))  # Expected: 5
++
++# Case 4: Symbolic coordinates
++p7 = Point(x, y)
++p8 = Point(0, 0)
++print(p7.distance(p8))  # Expected: sqrt(x**2 + y**2)
++
++# Case 5: Mixed dimensions (2D and 3D)
++p9 = Point(1, 0)
++p10 = Point(0, 0, 1)
++print(p9.distance(p10))  # Expected: sqrt(2) ≈ 1.414

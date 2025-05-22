@@ -1,0 +1,37 @@
+diff --git a/django/forms/models.py b/django/forms/models.py
+index ab611afca7..1194eb3909 100644
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1320,10 +1320,10 @@ class ModelMultipleChoiceField(ModelChoiceField):
+ 
+     def clean(self, value):
+         value = self.prepare_value(value)
+-        if self.required and not value:
+-            raise ValidationError(self.error_messages['required'], code='required')
+-        elif not self.required and not value:
+-            return self.queryset.none()
++        if value in ([], ()):
++            if self.required:
++                raise ValidationError(self.error_messages['required'], code='required')
++            return self.queryset.model.objects.none()
+         if not isinstance(value, (list, tuple)):
+             raise ValidationError(
+                 self.error_messages['invalid_list'],
+@@ -1341,6 +1341,8 @@ class ModelMultipleChoiceField(ModelChoiceField):
+         corresponding objects. Raise a ValidationError if a given value is
+         invalid (not a valid PK, not in the queryset, etc.)
+         """
++        if not value:
++            return self.queryset.none()
+         key = self.to_field_name or 'pk'
+         # deduplicate given values to avoid creating many querysets or
+         # requiring the database backend deduplicate efficiently.
+@@ -1373,6 +1375,8 @@ class ModelMultipleChoiceField(ModelChoiceField):
+         return qs
+ 
+     def prepare_value(self, value):
++        if value in ([], ()):
++            return []
+         if (hasattr(value, '__iter__') and
+                 not isinstance(value, str) and
+                 not hasattr(value, '_meta')):

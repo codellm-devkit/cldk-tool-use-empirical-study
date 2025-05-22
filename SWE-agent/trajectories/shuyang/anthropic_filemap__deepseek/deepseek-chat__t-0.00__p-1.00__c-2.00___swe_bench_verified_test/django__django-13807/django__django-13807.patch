@@ -1,0 +1,51 @@
+diff --git a/django/db/migrations/operations/models.py b/django/db/migrations/operations/models.py
+index dddf7c679c..3e457b4763 100644
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -141,7 +141,7 @@ class CreateModel(ModelOperation):
+                 CreateModel(
+                     self.name,
+                     fields=self.fields,
+-                    options={**self.options, **operation.options},
++                    options=operation.options if not operation.options else {**self.options, **operation.options},
+                     bases=self.bases,
+                     managers=self.managers,
+                 ),
+diff --git a/test_partial_clear.py b/test_partial_clear.py
+new file mode 100644
+index 0000000000..46f906e5d0
+--- /dev/null
++++ b/test_partial_clear.py
+@@ -0,0 +1,13 @@
++from django.db.migrations.operations.models import CreateModel, AlterModelOptions
++
++# Original CreateModel with multiple options
++create_op = CreateModel('test_model', fields=[], options={'verbose_name': 'Test Model', 'ordering': ['name']})
++
++# AlterModelOptions to partially clear options
++alter_op = AlterModelOptions('test_model', options={'verbose_name': 'Test Model'})
++
++# Squash the operations
++squashed_op = create_op.reduce(alter_op, 'test_app')
++
++print('Original options:', create_op.options)
++print('Squashed options:', squashed_op[0].options)
+diff --git a/test_squash.py b/test_squash.py
+new file mode 100644
+index 0000000000..ab0bb8560f
+--- /dev/null
++++ b/test_squash.py
+@@ -0,0 +1,13 @@
++from django.db.migrations.operations.models import CreateModel, AlterModelOptions
++
++# Original CreateModel with options
++create_op = CreateModel('test_model', fields=[], options={'verbose_name': 'Test Model'})
++
++# AlterModelOptions to clear options
++alter_op = AlterModelOptions('test_model', options={})
++
++# Squash the operations
++squashed_op = create_op.reduce(alter_op, 'test_app')
++
++print('Original options:', create_op.options)
++print('Squashed options:', squashed_op[0].options)

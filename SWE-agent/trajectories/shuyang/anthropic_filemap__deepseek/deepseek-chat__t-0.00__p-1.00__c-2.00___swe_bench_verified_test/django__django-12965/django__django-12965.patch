@@ -1,0 +1,85 @@
+diff --git a/django/db/models/query.py b/django/db/models/query.py
+index d9c9b0db04..1fe64493f8 100644
+--- a/django/db/models/query.py
++++ b/django/db/models/query.py
+@@ -689,8 +689,16 @@ class QuerySet:
+         """
+         assert not self.query.is_sliced, \
+             "Cannot use 'limit' or 'offset' with in_bulk"
+-        if field_name != 'pk' and not self.model._meta.get_field(field_name).unique:
+-            raise ValueError("in_bulk()'s field_name must be a unique field but %r isn't." % field_name)
++        if field_name != 'pk':
++            field = self.model._meta.get_field(field_name)
++            if not field.unique:
++                # Check if the field is part of any UniqueConstraint
++                is_unique_constraint = any(
++                    isinstance(constraint, models.UniqueConstraint) and field_name in constraint.fields
++                    for constraint in self.model._meta.constraints
++                )
++                if not is_unique_constraint:
++                    raise ValueError("in_bulk()'s field_name must be a unique field but %r isn't." % field_name)
+         if id_list is not None:
+             if not id_list:
+                 return {}
+diff --git a/test_app/__init__.py b/test_app/__init__.py
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/test_app/models.py b/test_app/models.py
+new file mode 100644
+index 0000000000..0814d9e66d
+--- /dev/null
++++ b/test_app/models.py
+@@ -0,0 +1,9 @@
++from django.db import models
++
++class Article(models.Model):
++    slug = models.CharField(max_length=255)
++
++    class Meta:
++        constraints = [
++            models.UniqueConstraint(fields=["slug"], name="article_slug_unq")
++        ]
+\ No newline at end of file
+diff --git a/test_in_bulk.py b/test_in_bulk.py
+new file mode 100644
+index 0000000000..2565e4173a
+--- /dev/null
++++ b/test_in_bulk.py
+@@ -0,0 +1,17 @@
++import os
++import django
++
++# Minimal Django settings
++os.environ.setdefault("DJANGO_SETTINGS_MODULE", "test_settings")
++django.setup()
++
++# Import after setup
++from django.db import models
++from test_app.models import Article
++
++# Test in_bulk() with the slug field
++try:
++    articles = Article.objects.in_bulk(field_name="slug")
++    print("Success! in_bulk() works with UniqueConstraint.")
++except Exception as e:
++    print(f"Error: {e}")
+\ No newline at end of file
+diff --git a/test_settings.py b/test_settings.py
+new file mode 100644
+index 0000000000..1de5af5e47
+--- /dev/null
++++ b/test_settings.py
+@@ -0,0 +1,12 @@
++SECRET_KEY = 'dummy'
++
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++
++INSTALLED_APPS = ['django.contrib.contenttypes', 'django.contrib.auth', 'test_app']
++
++DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+\ No newline at end of file

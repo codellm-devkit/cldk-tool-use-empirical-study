@@ -1,0 +1,92 @@
+diff --git a/xarray/core/dataset.py b/xarray/core/dataset.py
+index b00dad96..5d46c2ad 100644
+--- a/xarray/core/dataset.py
++++ b/xarray/core/dataset.py
+@@ -933,8 +933,13 @@ class Dataset(Mapping, ImplementsDatasetReduce, DataWithCoords):
+         pandas.DataFrame.copy
+         """  # noqa
+         if data is None:
+-            variables = OrderedDict((k, v.copy(deep=deep))
+-                                    for k, v in self._variables.items())
++            variables = OrderedDict()
++            for k, v in self._variables.items():
++                if isinstance(v, IndexVariable) and hasattr(v, 'dtype') and isinstance(v.dtype, str) and v.dtype.startswith('<U'):
++                    variables[k] = v.copy(deep=deep)
++                    variables[k]._data = np.array(v._data, dtype=v.dtype)
++                else:
++                    variables[k] = v.copy(deep=deep)
+         elif not utils.is_dict_like(data):
+             raise ValueError('Data must be dict-like')
+         else:
+diff --git a/xarray/core/indexing.py b/xarray/core/indexing.py
+index e262d9ee..7ecd2088 100644
+--- a/xarray/core/indexing.py
++++ b/xarray/core/indexing.py
+@@ -1255,6 +1255,8 @@ class PandasIndexAdapter(ExplicitlyIndexedNDArrayMixin):
+             with suppress(AttributeError):
+                 # this might not be public API
+                 array = array.astype('object')
++        if isinstance(array.dtype, str) and array.dtype.startswith('<U'):
++            dtype = array.dtype
+         return np.asarray(array.values, dtype=dtype)
+ 
+     @property
+diff --git a/xarray/core/variable.py b/xarray/core/variable.py
+index 379be8f5..43b56c1f 100644
+--- a/xarray/core/variable.py
++++ b/xarray/core/variable.py
+@@ -180,7 +180,10 @@ def as_compatible_data(data, fastpath=False):
+             data = np.asarray(data)
+ 
+     # validate whether the data is valid data types
+-    data = np.asarray(data)
++    if hasattr(data, 'dtype') and isinstance(data.dtype, str) and data.dtype.startswith('<U'):
++        data = np.asarray(data, dtype=data.dtype)
++    else:
++        data = np.asarray(data)
+ 
+     if isinstance(data, np.ndarray):
+         if data.dtype.kind == 'O':
+@@ -258,6 +261,8 @@ class Variable(common.AbstractArray, arithmetic.SupportsArithmetic,
+             Well-behaved code to serialize a Variable should ignore
+             unrecognized encoding items.
+         """
++        if isinstance(self, IndexVariable) and hasattr(data, 'dtype') and isinstance(data.dtype, str) and data.dtype.startswith('<U'):
++            data = np.array(data, dtype=data.dtype)
+         self._data = as_compatible_data(data, fastpath=fastpath)
+         self._dims = self._parse_dimensions(dims)
+         self._attrs = None
+@@ -809,7 +814,10 @@ class Variable(common.AbstractArray, arithmetic.SupportsArithmetic,
+                     data = data.copy()
+                 elif not isinstance(data, PandasIndexAdapter):
+                     # pandas.Index is immutable
+-                    data = np.array(data)
++                    if isinstance(self, IndexVariable):
++                        data = np.array(data, dtype=self.dtype)
++                    else:
++                        data = np.array(data, dtype=getattr(data, 'dtype', None))
+         else:
+             data = as_compatible_data(data)
+             if self.shape != data.shape:
+@@ -829,6 +837,21 @@ class Variable(common.AbstractArray, arithmetic.SupportsArithmetic,
+         # memo does nothing but is required for compatibility with
+         # copy.deepcopy
+         return self.copy(deep=True)
++        
++    def copy(self, deep=True, data=None):
++        if data is None:
++            data = self._data
++            if deep:
++                if isinstance(data, PandasIndexAdapter):
++                    data = data.array.copy()
++                else:
++                    data = np.array(data, dtype=self.dtype)
++        else:
++            data = as_compatible_data(data)
++            if self.shape != data.shape:
++                raise ValueError("Data shape {} must match shape of object {}"
++                                .format(data.shape, self.shape))
++        return type(self)(self.dims, data, self._attrs, self._encoding, fastpath=True)
+ 
+     # mutable objects should not be hashable
+     # https://github.com/python/mypy/issues/4266

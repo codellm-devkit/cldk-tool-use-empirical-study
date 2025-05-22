@@ -1,0 +1,25 @@
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index d405a203ee..ee181b5dc3 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1683,6 +1683,9 @@ class SQLAggregateCompiler(SQLCompiler):
+         inner_query_sql, inner_query_params = self.query.inner_query.get_compiler(
+             self.using, elide_empty=self.elide_empty,
+         ).as_sql(with_col_aliases=True)
++        # Ensure the SQL includes the necessary column selection
++        if not sql.strip():
++            sql = '*'  # Fallback to select all columns if no specific columns are selected
+         sql = 'SELECT %s FROM (%s) subquery' % (sql, inner_query_sql)
+         params = params + inner_query_params
+         return sql, params
+diff --git a/django/db/models/sql/subqueries.py b/django/db/models/sql/subqueries.py
+index f6a371a925..34f317f5d0 100644
+--- a/django/db/models/sql/subqueries.py
++++ b/django/db/models/sql/subqueries.py
+@@ -163,3 +163,6 @@ class AggregateQuery(Query):
+     def __init__(self, model, inner_query):
+         self.inner_query = inner_query
+         super().__init__(model)
++        # Ensure the query includes the necessary columns when default is used
++        if not self.select:
++            self.select = (self.model._meta.pk.get_col(self.get_initial_alias()),)

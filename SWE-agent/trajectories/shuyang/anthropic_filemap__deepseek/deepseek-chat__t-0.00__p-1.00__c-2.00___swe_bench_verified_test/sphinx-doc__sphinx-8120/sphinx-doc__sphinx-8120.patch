@@ -1,0 +1,182 @@
+diff --git a/doc/contents.rst b/doc/contents.rst
+index f58655cbf..aca9fab43 100644
+--- a/doc/contents.rst
++++ b/doc/contents.rst
+@@ -22,6 +22,7 @@ Sphinx documentation contents
+    examples
+    authors
+    code_of_conduct
++   test_docstring
+ 
+ 
+ 
+diff --git a/doc/test_docstring.rst b/doc/test_docstring.rst
+new file mode 100644
+index 000000000..7ee9513d7
+--- /dev/null
++++ b/doc/test_docstring.rst
+@@ -0,0 +1,5 @@
++Test Function
++=============
++
++.. py:function:: foo(a, b=0, /, c=1)
++   :module: test_module
+\ No newline at end of file
+diff --git a/setup.py b/setup.py
+index 5e822fe9b..77b63df38 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 5):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.12',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/domains/python.py b/sphinx/domains/python.py
+index fc1136ae2..89f67466a 100644
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
+ py_sig_re = re.compile(
+     r'''^ ([\w.]*\.)?            # class name(s)
+           (\w+)  \s*             # thing name
+-          (?: \(\s*(.*)\s*\)     # optional: arguments
++          (?: \(\s*([^)]*)\s*\)  # optional: arguments
+            (?:\s* -> \s* (.*))?  #           return annotation
+           )? $                   # and nothing more
+           ''', re.VERBOSE)
+@@ -201,31 +201,42 @@ def _pseudo_parse_arglist(signode: desc_signature, arglist: str) -> None:
+     paramlist = addnodes.desc_parameterlist()
+     stack = [paramlist]  # type: List[Element]
+     try:
+-        for argument in arglist.split(','):
+-            argument = argument.strip()
+-            ends_open = ends_close = 0
+-            while argument.startswith('['):
+-                stack.append(addnodes.desc_optional())
+-                stack[-2] += stack[-1]
+-                argument = argument[1:].strip()
+-            while argument.startswith(']'):
+-                stack.pop()
+-                argument = argument[1:].strip()
+-            while argument.endswith(']') and not argument.endswith('[]'):
+-                ends_close += 1
+-                argument = argument[:-1].strip()
+-            while argument.endswith('['):
+-                ends_open += 1
+-                argument = argument[:-1].strip()
+-            if argument:
+-                stack[-1] += addnodes.desc_parameter(argument, argument)
+-            while ends_open:
+-                stack.append(addnodes.desc_optional())
+-                stack[-2] += stack[-1]
+-                ends_open -= 1
+-            while ends_close:
+-                stack.pop()
+-                ends_close -= 1
++        # Split the argument list into parts before and after the '/' (if any)
++        parts = arglist.split('/')
++        before_slash = parts[0].strip() if len(parts) > 1 else arglist.strip()
++        after_slash = parts[1].strip() if len(parts) > 1 else None
++
++        # Process arguments before the '/'
++        if before_slash:
++            for argument in before_slash.split(','):
++                argument = argument.strip()
++                if argument:
++                    # Handle default values for positional-only arguments
++                    if '=' in argument:
++                        name, default = argument.split('=', 1)
++                        param = addnodes.desc_parameter(name.strip(), name.strip())
++                        param += nodes.Text('=' + default.strip())
++                        stack[-1] += param
++                    else:
++                        stack[-1] += addnodes.desc_parameter(argument, argument)
++
++        # Add the '/' separator if present
++        if after_slash is not None:
++            stack[-1] += addnodes.desc_parameter('/', '/')
++
++            # Process arguments after the '/'
++            for argument in after_slash.split(','):
++                argument = argument.strip()
++                if argument:
++                    # Handle default values for keyword arguments
++                    if '=' in argument:
++                        name, default = argument.split('=', 1)
++                        param = addnodes.desc_parameter(name.strip(), name.strip())
++                        param += nodes.Text('=' + default.strip())
++                        stack[-1] += param
++                    else:
++                        stack[-1] += addnodes.desc_parameter(argument, argument)
++
+         if len(stack) != 1:
+             raise IndexError
+     except IndexError:
+@@ -363,10 +374,12 @@ class PyObject(ObjectDescription):
+         * it is stripped from the displayed name if present
+         * it is added to the full name (return value) if not present
+         """
++        logger.warning("sig: %r", sig)  # Debug output
+         m = py_sig_re.match(sig)
+         if m is None:
+             raise ValueError
+         prefix, name, arglist, retann = m.groups()
++        logger.warning("arglist from regex: %r", arglist)  # Debug output
+ 
+         # determine module and class name (if applicable), as well as full name
+         modname = self.options.get('module', self.env.ref_context.get('py:module'))
+@@ -413,6 +426,7 @@ class PyObject(ObjectDescription):
+ 
+         signode += addnodes.desc_name(name, name)
+         if arglist:
++            logger.warning("arglist: %r", arglist)  # Debug output
+             try:
+                 signode += _parse_arglist(arglist)
+             except SyntaxError:
+diff --git a/test_docstring.rst b/test_docstring.rst
+new file mode 100644
+index 000000000..47081cc83
+--- /dev/null
++++ b/test_docstring.rst
+@@ -0,0 +1,2 @@
++.. py:function:: foo(a, b=0, /, c=1)
++   :module: test_module
+diff --git a/tox.ini b/tox.ini
+index d9f040544..bf39854b6 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -28,7 +28,7 @@ extras =
+ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils
+ commands=
+-    pytest --durations 25 {posargs}
++    pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3

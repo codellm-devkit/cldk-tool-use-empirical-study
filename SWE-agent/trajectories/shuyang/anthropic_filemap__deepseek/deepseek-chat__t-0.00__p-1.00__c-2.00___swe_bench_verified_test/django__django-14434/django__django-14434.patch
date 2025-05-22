@@ -1,0 +1,99 @@
+diff --git a/django/forms/fields.py b/django/forms/fields.py
+index 65d6a9ec82..80e334864a 100644
+--- a/django/forms/fields.py
++++ b/django/forms/fields.py
+@@ -1035,18 +1035,17 @@ class MultiValueField(Field):
+             except IndexError:
+                 field_value = None
+             if field_value in self.empty_values:
+-                if self.require_all_fields:
++                if field.required:
++                    # Raise a 'required' error if the sub-field is required and empty.
++                    raise ValidationError(field.error_messages['required'], code='required')
++                elif self.require_all_fields and self.required:
+                     # Raise a 'required' error if the MultiValueField is
+                     # required and any field is empty.
+-                    if self.required:
+-                        raise ValidationError(self.error_messages['required'], code='required')
+-                elif field.required:
+-                    # Otherwise, add an 'incomplete' error to the list of
+-                    # collected errors and skip field cleaning, if a required
+-                    # field is empty.
+-                    if field.error_messages['incomplete'] not in errors:
+-                        errors.append(field.error_messages['incomplete'])
+-                    continue
++                    raise ValidationError(self.error_messages['required'], code='required')
++                elif not any(v not in self.empty_values for v in value) and not self.required:
++                    # If all fields are empty and the MultiValueField is not required,
++                    # skip validation for optional fields.
++                    return self.compress([])
+             try:
+                 clean_data.append(field.clean(field_value))
+             except ValidationError as e:
+diff --git a/test_multivaluefield.py b/test_multivaluefield.py
+new file mode 100644
+index 0000000000..7377877a11
+--- /dev/null
++++ b/test_multivaluefield.py
+@@ -0,0 +1,60 @@
++from django.core.exceptions import ValidationError
++from django.forms.fields import CharField, MultiValueField
++from django.forms.widgets import MultiWidget, TextInput
++
++class CustomMultiWidget(MultiWidget):
++    def __init__(self, widgets, attrs=None):
++        super().__init__(widgets, attrs)
++    def decompress(self, value):
++        if value is None:
++            return ['', '']  # Simulate empty fields
++        return value
++
++class MF(MultiValueField):
++    def __init__(self):
++        fields = [
++            CharField(required=False, widget=TextInput),
++            CharField(required=True, widget=TextInput),
++        ]
++        widget = CustomMultiWidget(widgets=[f.widget for f in fields])
++        super(MF, self).__init__(
++            fields=fields,
++            widget=widget,
++            require_all_fields=False,
++            required=False,
++        )
++    def compress(self, value):
++        return []
++
++# Test case 1: Both sub-fields empty (should raise ValidationError)
++try:
++    mf = MF()
++    # Simulate form data
++    data = {'mf_0': '', 'mf_1': ''}
++    value = [data['mf_0'], data['mf_1']]
++    mf.clean(value)
++    print("Test case 1 failed: No ValidationError raised when required sub-field is empty.")
++except ValidationError:
++    print("Test case 1 passed: ValidationError raised as expected.")
++
++# Test case 2: One sub-field non-empty, one empty (should raise ValidationError)
++try:
++    mf = MF()
++    # Simulate form data
++    data = {'mf_0': 'xxx', 'mf_1': ''}
++    value = [data['mf_0'], data['mf_1']]
++    mf.clean(value)
++    print("Test case 2 failed: No ValidationError raised when required sub-field is empty.")
++except ValidationError:
++    print("Test case 2 passed: ValidationError raised as expected.")
++
++# Test case 3: Both sub-fields non-empty (should be valid)
++try:
++    mf = MF()
++    # Simulate form data
++    data = {'mf_0': 'xxx', 'mf_1': 'yyy'}
++    value = [data['mf_0'], data['mf_1']]
++    mf.clean(value)
++    print("Test case 3 passed: No ValidationError raised when all required sub-fields are non-empty.")
++except ValidationError:
++    print("Test case 3 failed: ValidationError raised unexpectedly.")
+\ No newline at end of file

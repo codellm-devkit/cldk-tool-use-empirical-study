@@ -1,0 +1,59 @@
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index abbb1e37cb..5976586f4b 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -279,13 +279,12 @@ class SQLCompiler:
+         """
+         if self.query.extra_order_by:
+             ordering = self.query.extra_order_by
+-        elif not self.query.default_ordering:
+-            ordering = self.query.order_by
+         elif self.query.order_by:
+             ordering = self.query.order_by
+-        elif self.query.get_meta().ordering:
+-            ordering = self.query.get_meta().ordering
+-            self._meta_ordering = ordering
++            self.query.default_ordering = False
++            self._meta_ordering = None
++        elif not self.query.default_ordering:
++            ordering = []
+         else:
+             ordering = []
+         if self.query.standard_ordering:
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index d65141b834..ed3fce40a4 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1605,18 +1605,20 @@ class Query(BaseExpression):
+                 nullable = self.is_nullable(join.join_field)
+             else:
+                 nullable = True
+-            connection = Join(
+-                opts.db_table, alias, table_alias, INNER, join.join_field,
+-                nullable, filtered_relation=filtered_relation,
+-            )
+-            reuse = can_reuse if join.m2m or reuse_with_filtered_relation else None
+-            alias = self.join(
+-                connection, reuse=reuse,
+-                reuse_with_filtered_relation=reuse_with_filtered_relation,
+-            )
+-            joins.append(alias)
+-            if filtered_relation:
+-                filtered_relation.path = joins[:]
++            # Skip extra join for self-referencing foreign keys with _id suffix
++            if not (join.join_field.remote_field.model == join.join_field.model and names[-1].endswith('_id')):
++                connection = Join(
++                    opts.db_table, alias, table_alias, INNER, join.join_field,
++                    nullable, filtered_relation=filtered_relation,
++                )
++                reuse = can_reuse if join.m2m or reuse_with_filtered_relation else None
++                alias = self.join(
++                    connection, reuse=reuse,
++                    reuse_with_filtered_relation=reuse_with_filtered_relation,
++                )
++                joins.append(alias)
++                if filtered_relation:
++                    filtered_relation.path = joins[:]
+         return JoinInfo(final_field, targets, opts, joins, path, final_transformer)
+ 
+     def trim_joins(self, targets, joins, path):

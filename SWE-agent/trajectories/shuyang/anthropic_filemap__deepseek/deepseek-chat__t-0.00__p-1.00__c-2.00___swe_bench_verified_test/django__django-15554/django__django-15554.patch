@@ -1,0 +1,20 @@
+diff --git a/django/db/models/fields/json.py b/django/db/models/fields/json.py
+index fdca700c9d..b675d8e86c 100644
+--- a/django/db/models/fields/json.py
++++ b/django/db/models/fields/json.py
+@@ -227,9 +227,12 @@ class HasKeyLookup(PostgresOperatorLookup):
+         return super().as_postgresql(compiler, connection)
+ 
+     def as_sqlite(self, compiler, connection):
+-        return self.as_sql(
+-            compiler, connection, template="JSON_TYPE(%s, %%s) IS NOT NULL"
+-        )
++        key = self.rhs
++        if isinstance(key, (int, float)):
++            key = str(key)
++        lhs, lhs_params = self.process_lhs(compiler, connection)
++        sql = f'JSON_EXTRACT({lhs}, \'$."{key}"\') IS NOT NULL'
++        return sql, lhs_params
+ 
+ 
+ class HasKey(HasKeyLookup):

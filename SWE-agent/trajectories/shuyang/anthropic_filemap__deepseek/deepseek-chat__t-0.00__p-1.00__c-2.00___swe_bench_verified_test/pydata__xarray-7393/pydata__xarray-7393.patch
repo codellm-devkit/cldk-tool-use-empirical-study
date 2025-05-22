@@ -1,0 +1,31 @@
+diff --git a/xarray/core/computation.py b/xarray/core/computation.py
+index 3f7e8f74..fa3dffae 100644
+--- a/xarray/core/computation.py
++++ b/xarray/core/computation.py
+@@ -1789,7 +1789,7 @@ def where(cond, x, y, keep_attrs=None):
+     y : scalar, array, Variable, DataArray or Dataset
+         values to choose from where `cond` is False
+     keep_attrs : bool or str or callable, optional
+-        How to treat attrs. If True, keep the attrs of `x`.
++        How to treat attrs. If True, keep the attrs of `x` but preserve coordinate attributes.
+ 
+     Returns
+     -------
+@@ -1858,9 +1858,14 @@ def where(cond, x, y, keep_attrs=None):
+     if keep_attrs is None:
+         keep_attrs = _get_keep_attrs(default=False)
+     if keep_attrs is True:
+-        # keep the attributes of x, the second parameter, by default to
+-        # be consistent with the `where` method of `DataArray` and `Dataset`
+-        keep_attrs = lambda attrs, context: getattr(x, "attrs", {})
++        # Preserve coordinate attributes and merge variable attributes from x
++        def keep_attrs(attrs, context=None):
++            if context is not None and context.get("variable", False):
++                return dict(getattr(x, "attrs", {}))
++            # If attrs is a list of dictionaries (for coordinates), return the first one
++            if isinstance(attrs, list) and all(isinstance(a, dict) for a in attrs):
++                return dict(attrs[0])
++            return dict(attrs) if isinstance(attrs, dict) else {}
+ 
+     # alignment for three arguments is complicated, so don't support it yet
+     return apply_ufunc(

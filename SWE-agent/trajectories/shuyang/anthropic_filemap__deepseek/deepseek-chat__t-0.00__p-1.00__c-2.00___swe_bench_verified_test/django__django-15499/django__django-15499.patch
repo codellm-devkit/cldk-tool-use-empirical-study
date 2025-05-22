@@ -1,0 +1,59 @@
+diff --git a/__init__.py b/__init__.py
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/django/db/models/expressions.py b/django/db/models/expressions.py
+index 81f8f79c71..7a8c86e862 100644
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -1210,17 +1210,23 @@ class Exists(Subquery):
+         return clone
+ 
+     def as_sql(self, compiler, connection, template=None, **extra_context):
+-        query = self.query.exists(using=connection.alias)
+-        sql, params = super().as_sql(
+-            compiler,
+-            connection,
+-            template=template,
+-            query=query,
+-            **extra_context,
+-        )
+-        if self.negated:
+-            sql = 'NOT {}'.format(sql)
+-        return sql, params
++        try:
++            query = self.query.exists(using=connection.alias)
++            sql, params = super().as_sql(
++                compiler,
++                connection,
++                template=template,
++                query=query,
++                **extra_context,
++            )
++            if self.negated:
++                sql = 'NOT {}'.format(sql)
++            return sql, params
++        except EmptyResultSet:
++            if self.negated:
++                # Return a dummy SQL for negated Exists with empty queryset
++                return '1=1', []
++            raise
+ 
+     def select_format(self, compiler, sql, params):
+         # Wrap EXISTS() with a CASE WHEN expression if a database backend
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index e3fdea6f3a..15acdbb5db 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1290,6 +1290,12 @@ class Query(BaseExpression):
+             condition = filter_expr.resolve_expression(self, allow_joins=allow_joins)
+             if not isinstance(condition, Lookup):
+                 condition = self.build_lookup(['exact'], condition, True)
++            # Preserve WHERE block for negated Exists with empty querysets
++            if isinstance(filter_expr, Exists) and current_negated:
++                try:
++                    condition.rhs.as_sql(self, self.connection)
++                except EmptyResultSet:
++                    return WhereNode([condition], connector=AND), []
+             return WhereNode([condition], connector=AND), []
+         arg, value = filter_expr
+         if not arg:

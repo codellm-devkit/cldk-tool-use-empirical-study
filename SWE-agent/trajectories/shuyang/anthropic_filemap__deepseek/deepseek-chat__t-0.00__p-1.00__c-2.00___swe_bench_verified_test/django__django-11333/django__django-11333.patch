@@ -1,0 +1,46 @@
+diff --git a/django/utils/dateparse.py b/django/utils/dateparse.py
+index 8d08b7d1d3..0fc1b3d435 100644
+--- a/django/utils/dateparse.py
++++ b/django/utils/dateparse.py
+@@ -29,7 +29,7 @@ datetime_re = re.compile(
+ standard_duration_re = re.compile(
+     r'^'
+     r'(?:(?P<days>-?\d+) (days?, )?)?'
+-    r'((?:(?P<hours>-?\d+):)(?=\d+:\d+))?'
++    r'((?:(?P<hours>-?\d+):)(?=-?\d+:-?\d+))?'
+     r'(?:(?P<minutes>-?\d+):)?'
+     r'(?P<seconds>-?\d+)'
+     r'(?:\.(?P<microseconds>\d{1,6})\d{0,6})?'
+@@ -137,10 +137,20 @@ def parse_duration(value):
+     if match:
+         kw = match.groupdict()
+         days = datetime.timedelta(float(kw.pop('days', 0) or 0))
+-        sign = -1 if kw.pop('sign', '+') == '-' else 1
+         if kw.get('microseconds'):
+             kw['microseconds'] = kw['microseconds'].ljust(6, '0')
+         if kw.get('seconds') and kw.get('microseconds') and kw['seconds'].startswith('-'):
+             kw['microseconds'] = '-' + kw['microseconds']
+         kw = {k: float(v) for k, v in kw.items() if v is not None}
+-        return days + sign * datetime.timedelta(**kw)
++        # Compute total seconds manually
++        total_seconds = 0
++        if 'hours' in kw:
++            total_seconds += kw['hours'] * 3600
++        if 'minutes' in kw:
++            total_seconds += kw['minutes'] * 60
++        if 'seconds' in kw:
++            total_seconds += kw['seconds']
++        if 'microseconds' in kw:
++            total_seconds += kw['microseconds'] / 1e6
++        # Construct timedelta from total seconds
++        return datetime.timedelta(seconds=total_seconds)
+diff --git a/test_parse_duration.py b/test_parse_duration.py
+new file mode 100644
+index 0000000000..2137d92d2b
+--- /dev/null
++++ b/test_parse_duration.py
+@@ -0,0 +1,4 @@
++import sys
++sys.path.append("/testbed")
++from django.utils.dateparse import parse_duration
++print(parse_duration("-1:30:45"))

@@ -1,0 +1,45 @@
+diff --git a/django/utils/numberformat.py b/django/utils/numberformat.py
+index 88b35fc435..716c1f964c 100644
+--- a/django/utils/numberformat.py
++++ b/django/utils/numberformat.py
+@@ -27,8 +27,14 @@ def format(number, decimal_sep, decimal_pos=None, grouping=0, thousand_sep='',
+     # sign
+     sign = ''
+     if isinstance(number, Decimal):
++        # If decimal_pos is specified and the number is smaller than what can be represented,
++        # return a string of zeros.
++        if decimal_pos is not None:
++            min_value = Decimal('1') / (Decimal('10') ** decimal_pos)
++            if abs(number) < min_value:
++                return sign + '0' + decimal_sep + '0' * decimal_pos
+         # Format values with more than 200 digits (an arbitrary cutoff) using
+-        # scientific notation to avoid high memory usage in {:f}'.format().
++        # scientific notation to avoid high memory usage in '{:f}'.format().
+         _, digits, exponent = number.as_tuple()
+         if abs(exponent) + len(digits) > 200:
+             number = '{:e}'.format(number)
+diff --git a/reproduce_error.py b/reproduce_error.py
+new file mode 100644
+index 0000000000..915b5e742c
+--- /dev/null
++++ b/reproduce_error.py
+@@ -0,0 +1,18 @@
++from decimal import Decimal
++from django.utils.numberformat import format as nformat
++
++# Mock Django settings
++class MockSettings:
++    USE_L10N = False
++    USE_THOUSAND_SEPARATOR = False
++
++import django.conf
++original_settings = django.conf.settings
++django.conf.settings = MockSettings()
++
++# Test cases from the PR description
++print(nformat(Decimal('1e-199'), '.', decimal_pos=2))  # Expected: '0.00'
++print(nformat(Decimal('1e-200'), '.', decimal_pos=2))  # Expected: '0.00' (currently '1.00e-200')
++
++# Restore original settings
++django.conf.settings = original_settings
+\ No newline at end of file

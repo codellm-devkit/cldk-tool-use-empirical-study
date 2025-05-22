@@ -1,0 +1,89 @@
+diff --git a/django/db/models/fields/json.py b/django/db/models/fields/json.py
+index fafc1beee8..d880606754 100644
+--- a/django/db/models/fields/json.py
++++ b/django/db/models/fields/json.py
+@@ -479,6 +479,23 @@ class KeyTransformGte(KeyTransformNumericLookupMixin, lookups.GreaterThanOrEqual
+     pass
+ 
+ 
++class KeyTransformIn(lookups.In):
++    def as_sql(self, compiler, connection):
++        lhs, lhs_params = self.process_lhs(compiler, connection)
++        rhs, rhs_params = self.process_rhs(compiler, connection)
++        if connection.vendor in ('mysql', 'sqlite'):
++            # MySQL and SQLite use JSON_EXTRACT for key transforms
++            json_path = compile_json_path([self.lhs.key_name])
++            placeholders = ', '.join(['%s'] * len(rhs_params))
++            return f"JSON_EXTRACT({lhs}, %s) IN ({placeholders})", tuple([json_path] + list(rhs_params))
++        elif connection.vendor == 'oracle':
++            # Oracle uses JSON_EXISTS for key transforms
++            json_path = compile_json_path([self.lhs.key_name])
++            return "JSON_EXISTS(%s, '%%s')" % lhs, (json_path,)
++        else:
++            return super().as_sql(compiler, connection)
++
++
+ KeyTransform.register_lookup(KeyTransformExact)
+ KeyTransform.register_lookup(KeyTransformIExact)
+ KeyTransform.register_lookup(KeyTransformIsNull)
+@@ -494,6 +511,7 @@ KeyTransform.register_lookup(KeyTransformLt)
+ KeyTransform.register_lookup(KeyTransformLte)
+ KeyTransform.register_lookup(KeyTransformGt)
+ KeyTransform.register_lookup(KeyTransformGte)
++KeyTransform.register_lookup(KeyTransformIn)
+ 
+ 
+ class KeyTransformFactory:
+diff --git a/reproduce_json_in_lookup.py b/reproduce_json_in_lookup.py
+new file mode 100644
+index 0000000000..909d23622e
+--- /dev/null
++++ b/reproduce_json_in_lookup.py
+@@ -0,0 +1,46 @@
++import os
++import django
++from django.conf import settings
++from django.db import models
++
++# Configure minimal Django settings
++settings.configure(
++    DATABASES={
++        'default': {
++            'ENGINE': 'django.db.backends.sqlite3',
++            'NAME': ':memory:',
++        }
++    },
++    INSTALLED_APPS=[
++        'django.contrib.contenttypes',
++        'django.contrib.auth',
++    ],
++)
++
++django.setup()
++
++# Define a model with a JSONField
++class OurModel(models.Model):
++    our_field = models.JSONField()
++
++    class Meta:
++        app_label = 'test'
++
++# Create the table
++from django.db import connection
++with connection.schema_editor() as editor:
++    editor.create_model(OurModel)
++
++# Create test data
++OurModel.objects.create(our_field={'key': 0})
++OurModel.objects.create(our_field={'key': 1})
++
++# Test the __in lookup
++first_filter = {'our_field__key__in': [0]}
++first_items = OurModel.objects.filter(**first_filter)
++print(f"__in lookup: {len(first_items)} items")
++
++# Test the direct equality lookup
++second_filter = {'our_field__key': 0}
++second_items = OurModel.objects.filter(**second_filter)
++print(f"Direct equality lookup: {len(second_items)} items")
+\ No newline at end of file

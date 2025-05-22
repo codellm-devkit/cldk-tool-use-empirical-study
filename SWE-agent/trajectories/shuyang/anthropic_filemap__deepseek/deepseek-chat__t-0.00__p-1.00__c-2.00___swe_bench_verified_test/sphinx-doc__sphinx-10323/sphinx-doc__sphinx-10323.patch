@@ -1,0 +1,50 @@
+diff --git a/reproduce_bug.py b/reproduce_bug.py
+new file mode 100644
+index 000000000..971833aa9
+--- /dev/null
++++ b/reproduce_bug.py
+@@ -0,0 +1,18 @@
++import pandas as pd
++from sklearn.compose import make_column_selector, make_column_transformer
++from sklearn.feature_selection import VarianceThreshold
++
++df = pd.DataFrame({"a": [True, False, True], "b": [1, 2, 3]})
++out1 = make_column_transformer(
++    (VarianceThreshold(), make_column_selector(dtype_include=bool)),
++    remainder=VarianceThreshold(),
++    verbose_feature_names_out=False,
++).set_output(transform="pandas").fit_transform(df)
++print(out1)
++
++out2 = make_column_transformer(
++    (VarianceThreshold(), make_column_selector(dtype_include=bool)),
++    (VarianceThreshold(), make_column_selector(dtype_exclude=bool)),
++    verbose_feature_names_out=False,
++).set_output(transform="pandas").fit_transform(df)
++print(out2)
+diff --git a/sklearn/compose/_column_transformer.py b/sklearn/compose/_column_transformer.py
+index 4eddd12b1..b5cf36744 100644
+--- a/sklearn/compose/_column_transformer.py
++++ b/sklearn/compose/_column_transformer.py
+@@ -275,8 +275,8 @@ class ColumnTransformer(TransformerMixin, _BaseComposition):
+     def set_output(self, *, transform=None):
+         """Set the output container when `"transform"` and `"fit_transform"` are called.
+ 
+-        Calling `set_output` will set the output of all estimators in `transformers`
+-        and `transformers_`.
++        Calling `set_output` will set the output of all estimators in `transformers`,
++        `transformers_`, and the `remainder` transformer if it is an estimator.
+ 
+         Parameters
+         ----------
+@@ -303,6 +303,10 @@ class ColumnTransformer(TransformerMixin, _BaseComposition):
+         for trans in transformers:
+             _safe_set_output(trans, transform=transform)
+ 
++        # Handle the remainder transformer if it is an estimator
++        if hasattr(self, "remainder") and self.remainder not in {"drop", "passthrough"}:
++            _safe_set_output(self.remainder, transform=transform)
++
+         return self
+ 
+     def get_params(self, deep=True):

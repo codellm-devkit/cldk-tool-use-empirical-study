@@ -1,0 +1,56 @@
+diff --git a/django/db/models/base.py b/django/db/models/base.py
+index 3ce711f3f1..0c5f3d6f15 100644
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -1712,6 +1712,9 @@ class Model(metaclass=ModelBase):
+                     if fld.is_relation:
+                         _cls = fld.get_path_info()[-1].to_opts.model
+                 except (FieldDoesNotExist, AttributeError):
++                    if part == 'pk' and fld is not None and fld.is_relation:
++                        # Skip validation for __pk on related fields
++                        continue
+                     if fld is None or fld.get_transform(part) is None:
+                         errors.append(
+                             checks.Error(
+diff --git a/reproduce_e015.py b/reproduce_e015.py
+new file mode 100644
+index 0000000000..a56371ed04
+--- /dev/null
++++ b/reproduce_e015.py
+@@ -0,0 +1,35 @@
++import os
++import django
++from django.conf import settings
++
++# Minimal Django settings
++settings.configure(
++    INSTALLED_APPS=[
++        'django.contrib.contenttypes',
++        'django.contrib.auth',
++    ],
++    DATABASES={
++        'default': {
++            'ENGINE': 'django.db.backends.sqlite3',
++            'NAME': ':memory:',
++        }
++    }
++)
++
++django.setup()
++
++from django.db import models
++
++class RelatedModel(models.Model):
++    class Meta:
++        app_label = 'test_app'
++
++class SomeModel(models.Model):
++    option = models.ForeignKey(RelatedModel, on_delete=models.CASCADE)
++
++    class Meta:
++        app_label = 'test_app'
++        ordering = ['option__pk']  # This should not raise E015
++
++# Check the model
++SomeModel.check()
+\ No newline at end of file

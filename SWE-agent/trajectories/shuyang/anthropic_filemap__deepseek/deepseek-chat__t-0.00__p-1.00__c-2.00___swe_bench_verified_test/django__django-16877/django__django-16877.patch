@@ -1,0 +1,54 @@
+diff --git a/django/db/models/expressions.py b/django/db/models/expressions.py
+index 5e3c7cab82..cbf4fd8296 100644
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -533,6 +533,7 @@ _connector_combinations = [
+             Combinable.SUB,
+             Combinable.MUL,
+             Combinable.DIV,
++            Combinable.MOD,
+         )
+     },
+     # Bitwise operators.
+diff --git a/reproduce_mod_issue.py b/reproduce_mod_issue.py
+new file mode 100644
+index 0000000000..0a74627f1b
+--- /dev/null
++++ b/reproduce_mod_issue.py
+@@ -0,0 +1,35 @@
++import os
++import django
++from django.conf import settings
++
++# Configure minimal Django settings
++settings.configure(
++    INSTALLED_APPS=[
++        'django.contrib.contenttypes',
++        'django.contrib.auth',
++    ],
++    DATABASES={
++        'default': {
++            'ENGINE': 'django.db.backends.sqlite3',
++            'NAME': ':memory:',
++        }
++    }
++)
++django.setup()
++
++from django.db.models import Model, DecimalField, IntegerField
++from django.db.models.expressions import F
++
++class TestModel(Model):
++    class Meta:
++        app_label = 'test_app'
++    decimal_field = DecimalField()
++    integer_field = IntegerField()
++
++from django.db.models.expressions import CombinedExpression, Value
++
++# Perform MOD operation and check output_field
++decimal_value = Value(1.0, output_field=DecimalField())
++integer_value = Value(1, output_field=IntegerField())
++mod_expression = CombinedExpression(decimal_value, '%', integer_value, output_field=None)
++print(mod_expression.output_field)
+\ No newline at end of file

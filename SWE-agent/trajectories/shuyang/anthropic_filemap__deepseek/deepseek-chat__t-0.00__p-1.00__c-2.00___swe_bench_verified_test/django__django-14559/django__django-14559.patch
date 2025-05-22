@@ -1,0 +1,60 @@
+diff --git a/django/contrib/staticfiles/storage.py b/django/contrib/staticfiles/storage.py
+index f957a667b2..8f98493166 100644
+--- a/django/contrib/staticfiles/storage.py
++++ b/django/contrib/staticfiles/storage.py
+@@ -261,8 +261,8 @@ class HashedFilesMixin:
+ 
+         paths = {path: paths[path] for path in adjustable_paths}
+ 
++        substitutions = False
+         for i in range(self.max_post_process_passes):
+-            substitutions = False
+             for name, hashed_name, processed, subst in self._post_process(paths, adjustable_paths, hashed_files):
+                 # Overwrite since hashed_name may be newer.
+                 processed_adjustable_paths[name] = (name, hashed_name, processed)
+diff --git a/mystorage.py b/mystorage.py
+new file mode 100644
+index 0000000000..6bb69dcf70
+--- /dev/null
++++ b/mystorage.py
+@@ -0,0 +1,4 @@
++from django.contrib.staticfiles.storage import ManifestStaticFilesStorage
++
++class MyManifestStaticFilesStorage(ManifestStaticFilesStorage):
++    max_post_process_passes = 0
+\ No newline at end of file
+diff --git a/reproduce_error.py b/reproduce_error.py
+new file mode 100644
+index 0000000000..1653be7124
+--- /dev/null
++++ b/reproduce_error.py
+@@ -0,0 +1,20 @@
++from django.conf import settings
++import os
++
++# Configure minimal settings
++settings.configure(
++    STATICFILES_STORAGE="mystorage.MyManifestStaticFilesStorage",
++    STATIC_URL='/static/',
++    STATIC_ROOT=os.path.join(os.path.dirname(__file__), 'static'),
++    INSTALLED_APPS=[
++        'django.contrib.staticfiles',
++    ],
++)
++
++# Setup Django
++import django
++django.setup()
++
++# Simulate collectstatic
++from django.core.management import call_command
++call_command('collectstatic', interactive=False)
+\ No newline at end of file
+diff --git a/static/staticfiles.json b/static/staticfiles.json
+new file mode 100644
+index 0000000000..c443287985
+--- /dev/null
++++ b/static/staticfiles.json
+@@ -0,0 +1 @@
++{"paths": {}, "version": "1.0"}
+\ No newline at end of file

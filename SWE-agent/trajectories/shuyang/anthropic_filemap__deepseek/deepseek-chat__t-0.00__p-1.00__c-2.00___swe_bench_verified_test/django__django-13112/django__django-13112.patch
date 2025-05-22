@@ -1,0 +1,141 @@
+diff --git a/django/db/models/query.py b/django/db/models/query.py
+index 07d6ffd4ca..cdc211df3e 100644
+--- a/django/db/models/query.py
++++ b/django/db/models/query.py
+@@ -742,6 +742,14 @@ class QuerySet:
+         del_query.query.select_related = False
+         del_query.query.clear_ordering(force_empty=True)
+ 
++        # Check if this is an unconditional deletion (no filters)
++        if not del_query.query.where:
++            # Perform a fast delete without collecting related objects
++            deleted = del_query._raw_delete(del_query.db)
++            # Clear the result cache, in case this QuerySet gets reused.
++            self._result_cache = None
++            return deleted, {self.model._meta.label: deleted}
++
+         collector = Collector(using=del_query.db)
+         collector.collect(del_query)
+         deleted, _rows_count = collector.delete()
+@@ -760,6 +768,12 @@ class QuerySet:
+         """
+         query = self.query.clone()
+         query.__class__ = sql.DeleteQuery
++        # Ensure the base_table is set
++        query.base_table = query.get_meta().db_table
++        # Ensure unconditional deletions skip the WHERE clause
++        if not query.where:
++            from django.db.models.sql.where import WhereNode
++            query.where = WhereNode()
+         cursor = query.get_compiler(using).execute_sql(CURSOR)
+         if cursor:
+             with cursor:
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index 29e33c075f..6ed5829869 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1423,7 +1423,8 @@ class SQLDeleteCompiler(SQLCompiler):
+         Create the SQL for this query. Return the SQL string and list of
+         parameters.
+         """
+-        if self.single_alias:
++        if self.single_alias or not self.query.where:
++            # Skip subquery for unconditional deletions or single-alias queries
+             return self._as_sql(self.query)
+         innerq = self.query.clone()
+         innerq.__class__ = Query
+diff --git a/django/db/models/sql/subqueries.py b/django/db/models/sql/subqueries.py
+index 72b6712864..99c8a8b4ce 100644
+--- a/django/db/models/sql/subqueries.py
++++ b/django/db/models/sql/subqueries.py
+@@ -17,6 +17,10 @@ class DeleteQuery(Query):
+ 
+     compiler = 'SQLDeleteCompiler'
+ 
++    def __init__(self, *args, **kwargs):
++        super().__init__(*args, **kwargs)
++        self.base_table = self.get_meta().db_table
++
+     def do_query(self, table, where, using):
+         self.alias_map = {table: self.alias_map[table]}
+         self.where = where
+@@ -36,11 +40,20 @@ class DeleteQuery(Query):
+         # number of objects deleted
+         num_deleted = 0
+         field = self.get_meta().pk
+-        for offset in range(0, len(pk_list), GET_ITERATOR_CHUNK_SIZE):
+-            self.where = self.where_class()
+-            self.add_q(Q(
+-                **{field.attname + '__in': pk_list[offset:offset + GET_ITERATOR_CHUNK_SIZE]}))
++        if not pk_list and not self.where:
++            # Unconditional deletion (e.g., Model.objects.all().delete())
++            self.where = None
+             num_deleted += self.do_query(self.get_meta().db_table, self.where, using=using)
++        else:
++            # Conditional deletion with WHERE clause
++            if pk_list:
++                for offset in range(0, len(pk_list), GET_ITERATOR_CHUNK_SIZE):
++                    self.where = self.where_class()
++                    self.add_q(Q(
++                        **{field.attname + '__in': pk_list[offset:offset + GET_ITERATOR_CHUNK_SIZE]}))
++                    num_deleted += self.do_query(self.get_meta().db_table, self.where, using=using)
++            else:
++                num_deleted += self.do_query(self.get_meta().db_table, self.where, using=using)
+         return num_deleted
+ 
+ 
+diff --git a/test_delete.py b/test_delete.py
+new file mode 100644
+index 0000000000..f19cda84ce
+--- /dev/null
++++ b/test_delete.py
+@@ -0,0 +1,26 @@
++import os
++import django
++from django.db import models
++
++# Minimal Django settings
++os.environ.setdefault("DJANGO_SETTINGS_MODULE", "test_settings")
++django.setup()
++
++class Alphabet(models.Model):
++    letter = models.CharField(max_length=1)
++
++    class Meta:
++        app_label = 'testapp'
++
++# Simulate Model.objects.all().delete()
++if __name__ == "__main__":
++    from django.db import connection, connections
++    from django.db.models.sql.subqueries import DeleteQuery
++    # Create the table (for SQLite)
++    with connections['default'].schema_editor() as schema_editor:
++        schema_editor.create_model(Alphabet)
++    # Print the DeleteQuery class being used
++    print("DeleteQuery module:", DeleteQuery.__module__)
++    # Run the deletion
++    Alphabet.objects.all().delete()
++    print("Generated SQL:", connection.queries[-1]['sql'])
+\ No newline at end of file
+diff --git a/test_settings.py b/test_settings.py
+new file mode 100644
+index 0000000000..6c6465e58d
+--- /dev/null
++++ b/test_settings.py
+@@ -0,0 +1,15 @@
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++
++INSTALLED_APPS = [
++    'django.contrib.contenttypes',
++    'django.contrib.auth',
++]
++
++SECRET_KEY = 'test-secret-key'
++
++DEBUG = True
+\ No newline at end of file

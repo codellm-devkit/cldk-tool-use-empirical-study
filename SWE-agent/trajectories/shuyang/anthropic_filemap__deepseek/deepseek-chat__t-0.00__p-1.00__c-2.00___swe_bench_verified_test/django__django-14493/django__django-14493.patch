@@ -1,0 +1,63 @@
+diff --git a/django/db/backends/base/schema.py b/django/db/backends/base/schema.py
+index ad2f5a7da1..837ab584e8 100644
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -1251,6 +1251,9 @@ class BaseDatabaseSchemaEditor:
+         else:
+             sql = self.sql_create_unique
+         if columns:
++            # Ensure columns is a list of strings (column names)
++            if isinstance(columns, Table):
++                columns = [columns.name]  # Replace with actual column names if needed
+             columns = self._index_columns(table, columns, col_suffixes=(), opclasses=opclasses)
+         else:
+             columns = Expressions(model._meta.db_table, expressions, compiler, self.quote_value)
+diff --git a/test_unique_sql.py b/test_unique_sql.py
+new file mode 100644
+index 0000000000..2cd4e84935
+--- /dev/null
++++ b/test_unique_sql.py
+@@ -0,0 +1,42 @@
++from django.db.backends.ddl_references import Table
++from django.db.backends.base.schema import BaseDatabaseSchemaEditor
++
++# Mock model and schema editor
++class MockModel:
++    class _meta:
++        db_table = "test_table"
++
++class MockConnection:
++    class features:
++        supports_deferrable_unique_constraints = True
++        supports_partial_indexes = True
++        supports_covering_indexes = True
++        supports_expression_indexes = True
++        can_rollback_ddl = False
++
++    class ops:
++        def quote_name(self, name):
++            return f'"{name}"'
++
++        def compiler(self, compiler_name, *args, **kwargs):
++            class MockCompiler:
++                def __init__(self, *args, **kwargs):
++                    pass
++
++                def as_sql(self):
++                    return "", ()
++
++            return MockCompiler(*args, **kwargs)
++
++    def quote_name(self, name):
++        return self.ops.quote_name(name)
++
++schema_editor = BaseDatabaseSchemaEditor(MockConnection())
++
++# Test case: Pass a Table instance to _create_unique_sql
++table = Table("test_table", lambda x: x)
++try:
++    result = schema_editor._create_unique_sql(MockModel, table)
++    print("Result:", result)
++except Exception as e:
++    print("Error:", e)
+\ No newline at end of file

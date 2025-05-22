@@ -1,0 +1,45 @@
+diff --git a/reproduce_sparsecoder.py b/reproduce_sparsecoder.py
+new file mode 100644
+index 000000000..e67bf674d
+--- /dev/null
++++ b/reproduce_sparsecoder.py
+@@ -0,0 +1,14 @@
++import numpy as np
++from sklearn.decomposition import SparseCoder
++
++# Create a random dictionary and data
++np.random.seed(0)
++dictionary = np.random.randn(10, 5)
++data = np.random.randn(100, 5)
++
++# Initialize SparseCoder with lasso_cd algorithm and higher max_iter
++coder = SparseCoder(dictionary=dictionary, transform_algorithm='lasso_cd', transform_alpha=0.1, max_iter=5000)
++
++# Transform the data (this should trigger the warning)
++codes = coder.transform(data)
++print(codes.shape)
+\ No newline at end of file
+diff --git a/sklearn/decomposition/dict_learning.py b/sklearn/decomposition/dict_learning.py
+index a318c957f..17855a515 100644
+--- a/sklearn/decomposition/dict_learning.py
++++ b/sklearn/decomposition/dict_learning.py
+@@ -900,7 +900,7 @@ class SparseCodingMixin(TransformerMixin):
+             X, self.components_, algorithm=self.transform_algorithm,
+             n_nonzero_coefs=self.transform_n_nonzero_coefs,
+             alpha=self.transform_alpha, n_jobs=self.n_jobs,
+-            positive=self.positive_code)
++            positive=self.positive_code, max_iter=self.max_iter)
+ 
+         if self.split_sign:
+             # feature vector is split into a positive and negative side
+@@ -991,7 +991,9 @@ class SparseCoder(BaseEstimator, SparseCodingMixin):
+ 
+     def __init__(self, dictionary, transform_algorithm='omp',
+                  transform_n_nonzero_coefs=None, transform_alpha=None,
+-                 split_sign=False, n_jobs=None, positive_code=False):
++                 split_sign=False, n_jobs=None, positive_code=False,
++                 max_iter=1000):
++        self.max_iter = max_iter
+         self._set_sparse_coding_params(dictionary.shape[0],
+                                        transform_algorithm,
+                                        transform_n_nonzero_coefs,

@@ -1,0 +1,64 @@
+diff --git a/requests/adapters.py b/requests/adapters.py
+index fe22ff45..ddaa3bdc 100644
+--- a/requests/adapters.py
++++ b/requests/adapters.py
+@@ -301,19 +301,24 @@ class HTTPAdapter(BaseAdapter):
+         """
+         proxy = select_proxy(url, proxies)
+ 
+-        if proxy:
+-            proxy = prepend_scheme_if_needed(proxy, 'http')
+-            proxy_url = parse_url(proxy)
+-            if not proxy_url.host:
+-                raise InvalidProxyURL("Please check proxy URL. It is malformed"
+-                                      " and could be missing the host.")
+-            proxy_manager = self.proxy_manager_for(proxy)
+-            conn = proxy_manager.connection_from_url(url)
+-        else:
+-            # Only scheme should be lower case
+-            parsed = urlparse(url)
+-            url = parsed.geturl()
+-            conn = self.poolmanager.connection_from_url(url)
++        try:
++            if proxy:
++                proxy = prepend_scheme_if_needed(proxy, 'http')
++                proxy_url = parse_url(proxy)
++                if not proxy_url.host:
++                    raise InvalidProxyURL("Please check proxy URL. It is malformed"
++                                          " and could be missing the host.")
++                proxy_manager = self.proxy_manager_for(proxy)
++                conn = proxy_manager.connection_from_url(url)
++            else:
++                # Only scheme should be lower case
++                parsed = urlparse(url)
++                url = parsed.geturl()
++                conn = self.poolmanager.connection_from_url(url)
++        except LocationValueError as e:
++            if 'label empty or too long' in str(e):
++                raise InvalidURL('URL has an invalid label.')
++            raise InvalidURL(e)
+ 
+         return conn
+ 
+@@ -412,6 +417,8 @@ class HTTPAdapter(BaseAdapter):
+         try:
+             conn = self.get_connection(request.url, proxies)
+         except LocationValueError as e:
++            if 'label empty or too long' in str(e):
++                raise InvalidURL('URL has an invalid label.', request=request)
+             raise InvalidURL(e, request=request)
+ 
+         self.cert_verify(conn, request.url, verify, cert)
+diff --git a/requests/models.py b/requests/models.py
+index e7d292d5..d0060256 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -383,6 +383,8 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+         try:
+             scheme, auth, host, port, path, query, fragment = parse_url(url)
+         except LocationParseError as e:
++            if 'label empty or too long' in str(e) or 'Failed to parse' in str(e):
++                raise InvalidURL('URL has an invalid label.')
+             raise InvalidURL(*e.args)
+ 
+         if not scheme:

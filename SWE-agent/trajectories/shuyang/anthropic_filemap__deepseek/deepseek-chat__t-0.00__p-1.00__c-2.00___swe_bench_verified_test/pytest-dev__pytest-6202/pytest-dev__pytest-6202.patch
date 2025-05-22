@@ -1,0 +1,47 @@
+diff --git a/src/_pytest/reports.py b/src/_pytest/reports.py
+index 4682d5b6e..81309714e 100644
+--- a/src/_pytest/reports.py
++++ b/src/_pytest/reports.py
+@@ -178,6 +178,17 @@ class BaseReport:
+ 
+             reprtraceback["reprentries"] = new_entries
+ 
++            # Include chained exceptions
++            if hasattr(rep.longrepr, 'chain'):
++                chain = []
++                for exc_info in rep.longrepr.chain:
++                    chain_entry = {
++                        "reprtraceback": exc_info.reprtraceback.__dict__.copy(),
++                        "reprcrash": exc_info.reprcrash.__dict__.copy(),
++                    }
++                    chain.append(chain_entry)
++                reprtraceback["chain"] = chain
++
+             return {
+                 "reprcrash": reprcrash,
+                 "reprtraceback": reprtraceback,
+@@ -250,11 +261,24 @@ class BaseReport:
+                     unserialized_entries.append(reprentry)
+                 reprtraceback["reprentries"] = unserialized_entries
+ 
++                # Reconstruct chained exceptions if present
++                chain = []
++                if "chain" in reprtraceback:
++                    for chain_entry in reprtraceback["chain"]:
++                        chain_exc_info = ReprExceptionInfo(
++                            reprtraceback=ReprTraceback(**chain_entry["reprtraceback"]),
++                            reprcrash=ReprFileLocation(**chain_entry["reprcrash"]),
++                        )
++                        chain.append(chain_exc_info)
++
+                 exception_info = ReprExceptionInfo(
+                     reprtraceback=ReprTraceback(**reprtraceback),
+                     reprcrash=ReprFileLocation(**reprcrash),
+                 )
+ 
++                if chain:
++                    exception_info.chain = chain
++
+                 for section in reportdict["longrepr"]["sections"]:
+                     exception_info.addsection(*section)
+                 reportdict["longrepr"] = exception_info

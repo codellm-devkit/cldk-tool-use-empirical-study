@@ -1,0 +1,28 @@
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index aaf35ee37c..3d7b91538e 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -761,7 +761,13 @@ class Query(BaseExpression):
+ 
+         # Create a new alias for this table.
+         if alias_list:
+-            alias = '%s%d' % (self.alias_prefix, len(self.alias_map) + 1)
++            # Ensure the new alias does not conflict with existing aliases in the rhs alias_map.
++            suffix = len(self.alias_map) + 1
++            while True:
++                alias = '%s%d' % (self.alias_prefix, suffix)
++                if alias not in self.alias_map:
++                    break
++                suffix += 1
+             alias_list.append(alias)
+         else:
+             # The first occurrence of a table uses the table name directly.
+@@ -846,6 +852,8 @@ class Query(BaseExpression):
+         relabelling any references to them in select columns and the where
+         clause.
+         """
++        # Ensure no overlap between keys and values in change_map to prevent
++        # double alias changes (e.g., T4 -> T5 and then T5 -> T6).
+         assert set(change_map).isdisjoint(change_map.values())
+ 
+         # 1. Update references in "select" (normal columns plus aliases),

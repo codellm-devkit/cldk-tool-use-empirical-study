@@ -1,0 +1,63 @@
+diff --git a/sympy/printing/pretty/pretty.py b/sympy/printing/pretty/pretty.py
+index db24f4c612..a767bfc7b9 100644
+--- a/sympy/printing/pretty/pretty.py
++++ b/sympy/printing/pretty/pretty.py
+@@ -819,7 +819,28 @@ def _print_BlockMatrix(self, B):
+         return self._print(B.blocks)
+ 
+     def _print_MatAdd(self, expr):
+-        return self._print_seq(expr.args, None, None, ' + ')
++        from sympy.matrices.expressions.matmul import MatMul
++        from sympy.core.mul import Mul
++        
++        terms = []
++        for arg in expr.args:
++            if (isinstance(arg, (Mul, MatMul)) and len(arg.args) > 0 and arg.args[0] == S.NegativeOne):
++                # Handle negative terms (e.g., (-1)*B or (-1)*A*B)
++                if len(arg.args) == 2:
++                    terms.append(arg.args[1])
++                    terms.append('-')
++                else:
++                    terms.append(MatMul(*arg.args[1:]))
++                    terms.append('-')
++            else:
++                terms.append(arg)
++                terms.append('+')
++        
++        # Remove the last operator
++        terms = terms[:-1]
++        
++        # Print the sequence
++        return self._print_seq(terms, None, None, ' ')
+ 
+     def _print_MatMul(self, expr):
+         args = list(expr.args)
+diff --git a/sympy/printing/str.py b/sympy/printing/str.py
+index 0baefe0f7f..bc642a003f 100644
+--- a/sympy/printing/str.py
++++ b/sympy/printing/str.py
+@@ -312,8 +312,22 @@ def _print_HadamardProduct(self, expr):
+             for arg in expr.args])
+ 
+     def _print_MatAdd(self, expr):
+-        return ' + '.join([self.parenthesize(arg, precedence(expr))
+-            for arg in expr.args])
++        from sympy.matrices.expressions.matmul import MatMul
++        from sympy.core.mul import Mul
++        terms = []
++        for arg in expr.args:
++            if (isinstance(arg, (Mul, MatMul)) and len(arg.args) > 0 and arg.args[0] == S.NegativeOne):
++                # Handle negative terms (e.g., (-1)*B or (-1)*A*B)
++                if len(arg.args) == 2:
++                    terms.append(' - ' + self.parenthesize(arg.args[1], precedence(expr)))
++                else:
++                    terms.append(' - ' + self.parenthesize(MatMul(*arg.args[1:]), precedence(expr)))
++            else:
++                terms.append(' + ' + self.parenthesize(arg, precedence(expr)))
++        # Handle the first term (avoid leading '+ ')
++        if terms and terms[0].startswith(' + '):
++            terms[0] = terms[0][3:]
++        return ''.join(terms)
+ 
+     def _print_NaN(self, expr):
+         return 'nan'

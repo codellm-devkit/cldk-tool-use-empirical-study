@@ -1,0 +1,80 @@
+diff --git a/reproduce_issue.py b/reproduce_issue.py
+new file mode 100644
+index 000000000..89ec7a9a3
+--- /dev/null
++++ b/reproduce_issue.py
+@@ -0,0 +1,8 @@
++import pytest
++
++def test_foo(caplog):
++    with caplog.set_level(42):
++        pass
++
++def test_bar(caplog):
++    print(caplog.handler.level)
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index 11031f2f2..eb3ece509 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -356,6 +356,10 @@ class LogCaptureFixture:
+         for logger_name, level in self._initial_logger_levels.items():
+             logger = logging.getLogger(logger_name)
+             logger.setLevel(level)
++        # reset handler level to NOTSET
++        self.handler.setLevel(logging.NOTSET)
++        # clear the initial levels to avoid redundant restorations
++        self._initial_logger_levels.clear()
+ 
+     @property
+     def handler(self) -> LogCaptureHandler:
+@@ -419,22 +423,28 @@ class LogCaptureFixture:
+         """Reset the list of log records and the captured log text."""
+         self.handler.reset()
+ 
+-    def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+-        """Sets the level for capturing of logs. The level will be restored to its previous value at the end of
+-        the test.
++    @contextmanager
++    def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> Generator[None, None, None]:
++        """Sets the level for capturing of logs. The level will be restored to its previous value when the context exits.
+ 
+         :param int level: the logger to level.
+         :param str logger: the logger to update the level. If not given, the root logger level is updated.
+-
+-        .. versionchanged:: 3.4
+-            The levels of the loggers changed by this function will be restored to their initial values at the
+-            end of the test.
+         """
+         logger_obj = logging.getLogger(logger)
+-        # save the original log-level to restore it during teardown
+-        self._initial_logger_levels.setdefault(logger, logger_obj.level)
++        # save the original log-level to restore it later
++        original_level = logger_obj.level
++        self._initial_logger_levels.setdefault(logger, original_level)
++        print(f"DEBUG: Setting level for logger {logger} to {level} (original: {original_level})")
+         logger_obj.setLevel(level)
++        print(f"DEBUG: Setting handler level to {level}")
+         self.handler.setLevel(level)
++        try:
++            yield
++        finally:
++            print(f"DEBUG: Restoring logger {logger} to level {original_level}")
++            logger_obj.setLevel(original_level)
++            print(f"DEBUG: Restoring handler level to NOTSET")
++            self.handler.setLevel(logging.NOTSET)
+ 
+     @contextmanager
+     def at_level(
+@@ -471,8 +481,10 @@ def caplog(request: FixtureRequest) -> Generator[LogCaptureFixture, None, None]:
+     * caplog.clear()         -> clear captured records and formatted log output string
+     """
+     result = LogCaptureFixture(request.node)
+-    yield result
+-    result._finalize()
++    try:
++        yield result
++    finally:
++        result._finalize()
+ 
+ 
+ def get_log_level_for_setting(config: Config, *setting_names: str) -> Optional[int]:

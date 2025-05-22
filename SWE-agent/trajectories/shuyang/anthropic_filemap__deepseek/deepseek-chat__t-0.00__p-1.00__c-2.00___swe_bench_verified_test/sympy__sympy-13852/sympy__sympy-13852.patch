@@ -1,0 +1,88 @@
+diff --git a/reproduce_error.py b/reproduce_error.py
+new file mode 100644
+index 0000000000..a3eb519165
+--- /dev/null
++++ b/reproduce_error.py
+@@ -0,0 +1,9 @@
++from sympy.combinatorics.permutations import Permutation
++
++# Test case with non-disjoint cycles
++try:
++    p = Permutation([[0, 1], [0, 1]])
++    print("Success:", p)
++    print("Array form:", p.array_form)
++except ValueError as e:
++    print("Error:", e)
+\ No newline at end of file
+diff --git a/sympy/combinatorics/permutations.py b/sympy/combinatorics/permutations.py
+index 136ed5a478..d686d60e52 100644
+--- a/sympy/combinatorics/permutations.py
++++ b/sympy/combinatorics/permutations.py
+@@ -859,7 +859,26 @@ def __new__(cls, *args, **kwargs):
+         if not args:  # a
+             return _af_new(list(range(size or 0)))
+         elif len(args) > 1:  # c
+-            return _af_new(Cycle(*args).list(size))
++            # Compose cycles left-to-right
++            cycles = args
++            # Determine the size based on the largest element in cycles
++            max_element = max(flatten(cycles), default=-1) + 1
++            size = size if size is not None else max_element
++            # Start with the identity permutation
++            result = list(range(size))
++            for cycle in cycles:  # Apply leftmost cycle first
++                if not cycle:
++                    continue  # Skip empty cycles
++                cycle = [int(i) for i in cycle]
++                if len(cycle) == 1:
++                    continue  # Skip singletons
++                # Apply the cycle to the current result
++                temp = result.copy()
++                for i in range(len(cycle) - 1):
++                    temp[cycle[i]] = result[cycle[i + 1]]
++                temp[cycle[-1]] = result[cycle[0]]
++                result = temp
++            return _af_new(result)
+         if len(args) == 1:
+             a = args[0]
+             if isinstance(a, Perm):  # g
+@@ -896,11 +915,11 @@ def __new__(cls, *args, **kwargs):
+ 
+         temp = flatten(args)
+         if has_dups(temp):
+-            if is_cycle:
++            if not is_cycle:
+                 raise ValueError('there were repeated elements; to resolve '
+-                'cycles use Cycle%s.' % ''.join([str(tuple(c)) for c in args]))
+-            else:
+-                raise ValueError('there were repeated elements.')
++                    'cycles use Cycle%s.' % ''.join([str(tuple(c)) for c in args]))
++            # For cyclic forms, proceed without raising an error
++            pass
+         temp = set(temp)
+ 
+         if not is_cycle and \
+diff --git a/test_edge_cases.py b/test_edge_cases.py
+new file mode 100644
+index 0000000000..1c33fcf0fd
+--- /dev/null
++++ b/test_edge_cases.py
+@@ -0,0 +1,17 @@
++from sympy.combinatorics.permutations import Permutation
++
++# Test cases
++test_cases = [
++    ([[0, 1], [0, 1]], [0, 1]),  # Identity
++    ([[0, 1], [1, 2]], [0, 2, 1]),  # Overlapping cycles
++    ([[0, 1, 2], [1, 2, 0]], [1, 2, 0]),  # Non-disjoint cycles
++    ([[], [0, 1]], [0, 1]),  # Empty cycle
++]
++
++for cycles, expected in test_cases:
++    try:
++        p = Permutation(cycles)
++        assert p.array_form == expected, f"Failed for {cycles}: got {p.array_form}, expected {expected}"
++        print(f"Success for {cycles}: {p.array_form}")
++    except Exception as e:
++        print(f"Error for {cycles}: {e}")
+\ No newline at end of file

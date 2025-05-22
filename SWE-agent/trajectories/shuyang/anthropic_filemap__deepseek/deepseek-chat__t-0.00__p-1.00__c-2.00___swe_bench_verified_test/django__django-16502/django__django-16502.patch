@@ -1,0 +1,81 @@
+diff --git a/django/template/defaultfilters.py b/django/template/defaultfilters.py
+index 23c3a08c67..54b85a5824 100644
+--- a/django/template/defaultfilters.py
++++ b/django/template/defaultfilters.py
+@@ -184,6 +184,8 @@ def floatformat(text, arg=-1):
+     units = len(tupl[1])
+     units += -tupl[2] if m else tupl[2]
+     prec = abs(p) + units + 1
++    # Ensure prec is at least 1 to avoid ValueError
++    prec = max(prec, 1)
+ 
+     # Avoid conversion to scientific notation by accessing `sign`, `digits`,
+     # and `exponent` from Decimal.as_tuple() directly.
+diff --git a/test_floatformat.py b/test_floatformat.py
+new file mode 100644
+index 0000000000..8f2feca9a8
+--- /dev/null
++++ b/test_floatformat.py
+@@ -0,0 +1,61 @@
++from decimal import Decimal, ROUND_HALF_UP, Context, InvalidOperation
++
++def floatformat(text, arg=-1):
++    """
++    Simplified version of Django's floatformat filter for testing.
++    """
++    force_grouping = False
++    use_l10n = False  # Disable localization for simplicity
++    if isinstance(arg, str):
++        last_char = arg[-1]
++        if arg[-2:] in {"gu", "ug"}:
++            force_grouping = True
++            use_l10n = False
++            arg = arg[:-2] or -1
++        elif last_char == "g":
++            force_grouping = True
++            arg = arg[:-1] or -1
++        elif last_char == "u":
++            use_l10n = False
++            arg = arg[:-1] or -1
++    try:
++        input_val = str(text)
++        d = Decimal(input_val)
++    except InvalidOperation:
++        try:
++            d = Decimal(str(float(text)))
++        except (ValueError, InvalidOperation, TypeError):
++            return ""
++    try:
++        p = int(arg)
++    except ValueError:
++        return input_val
++
++    try:
++        m = int(d) - d
++    except (ValueError, OverflowError, InvalidOperation):
++        return input_val
++
++    if not m and p < 0:
++        return "%d" % (int(d))
++
++    exp = Decimal(1).scaleb(-abs(p))
++    tupl = d.as_tuple()
++    units = len(tupl[1])
++    units += -tupl[2] if m else tupl[2]
++    prec = abs(p) + units + 1
++    prec = max(prec, 1)  # Ensure prec is at least 1
++
++    rounded_d = d.quantize(exp, ROUND_HALF_UP, Context(prec=prec))
++    sign, digits, exponent = rounded_d.as_tuple()
++    digits = [str(digit) for digit in reversed(digits)]
++    while len(digits) <= abs(exponent):
++        digits.append("0")
++    digits.insert(-exponent, ".")
++    if sign and rounded_d:
++        digits.append("-")
++    return "".join(reversed(digits))
++
++# Test cases
++print(floatformat("0.00", 0))  # Should print "0"
++print(floatformat(Decimal("0.00"), 0))  # Should print "0"
+\ No newline at end of file

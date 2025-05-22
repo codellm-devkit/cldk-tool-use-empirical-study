@@ -1,0 +1,28 @@
+diff --git a/astropy/io/fits/diff.py b/astropy/io/fits/diff.py
+index 100cdf1b8c..d48e3a5f12 100644
+--- a/astropy/io/fits/diff.py
++++ b/astropy/io/fits/diff.py
+@@ -1460,7 +1460,11 @@ class TableDataDiff(_BaseDiff):
+                     ],
+                 )
+             else:
+-                diffs = np.where(arra != arrb)
++                if isinstance(arra, np.ndarray) and isinstance(arrb, np.ndarray) and arra.dtype == object:
++                    # Handle VLAs (nested arrays)
++                    diffs = np.where([not np.array_equal(a, b) for a, b in zip(arra, arrb)])
++                else:
++                    diffs = np.where(arra != arrb)
+ 
+             self.diff_total += len(set(diffs[0]))
+ 
+diff --git a/pyproject.toml b/pyproject.toml
+index b4e9ef8387..ff68a7403d 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,5 +1,5 @@
+ [build-system]
+-requires = ["setuptools",
++requires = ["setuptools==68.0.0",
+             "setuptools_scm>=6.2",
+             "wheel",
+             "cython==0.29.30",

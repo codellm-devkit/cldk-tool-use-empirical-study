@@ -1,0 +1,118 @@
+diff --git a/setup.py b/setup.py
+index a404f1fa5..2c6848797 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 5):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.12',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/builders/linkcheck.py b/sphinx/builders/linkcheck.py
+index dd5317087..cfa5775fd 100644
+--- a/sphinx/builders/linkcheck.py
++++ b/sphinx/builders/linkcheck.py
+@@ -213,7 +213,22 @@ class CheckExternalLinksBuilder(Builder):
+             if len(uri) == 0 or uri.startswith(('#', 'mailto:', 'ftp:')):
+                 return 'unchecked', '', 0
+             elif not uri.startswith(('http:', 'https:')):
+-                return 'local', '', 0
++                # Check if the local link exists
++                if '#' in uri:
++                    target_file, anchor = uri.split('#', 1)
++                else:
++                    target_file, anchor = uri, None
++
++                # Resolve the target file path relative to the current document
++                docdir = path.dirname(self.env.doc2path(docname, None))
++                target_path = path.normpath(path.join(docdir, target_file))
++
++                if not path.exists(target_path):
++                    return 'broken', 'Local file does not exist', 0
++                elif anchor:
++                    # TODO: Add anchor validation logic (e.g., check for anchors in the target file)
++                    pass
++                return 'working', '', 0
+             elif uri in self.good:
+                 return 'working', 'old', 0
+             elif uri in self.broken:
+diff --git a/test_project/_build/.doctrees/environment.pickle b/test_project/_build/.doctrees/environment.pickle
+new file mode 100644
+index 000000000..908d6a869
+Binary files /dev/null and b/test_project/_build/.doctrees/environment.pickle differ
+diff --git a/test_project/_build/.doctrees/index.doctree b/test_project/_build/.doctrees/index.doctree
+new file mode 100644
+index 000000000..319d80e55
+Binary files /dev/null and b/test_project/_build/.doctrees/index.doctree differ
+diff --git a/test_project/_build/output.json b/test_project/_build/output.json
+new file mode 100644
+index 000000000..305c5bac5
+--- /dev/null
++++ b/test_project/_build/output.json
+@@ -0,0 +1,2 @@
++{"filename": "index.rst", "lineno": 1, "status": "broken", "code": 0, "uri": "doesntexist", "info": "Local file does not exist"}
++{"filename": "index.rst", "lineno": 1, "status": "broken", "code": 0, "uri": "https://lkfqhlkghflkhs", "info": "HTTPSConnectionPool(host='lkfqhlkghflkhs', port=443): Max retries exceeded with url: / (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x7b2df03a8040>: Failed to resolve 'lkfqhlkghflkhs' ([Errno -2] Name or service not known)\"))"}
+diff --git a/test_project/_build/output.txt b/test_project/_build/output.txt
+new file mode 100644
+index 000000000..ab8a7cbc8
+--- /dev/null
++++ b/test_project/_build/output.txt
+@@ -0,0 +1,2 @@
++index.rst:1: [broken] doesntexist: Local file does not exist
++index.rst:1: [broken] https://lkfqhlkghflkhs: HTTPSConnectionPool(host='lkfqhlkghflkhs', port=443): Max retries exceeded with url: / (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7b2df03a8040>: Failed to resolve 'lkfqhlkghflkhs' ([Errno -2] Name or service not known)"))
+diff --git a/test_project/conf.py b/test_project/conf.py
+new file mode 100644
+index 000000000..d03c8b6dc
+--- /dev/null
++++ b/test_project/conf.py
+@@ -0,0 +1 @@
++extensions = []
+diff --git a/test_project/index.rst b/test_project/index.rst
+new file mode 100644
+index 000000000..774627841
+--- /dev/null
++++ b/test_project/index.rst
+@@ -0,0 +1,5 @@
++broken external-link_
++broken local-link_
++
++.. _external-link: https://lkfqhlkghflkhs
++.. _local-link: doesntexist
+diff --git a/tox.ini b/tox.ini
+index bddd822a6..34baee205 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -27,7 +27,7 @@ extras =
+ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils
+ commands=
+-    pytest --durations 25 {posargs}
++    pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3

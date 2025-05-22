@@ -1,0 +1,124 @@
+diff --git a/lib/matplotlib/axes/_base.py b/lib/matplotlib/axes/_base.py
+index 5203e3232c..23f3f7e315 100644
+--- a/lib/matplotlib/axes/_base.py
++++ b/lib/matplotlib/axes/_base.py
+@@ -2353,10 +2353,12 @@ class _AxesBase(martist.Artist):
+                 updatex = False
+             if updatey and line_trf == self.get_xaxis_transform():
+                 updatey = False
+-        self.dataLim.update_from_path(data_path,
++        # Skip updating dataLim if this is a twin axis to avoid affecting the original axis
++        if not hasattr(self, '_twinned_axes') or self not in self._twinned_axes:
++            self.dataLim.update_from_path(data_path,
+                                       self.ignore_existing_data_limits,
+                                       updatex=updatex, updatey=updatey)
+-        self.ignore_existing_data_limits = False
++            self.ignore_existing_data_limits = False
+ 
+     def add_patch(self, p):
+         """
+@@ -2409,7 +2411,9 @@ class _AxesBase(martist.Artist):
+                 updatey = False
+         trf_to_data = patch_trf - self.transData
+         xys = trf_to_data.transform(vertices)
+-        self.update_datalim(xys, updatex=updatex, updatey=updatey)
++        # Skip updating dataLim if this is a twin axis to avoid affecting the original axis
++        if not hasattr(self, '_twinned_axes') or self not in self._twinned_axes:
++            self.update_datalim(xys, updatex=updatex, updatey=updatey)
+ 
+     def add_table(self, tab):
+         """
+@@ -4431,9 +4435,37 @@ class _AxesBase(martist.Artist):
+         Notes
+         -----
+         For those who are 'picking' artists while using twinx, pick
++        """
++        twin = self._make_twin_axes(sharex=self, sharey=None)
++        twin.yaxis.tick_right()
++        twin.yaxis.set_label_position('right')
++        twin.yaxis.set_offset_position('right')
++        twin._set_lim_and_transforms()
++        # Ensure the original axis's dataLim is not affected by the twin axis
++        twin.dataLim.ignore(True)
++        return twin
++
++    def twiny(self):
++        """
++        Create a twin Axes sharing the yaxis.
++
++        Create a new Axes with an invisible y-axis and an independent
++        x-axis positioned opposite to the original one (i.e. at top). The
++        y-axis autoscale setting will be inherited from the original
++        Axes.  To ensure that the tick marks of both x-axes align, see
++        `~matplotlib.ticker.LinearLocator`.
++
++        Returns
++        -------
++        Axes
++            The newly created Axes instance
++
++        Notes
++        -----
++        For those who are 'picking' artists while using twiny, pick
+         events are only called for the artists in the top-most Axes.
+         """
+-        ax2 = self._make_twin_axes(sharex=self)
++        ax2 = self._make_twin_axes(sharex=None, sharey=self)
+         ax2.yaxis.tick_right()
+         ax2.yaxis.set_label_position('right')
+         ax2.yaxis.set_offset_position('right')
+diff --git a/lib/matplotlib/axes/_secondary_axes.py b/lib/matplotlib/axes/_secondary_axes.py
+index 5a65fee154..ca21d61ce3 100644
+--- a/lib/matplotlib/axes/_secondary_axes.py
++++ b/lib/matplotlib/axes/_secondary_axes.py
+@@ -219,6 +219,9 @@ class SecondaryAxis(_AxesBase):
+             # Flip because the transform will take care of the flipping.
+             lims = lims[::-1]
+         set_lim(lims)
++        # Ensure the original axis's dataLim is not affected
++        if hasattr(self, '_parent') and hasattr(self._parent, 'dataLim'):
++            self._parent.dataLim.ignore(True)
+ 
+     def set_aspect(self, *args, **kwargs):
+         """
+diff --git a/lib/matplotlib/stackplot.py b/lib/matplotlib/stackplot.py
+index c97a21e029..3f91ceb37d 100644
+--- a/lib/matplotlib/stackplot.py
++++ b/lib/matplotlib/stackplot.py
+@@ -124,4 +124,8 @@ def stackplot(axes, x, *args,
+                                    facecolor=next(colors),
+                                    label=next(labels, None),
+                                    **kwargs))
++    
++    # Ensure the dataLim of the original axis is not updated if this is a twin axis
++    if hasattr(axes, '_twinned_axes') and axes in axes._twinned_axes:
++        axes.dataLim.ignore(True)
+     return r
+diff --git a/reproduce_bug.py b/reproduce_bug.py
+new file mode 100644
+index 0000000000..d54e44d215
+--- /dev/null
++++ b/reproduce_bug.py
+@@ -0,0 +1,21 @@
++import matplotlib.pyplot as plt
++
++def print_datalim(*ax):
++    for ax_ in ax:
++        print(ax_.dataLim.intervaly, end=' / ')
++    print()
++
++df1_index = ['16 May', '17 May']  # == df2_index
++df1_values = [-22.717708333333402, 26.584999999999937]
++df2_values = [-0.08501399999999998, -2.9833019999999966]
++
++fig, ax1 = plt.subplots()
++
++ax1.stackplot(df1_index, df1_values)
++print_datalim(ax1)
++
++ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
++print_datalim(ax1, ax2)
++
++ax2.plot(df1_index, df2_values)
++print_datalim(ax1, ax2)
+\ No newline at end of file

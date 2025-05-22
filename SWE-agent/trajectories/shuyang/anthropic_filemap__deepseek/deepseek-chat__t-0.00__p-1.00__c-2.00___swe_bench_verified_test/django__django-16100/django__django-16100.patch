@@ -1,0 +1,167 @@
+diff --git a/django/contrib/admin/options.py b/django/contrib/admin/options.py
+index 5f07a4208a..26fc8fd364 100644
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -1916,87 +1916,89 @@ class ModelAdmin(BaseModelAdmin):
+         The 'change list' admin view for this model.
+         """
+         from django.contrib.admin.views.main import ERROR_FLAG
++        from django.db import transaction
+ 
+-        app_label = self.opts.app_label
+-        if not self.has_view_or_change_permission(request):
+-            raise PermissionDenied
+-
+-        try:
+-            cl = self.get_changelist_instance(request)
+-        except IncorrectLookupParameters:
+-            # Wacky lookup parameters were given, so redirect to the main
+-            # changelist page, without parameters, and pass an 'invalid=1'
+-            # parameter via the query string. If wacky parameters were given
+-            # and the 'invalid=1' parameter was already in the query string,
+-            # something is screwed up with the database, so display an error
+-            # page.
+-            if ERROR_FLAG in request.GET:
+-                return SimpleTemplateResponse(
+-                    "admin/invalid_setup.html",
+-                    {
+-                        "title": _("Database error"),
+-                    },
+-                )
+-            return HttpResponseRedirect(request.path + "?" + ERROR_FLAG + "=1")
++        with transaction.atomic(using=router.db_for_write(self.model)):
++            app_label = self.opts.app_label
++            if not self.has_view_or_change_permission(request):
++                raise PermissionDenied
+ 
+-        # If the request was POSTed, this might be a bulk action or a bulk
+-        # edit. Try to look up an action or confirmation first, but if this
+-        # isn't an action the POST will fall through to the bulk edit check,
+-        # below.
+-        action_failed = False
+-        selected = request.POST.getlist(helpers.ACTION_CHECKBOX_NAME)
++            try:
++                cl = self.get_changelist_instance(request)
++            except IncorrectLookupParameters:
++                # Wacky lookup parameters were given, so redirect to the main
++                # changelist page, without parameters, and pass an 'invalid=1'
++                # parameter via the query string. If wacky parameters were given
++                # and the 'invalid=1' parameter was already in the query string,
++                # something is screwed up with the database, so display an error
++                # page.
++                if ERROR_FLAG in request.GET:
++                    return SimpleTemplateResponse(
++                        "admin/invalid_setup.html",
++                        {
++                            "title": _("Database error"),
++                        },
++                    )
++                return HttpResponseRedirect(request.path + "?" + ERROR_FLAG + "=1")
+ 
+-        actions = self.get_actions(request)
+-        # Actions with no confirmation
+-        if (
+-            actions
+-            and request.method == "POST"
+-            and "index" in request.POST
+-            and "_save" not in request.POST
+-        ):
+-            if selected:
+-                response = self.response_action(
+-                    request, queryset=cl.get_queryset(request)
+-                )
+-                if response:
+-                    return response
+-                else:
+-                    action_failed = True
+-            else:
+-                msg = _(
+-                    "Items must be selected in order to perform "
+-                    "actions on them. No items have been changed."
+-                )
+-                self.message_user(request, msg, messages.WARNING)
+-                action_failed = True
++            # If the request was POSTed, this might be a bulk action or a bulk
++            # edit. Try to look up an action or confirmation first, but if this
++            # isn't an action the POST will fall through to the bulk edit check,
++            # below.
++            action_failed = False
++            selected = request.POST.getlist(helpers.ACTION_CHECKBOX_NAME)
+ 
+-        # Actions with confirmation
+-        if (
+-            actions
+-            and request.method == "POST"
+-            and helpers.ACTION_CHECKBOX_NAME in request.POST
+-            and "index" not in request.POST
+-            and "_save" not in request.POST
+-        ):
+-            if selected:
+-                response = self.response_action(
+-                    request, queryset=cl.get_queryset(request)
+-                )
+-                if response:
+-                    return response
++            actions = self.get_actions(request)
++            # Actions with no confirmation
++            if (
++                actions
++                and request.method == "POST"
++                and "index" in request.POST
++                and "_save" not in request.POST
++            ):
++                if selected:
++                    response = self.response_action(
++                        request, queryset=cl.get_queryset(request)
++                    )
++                    if response:
++                        return response
++                    else:
++                        action_failed = True
+                 else:
++                    msg = _(
++                        "Items must be selected in order to perform "
++                        "actions on them. No items have been changed."
++                    )
++                    self.message_user(request, msg, messages.WARNING)
+                     action_failed = True
+ 
+-        if action_failed:
+-            # Redirect back to the changelist page to avoid resubmitting the
+-            # form if the user refreshes the browser or uses the "No, take
+-            # me back" button on the action confirmation page.
+-            return HttpResponseRedirect(request.get_full_path())
++            # Actions with confirmation
++            if (
++                actions
++                and request.method == "POST"
++                and helpers.ACTION_CHECKBOX_NAME in request.POST
++                and "index" not in request.POST
++                and "_save" not in request.POST
++            ):
++                if selected:
++                    response = self.response_action(
++                        request, queryset=cl.get_queryset(request)
++                    )
++                    if response:
++                        return response
++                    else:
++                        action_failed = True
++
++            if action_failed:
++                # Redirect back to the changelist page to avoid resubmitting the
++                # form if the user refreshes the browser or uses the "No, take
++                # me back" button on the action confirmation page.
++                return HttpResponseRedirect(request.get_full_path())
+ 
+-        # If we're allowing changelist editing, we need to construct a formset
+-        # for the changelist given all the fields to be edited. Then we'll
+-        # use the formset to validate/process POSTed data.
+-        formset = cl.formset = None
++            # If we're allowing changelist editing, we need to construct a formset
++            # for the changelist given all the fields to be edited. Then we'll
++            # use the formset to validate/process POSTed data.
++            formset = cl.formset = None
+ 
+         # Handle POSTed bulk-edit data.
+         if request.method == "POST" and cl.list_editable and "_save" in request.POST:

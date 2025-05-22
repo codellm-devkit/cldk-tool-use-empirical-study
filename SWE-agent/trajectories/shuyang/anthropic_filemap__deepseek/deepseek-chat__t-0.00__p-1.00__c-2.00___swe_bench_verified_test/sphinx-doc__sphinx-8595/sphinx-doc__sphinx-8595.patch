@@ -1,0 +1,186 @@
+diff --git a/setup.py b/setup.py
+index a404f1fa5..2c6848797 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 5):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.12',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/ext/napoleon/docstring.py b/sphinx/ext/napoleon/docstring.py
+index b3daa06f1..eb2a4ec9e 100644
+--- a/sphinx/ext/napoleon/docstring.py
++++ b/sphinx/ext/napoleon/docstring.py
+@@ -257,6 +257,16 @@ class GoogleDocstring:
+                 _name = match.group(1)
+                 _type = match.group(2)
+ 
++        # Split multiple parameter names (e.g., "x1, x2" -> ["x1", "x2"])
++        param_names = [name.strip() for name in _name.split(',') if name.strip()]
++
++        # If multiple parameters, return the first one and cache the rest
++        if len(param_names) > 1:
++            self._cached_params = [(name, _type, _desc) for name in param_names[1:]]
++            _name = param_names[0]
++        else:
++            _name = param_names[0] if param_names else _name
++
+         _name = self._escape_args_and_kwargs(_name)
+ 
+         if prefer_type and not _type:
+@@ -274,6 +284,11 @@ class GoogleDocstring:
+             _name, _type, _desc = self._consume_field(parse_type, prefer_type)
+             if _name or _type or _desc:
+                 fields.append((_name, _type, _desc,))
++            # Process any cached parameters from _consume_field
++            if hasattr(self, '_cached_params') and self._cached_params:
++                fields.extend(self._cached_params)
++                self._cached_params = []
++        print(f"Processed fields: {fields}")  # Debug output
+         return fields
+ 
+     def _consume_inline_attribute(self) -> Tuple[str, List[str]]:
+@@ -513,12 +528,35 @@ class GoogleDocstring:
+ 
+     def _is_section_header(self) -> bool:
+         section = self._line_iter.peek().lower()
++        print(f"Checking section: {section}")  # Debug output
++        # Check for Google-style section header (ends with colon)
+         match = _google_section_regex.match(section)
+         if match and section.strip(':') in self._sections:
++            print(f"Matched Google-style section: {section}")  # Debug output
+             header_indent = self._get_indent(section)
+             section_indent = self._get_current_indent(peek_ahead=1)
+             return section_indent > header_indent
+-        elif self._directive_sections:
++        # Check for NumPy-style section header (line of dashes)
++        try:
++            next_line = self._line_iter.peek(1)
++            print(f"Next line: {next_line}")  # Debug output
++            if next_line and isinstance(next_line, list):
++                next_line_str = next_line[0] if next_line else ""
++                # Strip leading/trailing whitespace for the regex check
++                stripped_line = next_line_str.strip()
++                print(f"Stripped line: {stripped_line}")  # Debug output
++                print(f"Regex match result: {_numpy_section_regex.match(stripped_line)}")  # Debug output
++                # Strip whitespace from the section name for the dictionary check
++                stripped_section = section.strip()
++                if _numpy_section_regex.match(stripped_line) and stripped_section in self._sections:
++                    print(f"Matched NumPy-style section: {stripped_section}")  # Debug output
++                    return True
++        except StopIteration:
++            pass
++        print(f"No match for section: {section}")  # Debug output
++        return False
++        
++        if self._directive_sections:
+             if _directive_regex.match(section):
+                 for directive_section in self._directive_sections:
+                     if section.startswith(directive_section):
+@@ -549,6 +587,8 @@ class GoogleDocstring:
+                                            self._parse_custom_generic_section)
+ 
+     def _parse(self) -> None:
++        print(f"Starting _parse for {self._what}")  # Debug output
++        print(f"Sections: {self._sections}")  # Debug output
+         self._parsed_lines = self._consume_empty()
+ 
+         if self._name and self._what in ('attribute', 'data', 'property'):
+@@ -566,6 +606,8 @@ class GoogleDocstring:
+             if self._is_section_header():
+                 try:
+                     section = self._consume_section_header()
++                    print(f"Processing section: {section}")  # Debug output
++                    print(f"Section lower: {section.lower()}")  # Debug output
+                     self._is_in_section = True
+                     self._section_indent = self._get_current_indent()
+                     if _directive_regex.match(section):
+@@ -581,6 +623,7 @@ class GoogleDocstring:
+                 else:
+                     lines = self._consume_to_next_section()
+             self._parsed_lines.extend(lines)
++        print(f"Parsed lines: {self._parsed_lines}")  # Debug output
+ 
+     def _parse_admonition(self, admonition: str, section: str) -> List[str]:
+         # type (str, str) -> List[str]
+@@ -681,7 +724,9 @@ class GoogleDocstring:
+         return self._format_fields(_('Other Parameters'), self._consume_fields())
+ 
+     def _parse_parameters_section(self, section: str) -> List[str]:
++        print(f"Processing parameters section: {section}")  # Debug output
+         fields = self._consume_fields()
++        print(f"Processed fields: {fields}")  # Debug output
+         if self._config.napoleon_use_param:
+             return self._format_docutils_params(fields)
+         else:
+diff --git a/test_docstring.py b/test_docstring.py
+new file mode 100644
+index 000000000..0bb4ec66a
+--- /dev/null
++++ b/test_docstring.py
+@@ -0,0 +1,25 @@
++"""
++Test script to verify docstring rendering for multiple parameters.
++"""
++
++from sphinx.ext.napoleon.docstring import GoogleDocstring
++from sphinx.ext.napoleon import Config
++
++def example_function(x1, x2):
++    """
++    Example function with multiple parameters in the docstring.
++
++    Parameters
++    ----------
++    x1, x2 : array_like, optional
++        Input arrays, description of `x1`, `x2`.
++    """
++    pass
++
++if __name__ == "__main__":
++    docstring = example_function.__doc__.splitlines()
++    config = Config(napoleon_use_param=True)
++    google_doc = GoogleDocstring(docstring, config=config)
++    # Simulate the parsing process
++    google_doc._parse()
++    print("\n".join(google_doc.lines()))
+\ No newline at end of file
+diff --git a/tox.ini b/tox.ini
+index bddd822a6..34baee205 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -27,7 +27,7 @@ extras =
+ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils
+ commands=
+-    pytest --durations 25 {posargs}
++    pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3

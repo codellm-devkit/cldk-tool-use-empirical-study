@@ -1,0 +1,50 @@
+diff --git a/lib/matplotlib/cm.py b/lib/matplotlib/cm.py
+index 38158db956..f076956159 100644
+--- a/lib/matplotlib/cm.py
++++ b/lib/matplotlib/cm.py
+@@ -260,6 +260,9 @@ def register_cmap(name=None, cmap=None, *, override_builtin=False):
+     # the global ColormapRegistry
+     _colormaps._allow_override_builtin = override_builtin
+     _colormaps.register(cmap, name=name, force=override_builtin)
++    # Ensure the colormap's name matches the registered name
++    cmap.name = name
++    print(f"DEBUG: Registered colormap '{name}' with .name attribute '{cmap.name}'")  # Debug statement
+     _colormaps._allow_override_builtin = False
+ 
+ 
+@@ -396,6 +399,15 @@ class ScalarMappable:
+         self._norm = None  # So that the setter knows we're initializing.
+         self.set_norm(norm)  # The Normalize instance of this ScalarMappable.
+         self.cmap = None  # So that the setter knows we're initializing.
++        # Ensure the colormap is resolved using the registered name
++        if isinstance(cmap, colors.Colormap):
++            for name, registered_cmap in _colormaps.items():
++                if registered_cmap is cmap:
++                    cmap = name
++                    break
++            else:
++                # If the colormap is not registered, use its name
++                cmap = cmap.name
+         self.set_cmap(cmap)  # The Colormap instance of this ScalarMappable.
+         #: The last colorbar associated with this ScalarMappable. May be None.
+         self.colorbar = None
+@@ -715,7 +727,18 @@ def _ensure_cmap(cmap):
+ 
+     """
+     if isinstance(cmap, colors.Colormap):
+-        return cmap
++        # Check if the colormap is registered under any name
++        for name, registered_cmap in _colormaps.items():
++            if registered_cmap is cmap:
++                return mpl.colormaps[name]
++        # If not registered, use the colormap's name
++        cmap_name = cmap.name
++        try:
++            _api.check_in_list(sorted(_colormaps), cmap=cmap_name)
++            return mpl.colormaps[cmap_name]
++        except ValueError:
++            # If the colormap's name is not registered, return the colormap as-is
++            return cmap
+     cmap_name = cmap if cmap is not None else mpl.rcParams["image.cmap"]
+     # use check_in_list to ensure type stability of the exception raised by
+     # the internal usage of this (ValueError vs KeyError)

@@ -1,0 +1,37 @@
+diff --git a/sympy/matrices/expressions/blockmatrix.py b/sympy/matrices/expressions/blockmatrix.py
+index 95302a05ca..cff0ac70d7 100644
+--- a/sympy/matrices/expressions/blockmatrix.py
++++ b/sympy/matrices/expressions/blockmatrix.py
+@@ -164,7 +164,31 @@ def structurally_equal(self, other):
+     def _blockmul(self, other):
+         if (isinstance(other, BlockMatrix) and
+                 self.colblocksizes == other.rowblocksizes):
+-            return BlockMatrix(self.blocks*other.blocks)
++            # Convert Zero blocks to ZeroMatrix with correct dimensions
++            def ensure_matrix(block, rows, cols):
++                from sympy.core.numbers import Zero
++                if isinstance(block, Zero):
++                    return ZeroMatrix(rows, cols)
++                return block
++
++            # Ensure all blocks are matrices
++            blocks = self.blocks
++            other_blocks = other.blocks
++            result_blocks = []
++            for i in range(blocks.shape[0]):
++                row = []
++                for j in range(other_blocks.shape[1]):
++                    # Initialize the block as ZeroMatrix with correct dimensions
++                    block = ZeroMatrix(self.rowblocksizes[i], other.colblocksizes[j])
++                    for k in range(blocks.shape[1]):
++                        # Multiply blocks[i, k] and other_blocks[k, j]
++                        A = ensure_matrix(blocks[i, k], blocks[i, k].rows if hasattr(blocks[i, k], 'rows') else self.rowblocksizes[i], blocks[i, k].cols if hasattr(blocks[i, k], 'cols') else self.colblocksizes[k])
++                        B = ensure_matrix(other_blocks[k, j], other_blocks[k, j].rows if hasattr(other_blocks[k, j], 'rows') else other.rowblocksizes[k], other_blocks[k, j].cols if hasattr(other_blocks[k, j], 'cols') else other.colblocksizes[j])
++                        block += A * B
++                    row.append(block)
++                result_blocks.append(row)
++
++            return BlockMatrix(result_blocks)
+ 
+         return self * other
+ 

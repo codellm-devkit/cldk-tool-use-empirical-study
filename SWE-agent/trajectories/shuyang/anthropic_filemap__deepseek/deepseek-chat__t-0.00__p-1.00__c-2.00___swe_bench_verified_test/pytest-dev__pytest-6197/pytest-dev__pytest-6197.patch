@@ -1,0 +1,52 @@
+diff --git a/src/_pytest/mark/structures.py b/src/_pytest/mark/structures.py
+index 800a25c92..eb76a1501 100644
+--- a/src/_pytest/mark/structures.py
++++ b/src/_pytest/mark/structures.py
+@@ -357,9 +357,20 @@ class MarkDecorator:
+ 
+ def get_unpacked_marks(obj: object) -> Iterable[Mark]:
+     """Obtain the unpacked marks that are stored on an object."""
+-    mark_list = getattr(obj, "pytestmark", [])
+-    if not isinstance(mark_list, list):
+-        mark_list = [mark_list]
++    mark_list = []
++    if isinstance(obj, type):
++        # For classes, collect markers from the MRO chain
++        for base in obj.__mro__:
++            base_marks = getattr(base, "pytestmark", [])
++            if not isinstance(base_marks, list):
++                base_marks = [base_marks]
++            mark_list.extend(base_marks)
++    else:
++        # For non-class objects (e.g., functions), use the existing logic
++        obj_marks = getattr(obj, "pytestmark", [])
++        if not isinstance(obj_marks, list):
++            obj_marks = [obj_marks]
++        mark_list.extend(obj_marks)
+     return normalize_mark_list(mark_list)
+ 
+ 
+diff --git a/src/_pytest/python.py b/src/_pytest/python.py
+index 3db877506..344bbfe58 100644
+--- a/src/_pytest/python.py
++++ b/src/_pytest/python.py
+@@ -832,6 +832,19 @@ class Class(PyCollector):
+             )
+             return []
+ 
++        # Aggregate markers from the MRO chain
++        mark_list = []
++        for base in self.obj.__mro__[1:]:  # Skip the current class
++            base_marks = getattr(base, "pytestmark", [])
++            if not isinstance(base_marks, list):
++                base_marks = [base_marks]
++            mark_list.extend(base_marks)
++        if mark_list:
++            existing_marks = getattr(self.obj, "pytestmark", [])
++            if not isinstance(existing_marks, list):
++                existing_marks = [existing_marks]
++            self.obj.pytestmark = existing_marks + mark_list
++
+         self._inject_setup_class_fixture()
+         self._inject_setup_method_fixture()
+ 

@@ -1,0 +1,85 @@
+diff --git a/django/http/response.py b/django/http/response.py
+index f62dec8ce9..0e12058c77 100644
+--- a/django/http/response.py
++++ b/django/http/response.py
+@@ -608,11 +608,17 @@ class FileResponse(StreamingHttpResponse):
+                 content_type, encoding = mimetypes.guess_type(filename)
+                 # Encoding isn't set to prevent browsers from automatically
+                 # uncompressing files.
+-                content_type = {
+-                    "bzip2": "application/x-bzip",
+-                    "gzip": "application/gzip",
+-                    "xz": "application/x-xz",
+-                }.get(encoding, content_type)
++                # Explicitly handle .Z and .br extensions regardless of mimetypes.guess_type
++                if filename.endswith('.Z'):
++                    content_type = "application/x-compress"
++                elif filename.endswith('.br'):
++                    content_type = "application/x-brotli"
++                else:
++                    content_type = {
++                        "bzip2": "application/x-bzip",
++                        "gzip": "application/gzip",
++                        "xz": "application/x-xz",
++                    }.get(encoding, content_type)
+                 self.headers["Content-Type"] = (
+                     content_type or "application/octet-stream"
+                 )
+diff --git a/test.html.Z b/test.html.Z
+new file mode 100644
+index 0000000000..1111a795fe
+--- /dev/null
++++ b/test.html.Z
+@@ -0,0 +1 @@
++This is a test file with .Z extension.
+\ No newline at end of file
+diff --git a/test.html.br b/test.html.br
+new file mode 100644
+index 0000000000..580bb6f2a0
+--- /dev/null
++++ b/test.html.br
+@@ -0,0 +1 @@
++This is a test file with .br extension.
+\ No newline at end of file
+diff --git a/test_fileresponse.py b/test_fileresponse.py
+new file mode 100644
+index 0000000000..f1a77bc36c
+--- /dev/null
++++ b/test_fileresponse.py
+@@ -0,0 +1,35 @@
++import os
++import mimetypes
++
++class MockFile:
++    def __init__(self, name):
++        self.name = name
++        self.tell = lambda: 0
++        self.seek = lambda pos, whence: None
++        self.read = lambda size: b""
++        self.seekable = lambda: True
++
++# Test the MIME type guessing logic directly
++def test_mime_type(filename):
++    content_type, encoding = mimetypes.guess_type(filename)
++    print(f"Debug: filename={filename}, encoding={encoding}, content_type={content_type}")
++    if filename.endswith('.Z'):
++        content_type = "application/x-compress"
++    elif filename.endswith('.br'):
++        content_type = "application/x-brotli"
++    else:
++        content_type = {
++            "bzip2": "application/x-bzip",
++            "gzip": "application/gzip",
++            "xz": "application/x-xz",
++        }.get(encoding, content_type)
++    print(f"Debug: final content_type={content_type}")
++    return content_type or "application/octet-stream"
++
++# Test with .Z file
++content_type_z = test_mime_type("test.html.Z")
++print(f"Content-Type for .Z file: {content_type_z}")
++
++# Test with .br file
++content_type_br = test_mime_type("test.html.br")
++print(f"Content-Type for .br file: {content_type_br}")
+\ No newline at end of file

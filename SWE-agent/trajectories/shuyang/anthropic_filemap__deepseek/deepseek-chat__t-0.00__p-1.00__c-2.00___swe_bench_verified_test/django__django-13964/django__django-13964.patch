@@ -1,0 +1,25 @@
+diff --git a/django/utils/autoreload.py b/django/utils/autoreload.py
+index b8efb9f881..4f874369c9 100644
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -221,8 +221,18 @@ def get_child_arguments():
+     py_script = Path(sys.argv[0])
+ 
+     args = [sys.executable] + ['-W%s' % o for o in sys.warnoptions]
+-    if py_script == django_main_path:
+-        # The server was started with `python -m django runserver`.
++    if hasattr(sys.modules['__main__'], '__spec__') and sys.modules['__main__'].__spec__ is not None:
++        # Python was launched with -m or the name of a directory/zipfile.
++        main_spec = sys.modules['__main__'].__spec__
++        if main_spec.parent:
++            # Python was launched with -m <package>.
++            args += ['-m', main_spec.parent]
++            args += sys.argv[1:]
++        else:
++            # Python was launched with the name of a directory/zipfile.
++            args += sys.argv
++    elif py_script == django_main_path:
++        # Fallback for older Django versions or environments without __spec__.
+         args += ['-m', 'django']
+         args += sys.argv[1:]
+     elif not py_script.exists():

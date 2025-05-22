@@ -1,0 +1,74 @@
+diff --git a/django/core/handlers/asgi.py b/django/core/handlers/asgi.py
+index 7fbabe4510..64a39194ab 100644
+--- a/django/core/handlers/asgi.py
++++ b/django/core/handlers/asgi.py
+@@ -1,3 +1,4 @@
++import asyncio
+ import logging
+ import sys
+ import tempfile
+@@ -159,6 +160,8 @@ class ASGIHandler(base.BaseHandler):
+             return
+         # Get the response, using the async mode of BaseHandler.
+         response = await self.get_response_async(request)
++        if asyncio.iscoroutine(response):
++            response = await response
+         response._handler_class = self.__class__
+         # Increase chunk size on file responses (ASGI servers handles low-level
+         # chunking).
+diff --git a/reproduce_issue.py b/reproduce_issue.py
+new file mode 100644
+index 0000000000..54d5d7f20f
+--- /dev/null
++++ b/reproduce_issue.py
+@@ -0,0 +1,40 @@
++import asyncio
++import os
++import django
++from django.core.handlers.asgi import ASGIHandler
++from django.http import HttpResponse
++
++# Configure Django settings
++os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'test_settings')
++django.setup()
++
++class DummyMiddleware:
++    def __init__(self, get_response):
++        self.get_response = get_response
++
++    async def __call__(self, request):
++        response = await self.get_response(request)
++        print(f"Middleware received response type: {type(response)}")
++        return response
++
++async def test():
++    handler = ASGIHandler()
++    # Simulate an ASGI request
++    scope = {
++        'type': 'http',
++        'method': 'GET',
++        'path': '/',
++        'headers': [],
++    }
++    async def receive():
++        return {'type': 'http.request', 'body': b'', 'more_body': False}
++    async def send(message):
++        pass
++
++    # Replace the middleware chain with our dummy middleware
++    handler._middleware_chain = DummyMiddleware(handler._middleware_chain)
++    await handler(scope, receive, send)
++
++loop = asyncio.get_event_loop()
++loop.run_until_complete(test())
++loop.close()
+\ No newline at end of file
+diff --git a/test_settings.py b/test_settings.py
+new file mode 100644
+index 0000000000..ab6d756dc9
+--- /dev/null
++++ b/test_settings.py
+@@ -0,0 +1,3 @@
++SECRET_KEY = 'dummy'
++MIDDLEWARE = []
++ROOT_URLCONF = 'django.urls'

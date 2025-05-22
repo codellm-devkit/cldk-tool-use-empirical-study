@@ -1,0 +1,132 @@
+diff --git a/docs/_build/html/.doctrees/index.doctree b/docs/_build/html/.doctrees/index.doctree
+new file mode 100644
+index 000000000..fd2f4d928
+Binary files /dev/null and b/docs/_build/html/.doctrees/index.doctree differ
+diff --git a/docs/conf.py b/docs/conf.py
+new file mode 100644
+index 000000000..50f78b5f9
+--- /dev/null
++++ b/docs/conf.py
+@@ -0,0 +1,11 @@
++import os
++import sys
++sys.path.insert(0, os.path.abspath('..'))
++
++extensions = ['sphinx.ext.autodoc', 'sphinx.ext.viewcode']
++
++templates_path = ['_templates']
++exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
++
++html_theme = 'alabaster'
++html_static_path = ['_static']
+\ No newline at end of file
+diff --git a/docs/index.rst b/docs/index.rst
+new file mode 100644
+index 000000000..afe3498a6
+--- /dev/null
++++ b/docs/index.rst
+@@ -0,0 +1,18 @@
++.. Test Project documentation master file, created by
++   sphinx-quickstart on Tue Oct 10 00:00:00 2023.
++
++Welcome to Test Project's documentation!
++=======================================
++
++.. toctree::
++   :maxdepth: 2
++   :caption: Contents:
++
++   modules
++
++Indices and tables
++==================
++
++* :ref:`genindex`
++* :ref:`modindex`
++* :ref:`search`
+\ No newline at end of file
+diff --git a/docs/modules.rst b/docs/modules.rst
+new file mode 100644
+index 000000000..d098b8304
+--- /dev/null
++++ b/docs/modules.rst
+@@ -0,0 +1,4 @@
++.. automodule:: reproduce_error
++   :members:
++   :undoc-members:
++   :show-inheritance:
+\ No newline at end of file
+diff --git a/reproduce_error.py b/reproduce_error.py
+new file mode 100644
+index 000000000..52e393234
+--- /dev/null
++++ b/reproduce_error.py
+@@ -0,0 +1,5 @@
++from typing import Tuple, Any
++
++def foo() -> Tuple[Any, ...]:
++    """Sample text."""
++    return ()
+\ No newline at end of file
+diff --git a/setup.py b/setup.py
+index a427d5493..978e3d8e0 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 5):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.12',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/domains/python.py b/sphinx/domains/python.py
+index 3ca730e30..b12f6a4a5 100644
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -110,7 +110,8 @@ def _parse_annotation(annotation: str) -> List[Node]:
+         elif isinstance(node, ast.Subscript):
+             result = unparse(node.value)
+             result.append(addnodes.desc_sig_punctuation('', '['))
+-            result.extend(unparse(node.slice))
++            if not isinstance(node.slice, ast.Tuple) or node.slice.elts:  # Check if slice is non-empty
++                result.extend(unparse(node.slice))
+             result.append(addnodes.desc_sig_punctuation('', ']'))
+             return result
+         elif isinstance(node, ast.Tuple):
+diff --git a/tox.ini b/tox.ini
+index d9f040544..bf39854b6 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -28,7 +28,7 @@ extras =
+ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils
+ commands=
+-    pytest --durations 25 {posargs}
++    pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3

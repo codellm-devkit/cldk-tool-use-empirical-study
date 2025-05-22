@@ -1,0 +1,71 @@
+diff --git a/django/db/backends/postgresql/client.py b/django/db/backends/postgresql/client.py
+index 3effab65a8..b736105d0e 100644
+--- a/django/db/backends/postgresql/client.py
++++ b/django/db/backends/postgresql/client.py
+@@ -36,21 +36,23 @@ class DatabaseClient(BaseDatabaseClient):
+             args += [dbname]
+         args.extend(parameters)
+ 
+-        env = {}
+-        if passwd:
+-            env['PGPASSWORD'] = str(passwd)
+-        if service:
+-            env['PGSERVICE'] = str(service)
+-        if sslmode:
+-            env['PGSSLMODE'] = str(sslmode)
+-        if sslrootcert:
+-            env['PGSSLROOTCERT'] = str(sslrootcert)
+-        if sslcert:
+-            env['PGSSLCERT'] = str(sslcert)
+-        if sslkey:
+-            env['PGSSLKEY'] = str(sslkey)
+-        if passfile:
+-            env['PGPASSFILE'] = str(passfile)
++        env = None
++        if passwd or service or sslmode or sslrootcert or sslcert or sslkey or passfile:
++            env = {}
++            if passwd:
++                env['PGPASSWORD'] = str(passwd)
++            if service:
++                env['PGSERVICE'] = str(service)
++            if sslmode:
++                env['PGSSLMODE'] = str(sslmode)
++            if sslrootcert:
++                env['PGSSLROOTCERT'] = str(sslrootcert)
++            if sslcert:
++                env['PGSSLCERT'] = str(sslcert)
++            if sslkey:
++                env['PGSSLKEY'] = str(sslkey)
++            if passfile:
++                env['PGPASSFILE'] = str(passfile)
+         return args, env
+ 
+     def runshell(self, parameters):
+diff --git a/reproduce_error.py b/reproduce_error.py
+new file mode 100644
+index 0000000000..070753a80a
+--- /dev/null
++++ b/reproduce_error.py
+@@ -0,0 +1,21 @@
++import os
++from django.db.backends.postgresql.client import DatabaseClient
++
++# Simulate settings with no environment overrides
++settings_dict = {
++    'NAME': 'test_db',
++    'USER': 'test_user',
++    'HOST': 'localhost',
++    'PORT': '5432',
++    'OPTIONS': {},
++}
++
++# Call the method to get args and env
++args, env = DatabaseClient.settings_to_cmd_args_env(settings_dict, [])
++
++# Print the environment variables
++print("Environment variables passed to subprocess:", env)
++
++# Check if os.environ is respected
++print("os.environ should be respected if env is None or includes os.environ.")
++print("Current behavior: env is an empty dict.")
+\ No newline at end of file

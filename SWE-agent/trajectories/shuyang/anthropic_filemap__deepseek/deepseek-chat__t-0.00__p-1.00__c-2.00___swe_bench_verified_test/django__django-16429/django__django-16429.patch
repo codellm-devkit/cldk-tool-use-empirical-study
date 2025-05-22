@@ -1,0 +1,28 @@
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index 9735ce10c8..b41cc935e6 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -550,6 +550,23 @@ class Query(BaseExpression):
+         Perform a COUNT() query using the current filter constraints.
+         """
+         obj = self.clone()
++        # Strip unused annotations (not referenced in filters, other annotations, or ordering).
++        if obj.annotations:
++            used_annotations = set()
++            # Check annotations used in filters.
++            if obj.where:
++                for child in obj.where.children:
++                    if hasattr(child, "lhs"):
++                        if hasattr(child.lhs, "name") and child.lhs.name in obj.annotations:
++                            used_annotations.add(child.lhs.name)
++            # Check annotations used in ordering.
++            for order in obj.order_by:
++                if order.lstrip('-') in obj.annotations:
++                    used_annotations.add(order.lstrip('-'))
++            # Remove unused annotations.
++            unused_annotations = set(obj.annotations.keys()) - used_annotations
++            for annotation in unused_annotations:
++                del obj.annotations[annotation]
+         obj.add_annotation(Count("*"), alias="__count", is_summary=True)
+         return obj.get_aggregation(using, ["__count"])["__count"]
+ 

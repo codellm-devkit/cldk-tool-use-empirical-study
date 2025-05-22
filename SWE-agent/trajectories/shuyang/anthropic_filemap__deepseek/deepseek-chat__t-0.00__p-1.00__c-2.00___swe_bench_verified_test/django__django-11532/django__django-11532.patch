@@ -1,0 +1,47 @@
+diff --git a/django/core/mail/message.py b/django/core/mail/message.py
+index e393b4cf5c..e46b14a92c 100644
+--- a/django/core/mail/message.py
++++ b/django/core/mail/message.py
+@@ -256,8 +256,17 @@ class EmailMessage:
+             # will get picked up by formatdate().
+             msg['Date'] = formatdate(localtime=settings.EMAIL_USE_LOCALTIME)
+         if 'message-id' not in header_names:
+-            # Use cached DNS_NAME for performance
+-            msg['Message-ID'] = make_msgid(domain=DNS_NAME)
++            # Convert DNS_NAME to Punycode for compatibility with non-ASCII domains
++            import idna
++            try:
++                if DNS_NAME:
++                    punycode_domain = idna.encode(DNS_NAME).decode('ascii')
++                    msg['Message-ID'] = make_msgid(domain=punycode_domain)
++                else:
++                    msg['Message-ID'] = make_msgid()
++            except (idna.IDNAError, UnicodeError):
++                # Fallback to default domain if encoding fails
++                msg['Message-ID'] = make_msgid()
+         for name, value in self.extra_headers.items():
+             if name.lower() != 'from':  # From is already handled
+                 msg[name] = value
+diff --git a/reproduce_error.py b/reproduce_error.py
+new file mode 100644
+index 0000000000..d33995ee9b
+--- /dev/null
++++ b/reproduce_error.py
+@@ -0,0 +1,16 @@
++import os
++from unittest.mock import patch
++from django.core.mail import EmailMessage
++from django.conf import settings
++
++# Minimal Django settings configuration
++settings.configure(
++    EMAIL_USE_LOCALTIME=False,
++)
++
++# Simulate a non-ASCII hostname
++with patch("django.core.mail.message.DNS_NAME", "漢字"):
++    email = EmailMessage('subject', '', 'from@example.com', ['to@example.com'])
++    email.encoding = 'iso-8859-1'
++    message = email.message()
++    print(message['Message-ID'])
+\ No newline at end of file

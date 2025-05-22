@@ -1,0 +1,30 @@
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index 850734709d..0a7e510469 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -125,10 +125,25 @@ class SQLCompiler:
+             cols = expr.get_group_by_cols()
+             for col in cols:
+                 expressions.append(col)
++        # Skip Meta.ordering fields from being added to GROUP BY
++        meta_ordering_fields = set()
++        if hasattr(self.query.model._meta, 'ordering'):
++            for field_name in self.query.model._meta.ordering:
++                if field_name.startswith('-'):
++                    field_name = field_name[1:]
++                try:
++                    field = self.query.model._meta.get_field(field_name)
++                    meta_ordering_fields.add(field)
++                except FieldDoesNotExist:
++                    pass
++
+         for expr, (sql, params, is_ref) in order_by:
+             # Skip References to the select clause, as all expressions in the
+             # select clause are already part of the group by.
+             if not is_ref:
++                # Skip if the expression corresponds to a Meta.ordering field
++                if hasattr(expr, 'field') and expr.field in meta_ordering_fields:
++                    continue
+                 expressions.extend(expr.get_group_by_cols())
+         having_group_by = self.having.get_group_by_cols() if self.having else ()
+         for expr in having_group_by:

@@ -1,0 +1,149 @@
+diff --git a/django/contrib/contenttypes/fields.py b/django/contrib/contenttypes/fields.py
+index ed98ecb48c..907964a966 100644
+--- a/django/contrib/contenttypes/fields.py
++++ b/django/contrib/contenttypes/fields.py
+@@ -202,7 +202,14 @@ class GenericForeignKey(FieldCacheMixin):
+             else:
+                 model = self.get_content_type(id=ct_id,
+                                               using=obj._state.db).model_class()
+-                return (model._meta.pk.get_prep_value(getattr(obj, self.fk_field)),
++                fk_val = getattr(obj, self.fk_field)
++                if isinstance(model._meta.pk, models.UUIDField):
++                    fk_val = str(fk_val)  # Ensure it's a string before UUID conversion
++                    try:
++                        fk_val = uuid.UUID(fk_val)
++                    except (AttributeError, ValueError):
++                        return None
++                return (model._meta.pk.get_prep_value(fk_val),
+                         model)
+ 
+         return (
+diff --git a/test_prefetch_uuid.py b/test_prefetch_uuid.py
+new file mode 100644
+index 0000000000..cebefb7fb7
+--- /dev/null
++++ b/test_prefetch_uuid.py
+@@ -0,0 +1,91 @@
++import os
++import uuid
++import django
++from django.conf import settings
++
++# Configure Django settings
++if not settings.configured:
++    settings.configure(
++        INSTALLED_APPS=[
++            'django.contrib.contenttypes',
++            'django.contrib.auth',
++        ],
++        DATABASES={
++            'default': {
++                'ENGINE': 'django.db.backends.sqlite3',
++                'NAME': ':memory:',
++            }
++        },
++    )
++    django.setup()
++
++from django.db import models
++from django.contrib.contenttypes.fields import GenericForeignKey
++from django.contrib.contenttypes.models import ContentType
++
++# Dynamically create models without requiring a module
++class Foo(models.Model):
++    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
++    name = models.CharField(max_length=100)
++
++    class Meta:
++        app_label = 'test_app'
++
++class Bar(models.Model):
++    foo_content_type = models.ForeignKey(
++        ContentType, related_name='actor',
++        on_delete=models.CASCADE, db_index=True
++    )
++    foo_object_id = models.CharField(max_length=255, db_index=True)
++    foo = GenericForeignKey('foo_content_type', 'foo_object_id')
++    name = models.CharField(max_length=100)
++
++    class Meta:
++        app_label = 'test_app'
++
++# Register models with the app registry
++from django.apps import apps
++from django.apps.config import AppConfig
++
++class TempAppConfig(AppConfig):
++    name = 'test_app'
++    verbose_name = 'Test App'
++    path = os.path.dirname(os.path.abspath(__file__))
++
++app_config = TempAppConfig('test_app', __name__)
++app_config.models = {
++    'foo': Foo,
++    'bar': Bar,
++}
++apps.app_configs['test_app'] = app_config
++apps.all_models['test_app'] = app_config.models
++
++# Create database tables for Django's built-in apps
++from django.contrib.auth.models import User, Group, Permission
++from django.contrib.contenttypes.models import ContentType
++
++# Create all tables
++from django.db import connection
++with connection.schema_editor() as schema_editor:
++    # Create tables for built-in apps
++    schema_editor.create_model(ContentType)
++    schema_editor.create_model(Permission)
++    schema_editor.create_model(Group)
++    schema_editor.create_model(User)
++    
++    # Create tables for our models
++    schema_editor.create_model(Foo)
++    schema_editor.create_model(Bar)
++
++# Manually sync ContentType with our models
++from django.core.management import call_command
++call_command('migrate', 'contenttypes', verbosity=0)
++
++# Create test data
++foo = Foo.objects.create(name="Test Foo")
++bar = Bar.objects.create(foo_content_type=ContentType.objects.get_for_model(foo), foo_object_id=str(foo.id), name="Test Bar")
++
++# Test prefetch_related
++bars = Bar.objects.all().prefetch_related('foo')
++for bar in bars:
++    print(f"Bar: {bar.name}, Foo: {bar.foo.name if bar.foo else 'None'}")
+diff --git a/tests/prefetch_related/test_uuid.py b/tests/prefetch_related/test_uuid.py
+index 11a2474f4a..6d4b6b620f 100644
+--- a/tests/prefetch_related/test_uuid.py
++++ b/tests/prefetch_related/test_uuid.py
+@@ -1,6 +1,7 @@
+ from django.test import TestCase
++from django.contrib.contenttypes.models import ContentType
+ 
+-from .models import Flea, House, Person, Pet, Room
++from .models import Flea, House, Person, Pet, Room, Bar, Foo
+ 
+ 
+ class UUIDPrefetchRelated(TestCase):
+@@ -53,6 +54,18 @@ class UUIDPrefetchRelated(TestCase):
+             [pet.id]
+         )
+ 
++    def test_prefetch_related_generic_foreign_key_with_uuid(self):
++        foo = Foo.objects.create(name="Test Foo")
++        bar = Bar.objects.create(
++            foo_content_type=ContentType.objects.get_for_model(foo),
++            foo_object_id=str(foo.id),
++            name="Test Bar"
++        )
++        with self.assertNumQueries(2):
++            bar = Bar.objects.prefetch_related('foo').get(name="Test Bar")
++        with self.assertNumQueries(0):
++            self.assertEqual(bar.foo.name, "Test Foo")
++
+ 
+ class UUIDPrefetchRelatedLookups(TestCase):
+ 

@@ -1,0 +1,90 @@
+diff --git a/lib/matplotlib/backends/backend_agg.py b/lib/matplotlib/backends/backend_agg.py
+index 7d038a998f..40ceab6b0e 100644
+--- a/lib/matplotlib/backends/backend_agg.py
++++ b/lib/matplotlib/backends/backend_agg.py
+@@ -197,7 +197,7 @@ class RendererAgg(RendererBase):
+         y = round(y - oy + yd)
+         self._renderer.draw_text_image(font_image, x, y + 1, angle, gc)
+ 
+-    def draw_text(self, gc, x, y, s, prop, angle, ismath=False, mtext=None):
++    def draw_text(self, gc, x, y, s, prop, angle, ismath=False, mtext=None, antialiased=None):
+         # docstring inherited
+         if ismath:
+             return self.draw_mathtext(gc, x, y, s, prop, angle)
+@@ -206,7 +206,7 @@ class RendererAgg(RendererBase):
+         # space) in the following call to draw_text_image).
+         font.set_text(s, 0, flags=get_hinting_flag())
+         font.draw_glyphs_to_bitmap(
+-            antialiased=mpl.rcParams['text.antialiased'])
++            antialiased=antialiased if antialiased is not None else mpl.rcParams['text.antialiased'])
+         d = font.get_descent() / 64.0
+         # The descent needs to be adjusted for the angle.
+         xo, yo = font.get_bitmap_offset()
+@@ -239,7 +239,7 @@ class RendererAgg(RendererBase):
+         d /= 64.0
+         return w, h, d
+ 
+-    def draw_tex(self, gc, x, y, s, prop, angle, *, mtext=None):
++    def draw_tex(self, gc, x, y, s, prop, angle, *, mtext=None, antialiased=None):
+         # docstring inherited
+         # todo, handle props, angle, origins
+         size = prop.get_size_in_points()
+@@ -248,6 +248,8 @@ class RendererAgg(RendererBase):
+ 
+         Z = texmanager.get_grey(s, size, self.dpi)
+         Z = np.array(Z * 255.0, np.uint8)
++        # Note: TeX rendering is inherently antialiased, so the `antialiased` parameter
++        # may not have an effect here. However, we include it for consistency.
+ 
+         w, h, d = self.get_text_width_height_descent(s, prop, ismath="TeX")
+         xd = d * sin(radians(angle))
+diff --git a/lib/matplotlib/text.py b/lib/matplotlib/text.py
+index 4591316cf9..02044e4136 100644
+--- a/lib/matplotlib/text.py
++++ b/lib/matplotlib/text.py
+@@ -757,14 +757,16 @@ class Text(Artist):
+                 else:
+                     textrenderer = renderer
+ 
++                antialiased = self.get_antialiased()
+                 if self.get_usetex():
+                     textrenderer.draw_tex(gc, x, y, clean_line,
+                                           self._fontproperties, angle,
+-                                          mtext=mtext)
++                                          mtext=mtext, antialiased=antialiased)
+                 else:
+                     textrenderer.draw_text(gc, x, y, clean_line,
+                                            self._fontproperties, angle,
+-                                           ismath=ismath, mtext=mtext)
++                                           ismath=ismath, mtext=mtext,
++                                           antialiased=antialiased)
+ 
+         gc.restore()
+         renderer.close_group('text')
+@@ -798,6 +800,22 @@ class Text(Artist):
+         """
+         return self._fontproperties.get_name()
+ 
++    def get_antialiased(self):
++        """Return whether the text is antialiased."""
++        return getattr(self, '_antialiased', None)
++
++    def set_antialiased(self, aa):
++        """Set whether the text is antialiased.
++
++        Parameters
++        ----------
++        aa : bool or None
++            Whether to use antialiasing. If None, the default from
++            `rcParams["text.antialias"]` is used.
++        """
++        self._antialiased = aa
++        self.stale = True
++
+     def get_fontstyle(self):
+         """
+         Return the font style as a string.
+diff --git a/text_antialiasing_test.png b/text_antialiasing_test.png
+new file mode 100644
+index 0000000000..efcbcae30e
+Binary files /dev/null and b/text_antialiasing_test.png differ

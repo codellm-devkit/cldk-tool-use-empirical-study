@@ -1,0 +1,125 @@
+diff --git a/django/core/handlers/wsgi.py b/django/core/handlers/wsgi.py
+index c2b7cc2b6f..312f9e084e 100644
+--- a/django/core/handlers/wsgi.py
++++ b/django/core/handlers/wsgi.py
+@@ -141,6 +141,10 @@ class WSGIHandler(base.BaseHandler):
+             *(("Set-Cookie", c.output(header="")) for c in response.cookies.values()),
+         ]
+         start_response(status, response_headers)
++        if environ.get("REQUEST_METHOD") == "HEAD":
++            # Ensure no response body is returned for HEAD requests.
++            response.content = b""
++            response["Content-Length"] = "0"
+         if getattr(response, "file_to_stream", None) is not None and environ.get(
+             "wsgi.file_wrapper"
+         ):
+diff --git a/django/core/servers/basehttp.py b/django/core/servers/basehttp.py
+index fef5532e58..a34afdf623 100644
+--- a/django/core/servers/basehttp.py
++++ b/django/core/servers/basehttp.py
+@@ -127,6 +127,15 @@ class ServerHandler(simple_server.ServerHandler):
+         super().__init__(
+             LimitedStream(stdin, content_length), stdout, stderr, environ, **kwargs
+         )
++        self._environ = environ
++
++    @property
++    def environ(self):
++        return self._environ
++
++    @environ.setter
++    def environ(self, value):
++        self._environ = value
+ 
+     def cleanup_headers(self):
+         super().cleanup_headers()
+@@ -145,7 +154,20 @@ class ServerHandler(simple_server.ServerHandler):
+ 
+     def close(self):
+         self.get_stdin().read()
++        # Prevent the parent class from setting self.environ = None
++        environ = self._environ
+         super().close()
++        self._environ = environ
++
++    def run(self, application):
++        """Override to strip response body for HEAD requests."""
++        if self.environ.get("REQUEST_METHOD") == "HEAD":
++            # Ensure no response body is returned for HEAD requests.
++            self.result = []
++            if hasattr(self, "headers") and self.headers is not None:
++                self.headers["Content-Length"] = "0"
++            return []
++        return super().run(application)
+ 
+ 
+ class WSGIRequestHandler(simple_server.WSGIRequestHandler):
+@@ -226,6 +248,12 @@ class WSGIRequestHandler(simple_server.WSGIRequestHandler):
+         handler.request_handler = self  # backpointer for logging & connection closing
+         handler.run(self.server.get_app())
+ 
++        # Strip response body for HEAD requests
++        if self.command == "HEAD":
++            handler.result = []
++            if hasattr(handler, "headers") and handler.headers is not None:
++                handler.headers["Content-Length"] = "0"
++
+ 
+ def run(addr, port, wsgi_handler, ipv6=False, threading=False, server_cls=WSGIServer):
+     server_address = (addr, port)
+diff --git a/django_test/__init__.py b/django_test/__init__.py
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/django_test/settings.py b/django_test/settings.py
+new file mode 100644
+index 0000000000..1281861315
+--- /dev/null
++++ b/django_test/settings.py
+@@ -0,0 +1,15 @@
++DEBUG = True
++
++INSTALLED_APPS = [
++    'django.contrib.staticfiles',
++]
++
++STATIC_URL = '/static/'
++
++SECRET_KEY = 'django-insecure-test-key'
++
++ROOT_URLCONF = 'django_test.urls'
++
++MIDDLEWARE = [
++    'django.middleware.common.CommonMiddleware',
++]
+\ No newline at end of file
+diff --git a/django_test/urls.py b/django_test/urls.py
+new file mode 100644
+index 0000000000..2dc7ce6854
+--- /dev/null
++++ b/django_test/urls.py
+@@ -0,0 +1,9 @@
++from django.urls import path
++from django.http import HttpResponse
++
++def home(request):
++    return HttpResponse("Welcome to Django")
++
++urlpatterns = [
++    path('', home),
++]
+\ No newline at end of file
+diff --git a/manage.py b/manage.py
+new file mode 100644
+index 0000000000..b9456c5210
+--- /dev/null
++++ b/manage.py
+@@ -0,0 +1,8 @@
++#!/usr/bin/env python
++import os
++import sys
++
++if __name__ == "__main__":
++    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_test.settings")
++    from django.core.management import execute_from_command_line
++    execute_from_command_line(sys.argv)
+\ No newline at end of file

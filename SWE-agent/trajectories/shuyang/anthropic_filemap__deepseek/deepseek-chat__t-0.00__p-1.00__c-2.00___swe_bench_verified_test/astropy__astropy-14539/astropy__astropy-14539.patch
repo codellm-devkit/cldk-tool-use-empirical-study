@@ -1,0 +1,91 @@
+diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py
+index 118bfced89..efdec8026c 100644
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -1299,10 +1299,30 @@ def _format_value(value):
+ 
+ def _format_float(value):
+     """Format a floating number to make sure it gets the decimal point."""
+-    value_str = f"{value:.16G}"
+-    if "." not in value_str and "E" not in value_str:
+-        value_str += ".0"
+-    elif "E" in value_str:
++    # First try the Python string representation
++    value_str = str(value)
++    if len(value_str) > 20 or ("." not in value_str and "E" not in value_str):
++        # Fall back to the current formatting if the string is too long or lacks a decimal point
++        value_str = f"{value:.16G}"
++        if "." not in value_str and "E" not in value_str:
++            value_str += ".0"
++        elif "E" in value_str:
++            # On some Windows builds of Python (and possibly other platforms?) the
++            # exponent is zero-padded out to, it seems, three digits.  Normalize
++            # the format to pad only to two digits.
++            significand, exponent = value_str.split("E")
++            exponent = exponent.lstrip("+")
++            if exponent.startswith("-"):
++                sign = "-"
++                exponent = exponent[1:]
++            else:
++                sign = "+"
++            exponent = exponent.lstrip("0")
++            if not exponent:
++                exponent = "0"
++            elif len(exponent) > 2:
++                exponent = exponent[:2]
++            value_str = f"{significand}E{sign}{exponent}"
+         # On some Windows builds of Python (and possibly other platforms?) the
+         # exponent is zero-padded out to, it seems, three digits.  Normalize
+         # the format to pad only to two digits.
+diff --git a/pyproject.toml b/pyproject.toml
+index 65df5b1b77..d02c4f9eda 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,5 +1,5 @@
+ [build-system]
+-requires = ["setuptools",
++requires = ["setuptools==68.0.0",
+             "setuptools_scm>=6.2",
+             "wheel",
+             "cython==0.29.30",
+diff --git a/reproduce_error.py b/reproduce_error.py
+new file mode 100644
+index 0000000000..d7951a1a83
+--- /dev/null
++++ b/reproduce_error.py
+@@ -0,0 +1,10 @@
++from astropy.io import fits
++
++# Reproduce the issue
++try:
++    c = fits.Card('HIERARCH ESO IFM CL RADIUS', 0.009125, '[m] radius around actuator to avoid')
++    print(f"Original card: {c}")
++    print(f"Repr: {repr(c)}")
++    print(f"Str: {str(c)}")
++except Exception as e:
++    print(f"Error: {e}")
+\ No newline at end of file
+diff --git a/test_edge_cases.py b/test_edge_cases.py
+new file mode 100644
+index 0000000000..060a3108cf
+--- /dev/null
++++ b/test_edge_cases.py
+@@ -0,0 +1,17 @@
++from astropy.io import fits
++
++# Test edge cases
++test_cases = [
++    (1.234567890123456789, "Long decimal"),
++    (1.23e-10, "Small number"),
++    (1.23e10, "Large number"),
++    (1234567890.123456789, "Very long decimal"),
++]
++
++for value, comment in test_cases:
++    try:
++        c = fits.Card('TEST', value, comment)
++        print(f"Value: {value}, Comment: {comment}")
++        print(f"Card: {c}")
++    except Exception as e:
++        print(f"Error for {value}: {e}")
+\ No newline at end of file

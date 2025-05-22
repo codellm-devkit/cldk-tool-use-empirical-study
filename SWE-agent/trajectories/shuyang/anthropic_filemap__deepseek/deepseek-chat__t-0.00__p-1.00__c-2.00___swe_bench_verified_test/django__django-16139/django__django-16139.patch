@@ -1,0 +1,56 @@
+diff --git a/django/views/generic/base.py b/django/views/generic/base.py
+index db1842e3e5..93979d1e9c 100644
+--- a/django/views/generic/base.py
++++ b/django/views/generic/base.py
+@@ -148,7 +148,12 @@ class View:
+             request.path,
+             extra={"status_code": 405, "request": request},
+         )
+-        return HttpResponseNotAllowed(self._allowed_methods())
++        response = HttpResponseNotAllowed(self._allowed_methods())
++        if self.view_is_async:
++            async def func():
++                return response
++            return func()
++        return response
+ 
+     def options(self, request, *args, **kwargs):
+         """Handle responding to requests for the OPTIONS HTTP verb."""
+diff --git a/reproduce_error.py b/reproduce_error.py
+new file mode 100644
+index 0000000000..a684290cdd
+--- /dev/null
++++ b/reproduce_error.py
+@@ -0,0 +1,31 @@
++import os
++os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'testbed.settings')
++
++from django.views import View
++from django.http import HttpResponse
++from django.conf import settings
++
++settings.configure(
++    DEFAULT_CHARSET='utf-8',
++    ROOT_URLCONF=__name__,
++)
++
++class Demo(View):
++    """This basic view supports only POST requests"""
++    async def post(self, request):
++        return HttpResponse("ok")
++
++# URL pattern would be defined in urls.py, but for this script, we simulate a GET request
++from django.test import RequestFactory
++
++request_factory = RequestFactory()
++request = request_factory.get('/demo')
++view = Demo.as_view()
++
++# Simulate the view call
++import asyncio
++
++async def test_view():
++    return await view(request)
++
++asyncio.run(test_view())
+\ No newline at end of file

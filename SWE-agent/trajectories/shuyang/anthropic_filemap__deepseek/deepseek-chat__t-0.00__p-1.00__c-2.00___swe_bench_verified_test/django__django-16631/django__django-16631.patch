@@ -1,0 +1,49 @@
+diff --git a/django/contrib/admin/sites.py b/django/contrib/admin/sites.py
+index 61be31d890..eb8ea05590 100644
+--- a/django/contrib/admin/sites.py
++++ b/django/contrib/admin/sites.py
+@@ -453,7 +453,11 @@ class AdminSite:
+                 pass
+             else:
+                 if getattr(match.func, "should_append_slash", True):
+-                    return HttpResponsePermanentRedirect("%s/" % request.path)
++                    query_string = request.META.get('QUERY_STRING', '')
++                    redirect_url = "%s/" % request.path
++                    if query_string:
++                        redirect_url += "?" + query_string
++                    return HttpResponsePermanentRedirect(redirect_url)
+         raise Http404
+ 
+     def _build_app_dict(self, request, label=None):
+diff --git a/test_redirect.py b/test_redirect.py
+new file mode 100644
+index 0000000000..bc3767a3c8
+--- /dev/null
++++ b/test_redirect.py
+@@ -0,0 +1,25 @@
++from django.http import HttpRequest, HttpResponsePermanentRedirect
++from django.conf import settings
++
++# Minimal settings configuration
++settings.configure(
++    APPEND_SLASH=True,
++    DEFAULT_CHARSET='utf-8'
++)
++
++def test_redirect():
++    request = HttpRequest()
++    request.path = "/admin/auth/foo"
++    request.path_info = "/admin/auth/foo"
++    request.META['QUERY_STRING'] = "id=123"
++    
++    if settings.APPEND_SLASH and not request.path.endswith("/"):
++        query_string = request.META.get('QUERY_STRING', '')
++        redirect_url = "%s/" % request.path
++        if query_string:
++            redirect_url += "?" + query_string
++        return HttpResponsePermanentRedirect(redirect_url)
++    
++    return "No redirect"
++
++print(test_redirect())
+\ No newline at end of file

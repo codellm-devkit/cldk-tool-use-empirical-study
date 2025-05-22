@@ -1,0 +1,40 @@
+diff --git a/django/db/models/fields/related.py b/django/db/models/fields/related.py
+index 397146a354..24ed56a940 100644
+--- a/django/db/models/fields/related.py
++++ b/django/db/models/fields/related.py
+@@ -986,10 +986,32 @@ class ForeignKey(ForeignObject):
+             raise ValueError("Cannot create form field for %r yet, because "
+                              "its related model %r has not been loaded yet" %
+                              (self.name, self.remote_field.model))
++        queryset = self.remote_field.model._default_manager.using(using)
++        if self.remote_field.limit_choices_to:
++            queryset = queryset.filter(self.remote_field.limit_choices_to)
++            # Ensure uniqueness by overriding the ModelChoiceField's label_from_instance
++            class UniqueModelChoiceField(forms.ModelChoiceField):
++                def __init__(self, *args, **kwargs):
++                    self.to_field_name = kwargs.pop('to_field_name', None)
++                    super().__init__(*args, **kwargs)
++                    self._choices = None
++
++                def _get_choices(self):
++                    if not hasattr(self, '_choices') or self._choices is None:
++                        # Deduplicate choices based on their display value
++                        choices = []
++                        seen = set()
++                        for choice in super()._get_choices() or []:
++                            if choice[1] not in seen:
++                                seen.add(choice[1])
++                                choices.append(choice)
++                        self._choices = choices
++                    return self._choices
++                choices = property(_get_choices, forms.ChoiceField._set_choices)
++            kwargs['form_class'] = UniqueModelChoiceField
++            kwargs['to_field_name'] = self.remote_field.field_name
+         return super().formfield(**{
+-            'form_class': forms.ModelChoiceField,
+-            'queryset': self.remote_field.model._default_manager.using(using),
+-            'to_field_name': self.remote_field.field_name,
++            'queryset': queryset,
+             **kwargs,
+             'blank': self.blank,
+         })

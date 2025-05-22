@@ -1,0 +1,164 @@
+diff --git a/reproduce_issue.py b/reproduce_issue.py
+new file mode 100644
+index 000000000..a6883cd41
+--- /dev/null
++++ b/reproduce_issue.py
+@@ -0,0 +1,17 @@
++"""
++Minimal script to reproduce the issue with autodoc and inherited attributes.
++"""
++
++class Parent:
++    """Parent class with an attribute and docstring."""
++    attr = "Parent attribute"
++    """Docstring for Parent.attr."""
++
++class Child(Parent):
++    """Child class inheriting Parent.attr."""
++    pass
++
++# Expected: Child.attr should have the docstring from Parent.attr
++# Actual: Child.attr's docstring is not documented by autodoc
++print(f"Child.attr: {Child.attr}")
++print(f"Child.attr.__doc__: {getattr(Child, 'attr').__doc__}")
+\ No newline at end of file
+diff --git a/setup.py b/setup.py
+index 8d40de1a8..03f325278 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 5):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.12',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/ext/autodoc/__init__.py b/sphinx/ext/autodoc/__init__.py
+index ddfd2b365..27ead6b8e 100644
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -548,8 +548,9 @@ class Documenter:
+             warnings.warn("The 'ignore' argument to autodoc.%s.get_doc() is deprecated."
+                           % self.__class__.__name__,
+                           RemovedInSphinx50Warning, stacklevel=2)
++        # Ensure inherited docstrings are retrieved by passing the parent class and attribute name
+         docstring = getdoc(self.object, self.get_attr, self.config.autodoc_inherit_docstrings,
+-                           self.parent, self.object_name)
++                           getattr(self, 'parent', None), getattr(self, 'object_name', None))
+         if docstring:
+             tab_width = self.directive.state.document.settings.tab_width
+             return [prepare_docstring(docstring, ignore, tab_width)]
+@@ -646,9 +647,17 @@ class Documenter:
+                                    (name, self.fullname), type='autodoc')
+             return False, selected
+         elif self.options.inherited_members:
+-            return False, [(m.name, m.value) for m in members.values()]
++            # For inherited members, ensure docstrings are retrieved from the base class
++            inherited_members = []
++            for m in members.values():
++                # Set parent and object_name for inherited members
++                parent = self.parent if hasattr(self, 'parent') else None
++                object_name = m.name if hasattr(m, 'name') else None
++                docstring = getdoc(m.value, self.get_attr, True, parent, object_name)
++                inherited_members.append(ObjectMember(m.name, m.value, docstring=docstring))
++            return False, inherited_members
+         else:
+-            return False, [(m.name, m.value) for m in members.values()
++            return False, [(m.name, m.value) for m in members.values()]
+                            if m.directly_defined]
+ 
+     def filter_members(self, members: ObjectMembers, want_all: bool
+diff --git a/sphinx/ext/autodoc/importer.py b/sphinx/ext/autodoc/importer.py
+index d6e73d36a..9951f3c9a 100644
+--- a/sphinx/ext/autodoc/importer.py
++++ b/sphinx/ext/autodoc/importer.py
+@@ -162,7 +162,8 @@ def get_module_members(module: Any) -> List[Tuple[str, Any]]:
+ 
+ Attribute = NamedTuple('Attribute', [('name', str),
+                                      ('directly_defined', bool),
+-                                     ('value', Any)])
++                                     ('value', Any),
++                                     ('docstring', Optional[str])])
+ 
+ 
+ def _getmro(obj: Any) -> Tuple["Type", ...]:
+@@ -205,8 +206,8 @@ def get_object_members(subject: Any, objpath: List[str], attrgetter: Callable,
+         if __slots__:
+             from sphinx.ext.autodoc import SLOTSATTR
+ 
+-            for name in __slots__:
+-                members[name] = Attribute(name, True, SLOTSATTR)
++            for name, docstring in __slots__.items():
++                members[name] = Attribute(name, True, SLOTSATTR, docstring)
+     except (AttributeError, TypeError, ValueError):
+         pass
+ 
+@@ -217,7 +218,15 @@ def get_object_members(subject: Any, objpath: List[str], attrgetter: Callable,
+             directly_defined = name in obj_dict
+             name = unmangle(subject, name)
+             if name and name not in members:
+-                members[name] = Attribute(name, directly_defined, value)
++                # Retrieve docstring for inherited attributes
++                docstring = None
++                if not directly_defined:
++                    for cls in getmro(subject):
++                        if hasattr(cls, '__dict__') and name in cls.__dict__:
++                            docstring = getattr(cls.__dict__[name], '__doc__', None)
++                            if docstring:
++                                break
++                members[name] = Attribute(name, directly_defined, value, docstring)
+         except AttributeError:
+             continue
+ 
+diff --git a/sphinx/util/inspect.py b/sphinx/util/inspect.py
+index a26c818c0..7d47ac1bf 100644
+--- a/sphinx/util/inspect.py
++++ b/sphinx/util/inspect.py
+@@ -913,5 +913,10 @@ def getdoc(obj: Any, attrgetter: Callable = safe_getattr,
+                     doc = inspect.getdoc(meth)
+                     if doc:
+                         break
++                # Also check the base class's namespace directly
++                if hasattr(basecls, '__dict__') and name in basecls.__dict__:
++                    doc = getattr(basecls.__dict__[name], '__doc__', None)
++                    if doc:
++                        break
+ 
+     return doc
+diff --git a/tox.ini b/tox.ini
+index dbb705a3a..9f4fc3a32 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -28,7 +28,7 @@ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -m pytest --durations 25 {posargs}
++    python -X dev -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3
