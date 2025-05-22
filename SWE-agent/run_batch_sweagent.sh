@@ -1,0 +1,11 @@
+sweagent run-batch \
+    --config config/anthropic_filemap.yaml \
+    --agent.model.name deepseek/deepseek-chat \
+    --num_workers 1 \
+    --agent.model.per_instance_cost_limit 2.00 \
+    --instances.deployment.docker_args=--memory=10g \
+    --instances.type swe_bench \
+    --instances.subset verified \
+    --instances.split test  \
+    --instances.slice 251:252 \
+    --instances.shuffle=False 
