@@ -1,7 +1,9 @@
 import os
 from datasets import load_dataset
 
-def main(root_path):
+PATH_TO_TRAJ = "trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test"
+
+def count_invalid_instance(root_path):
     dataset = load_dataset("princeton-nlp/SWE-bench_Verified", split="test")
     instance_ids = [entry["instance_id"] for entry in dataset]
 
@@ -32,12 +34,12 @@ def main(root_path):
     for instance_id in missing_instance_ids:
         print(f"  {instance_id}")
 
-    print("\nSubdirectories without a .traj file:")
+    print("\nInstances without a .traj file:")
     for subdir in subdirs_without_traj:
         print(f"  {subdir}")
 
     # Report the index positions of missing instance_ids
-    print("\nIndex positions of missing instance_ids in the dataset:")
+    print("\nIndex positions of error instance_ids in the dataset:")
     for instance_id in (missing_instance_ids + subdirs_without_traj):
         index = instance_id_to_index[instance_id]
         print(f"  {instance_id}: Index {index}")
@@ -53,10 +55,12 @@ def main(root_path):
     #         print(f"  Failed to remove {d}: {e}")
 
 if __name__ == "__main__":
-    import argparse
+    # import argparse
 
-    parser = argparse.ArgumentParser(description="Remove subdirectories that do not contain a .traj file.")
-    parser.add_argument("path", type=str, help="Path to the root directory.")
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser(description="Remove subdirectories that do not contain a .traj file.")
+    # parser.add_argument("path", type=str, help="Path to the root directory.")
+    # args = parser.parse_args()
 
-    main(args.path)
+    # count_invalid_instance(args.path)
+    count_invalid_instance(PATH_TO_TRAJ)
+
