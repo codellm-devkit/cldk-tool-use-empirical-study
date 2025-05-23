@@ -10,7 +10,8 @@ def analyze_trajectory_actions(root_path):
     view_proportions = []
     total_valid = 0
     total = 0
-    success_patch = 0
+    submit = 0
+    exit_submit = 0
 
     for subdir, _, files in os.walk(root_path):
         for file in files:
@@ -38,9 +39,12 @@ def analyze_trajectory_actions(root_path):
                         if info:
                             exit_status = info.get("exit_status", "")
                             if exit_status == "submitted":
-                                success_patch += 1
+                                submit += 1
+                            elif "submitted" in exit_status:
+                                exit_submit += 1
+                                print(f"Exit submit for {instance_id}: {exit_status}")
                             else:
-                                print(f"Unsuccessful patch for {instance_id}: {exit_status}")
+                                print(f"No submit for {instance_id}: {exit_status}")
                 except Exception as e:
                     print(f"Error reading {traj_path}: {e}")
             elif file.endswith(".debug.log"):
@@ -48,9 +52,7 @@ def analyze_trajectory_actions(root_path):
 
     print(f"\nTotal instances with a trajectory: {total_valid}")
     print(f"Total instances: {total}")
-    print(f"Total successful patches: {success_patch}")
-    if total > 0:
-        print(f"Success rate: {success_patch / total:.2%}")
+    print(f"Submit count: {submit}\nExit submit count: {exit_submit}\nNo submit count: {total - submit - exit_submit}")
     if actions_per_instance:
         avg_actions = sum(len(actions) for actions in actions_per_instance.values()) / len(actions_per_instance)
         print(f"Average number of actions per instance: {avg_actions:.2f}")
