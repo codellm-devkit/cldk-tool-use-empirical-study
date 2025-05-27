@@ -98,17 +98,17 @@ def analyze_trajectory_actions(root_path):
     
     print(f"Action types: {len(action_counter)}\n{action_counter}")
 
-    # os.makedirs("analysis", exist_ok=True)
+    os.makedirs("analysis", exist_ok=True)
 
-    # # Create a DataFrame for turn-action counts
-    # df = pd.DataFrame(turn_action_counts).fillna(0).astype(int).T
+    # Create a DataFrame for turn-action counts
+    df = pd.DataFrame(turn_action_counts).fillna(0).astype(int).T
 
-    # # Plot full range of turns
-    # plot_turn_chart(df, "Action Type Frequency at Each Turn", "turn_action_distribution.jpg")
+    # Plot full range of turns
+    plot_turn_chart(df, "Action Type Frequency at Each Turn", "turn_action_distribution.jpg")
 
-    # # Plot first 50 turns only
-    # df_first50 = df[df.index < 50]
-    # plot_turn_chart(df_first50, "Action Frequency at First 50 Turns", "turn_action_distribution_first50.jpg")
+    # Plot first 50 turns only
+    df_first50 = df[df.index < 50]
+    plot_turn_chart(df_first50, "Action Frequency at First 50 Turns", "turn_action_distribution_first50.jpg")
 
     return action_counter, actions_per_instance
 
