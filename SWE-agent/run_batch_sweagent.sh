@@ -7,5 +7,5 @@ sweagent run-batch \
     --instances.type swe_bench \
     --instances.subset verified \
     --instances.split test  \
-    --instances.slice 251:252 \
-    --instances.shuffle=False 
+    --instances.slice :1 \
+    --instances.shuffle=False \
