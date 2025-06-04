@@ -3,15 +3,9 @@ import json
 from collections import Counter, defaultdict
 import matplotlib.pyplot as plt
 import pandas as pd
+from commandParser import CommandParser
 
 PATH_TO_TRAJ = "trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test"
-
-def normalize_action(action_str):
-    """Extract command name from action string."""
-    if action_str.startswith("str_replace_editor") or action_str.startswith("sudo"):
-        parts = action_str.split()
-        return parts[1] if len(parts) > 1 else "str_replace_editor"
-    return action_str.split()[0]
 
 def plot_turn_chart(dataframe, title, filename):
     fig, ax = plt.subplots(figsize=(20, 10))
@@ -21,22 +15,41 @@ def plot_turn_chart(dataframe, title, filename):
     ax.set_ylabel("Action Count", fontsize=14)
     ax.set_title(title, fontsize=16)
 
-    # Remove chart borders
     for spine in ax.spines.values():
         spine.set_visible(False)
 
-    # Beautify ticks
     ax.tick_params(axis='both', which='major', labelsize=12)
 
-    # Legend inside, two columns
     legend = ax.legend(title="Action Type", ncol=2, loc='upper right', bbox_to_anchor=(0.98, 0.98))
-    legend.get_frame().set_linewidth(0.0)  # No border
+    legend.get_frame().set_linewidth(0.0)
 
     plt.tight_layout()
+    os.makedirs("analysis", exist_ok=True)
     plt.savefig(f"analysis/{filename}", dpi=300)
     plt.close()
 
+def normalize_action(parser: CommandParser, action_str):
+    parsed_cmds = parser.parse(action_str)
+    if not parsed_cmds:
+        return ["<unrecognized>"]
+
+    normalized = []
+    for cmd in parsed_cmds:
+        if "tool" in cmd:
+            label = f"{cmd['tool']}:{cmd.get('subcommand', '')}".strip(':')
+        else:
+            label = cmd.get("command", "<unknown>")
+        normalized.append(label)
+    return normalized
+
 def analyze_trajectory_actions(root_path):
+    parser = CommandParser()
+    parser.load_tool_yaml_files([
+        "tools/edit_anthropic/config.yaml",
+        "tools/review_on_submit_m/config.yaml",
+        "tools/registry/config.yaml"
+    ])
+
     action_counter = Counter()
     actions_per_instance = defaultdict(list)
     view_proportions = []
@@ -59,15 +72,16 @@ def analyze_trajectory_actions(root_path):
                         trajectory = data.get("trajectory", [])
                         actions = []
                         for i, step in enumerate(trajectory):
-                            action = step.get("action", "").strip()
-                            if action:
-                                normalized = normalize_action(action)
-                                actions.append(normalized)
-                                action_counter[normalized] += 1
-                                turn_action_counts[i][normalized] += 1
+                            action_str = step.get("action", "").strip()
+                            if action_str:
+                                normalized_actions = normalize_action(parser, action_str)
+                                actions.extend(normalized_actions)
+                                for norm in normalized_actions:
+                                    action_counter[norm] += 1
+                                    turn_action_counts[i][norm] += 1
                         if actions:
                             actions_per_instance[instance_id].extend(actions)
-                            view_count = sum(1 for act in actions if act == "view")
+                            view_count = sum(1 for act in actions if "view" in act)
                             proportion = view_count / len(actions)
                             view_proportions.append(proportion)
                         info = data.get("info", {})
@@ -77,8 +91,6 @@ def analyze_trajectory_actions(root_path):
                                 submit += 1
                             elif "submitted" in exit_status:
                                 exit_submit += 1
-                            else:
-                                pass  # no submit
                 except Exception as e:
                     print(f"Error reading {traj_path}: {e}")
             elif file.endswith(".debug.log"):
@@ -95,29 +107,15 @@ def analyze_trajectory_actions(root_path):
     if view_proportions:
         avg_view_proportion = sum(view_proportions) / len(view_proportions)
         print(f"Average proportion of 'view' actions per instance: {avg_view_proportion:.2%}")
-    
+
     print(f"Action types: {len(action_counter)}\n{action_counter}")
 
-    # os.makedirs("analysis", exist_ok=True)
-
-    # # Create a DataFrame for turn-action counts
-    # df = pd.DataFrame(turn_action_counts).fillna(0).astype(int).T
-
-    # # Plot full range of turns
-    # plot_turn_chart(df, "Action Type Frequency at Each Turn", "turn_action_distribution.jpg")
-
-    # # Plot first 50 turns only
-    # df_first50 = df[df.index < 50]
-    # plot_turn_chart(df_first50, "Action Frequency at First 50 Turns", "turn_action_distribution_first50.jpg")
+    df = pd.DataFrame(turn_action_counts).fillna(0).astype(int).T
+    plot_turn_chart(df, "Action Type Frequency at Each Turn", "turn_action_distribution.jpg")
+    df_first50 = df[df.index < 50]
+    plot_turn_chart(df_first50, "Action Frequency at First 50 Turns", "turn_action_distribution_first50.jpg")
 
     return action_counter, actions_per_instance
 
 if __name__ == "__main__":
-    # import argparse
-
-    # parser = argparse.ArgumentParser(description="Analyze SWE-agent trajectory actions.")
-    # parser.add_argument("path", type=str, help="Path to the directory containing .traj files.")
-    # args = parser.parse_args()
-
-    # analyze_trajectory_actions(args.path)
     analyze_trajectory_actions(PATH_TO_TRAJ)

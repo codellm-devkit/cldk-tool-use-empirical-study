@@ -1,5 +1,6 @@
 import yaml
 import shlex
+import re
 from typing import Dict, List, Optional, Union, Any
 
 
@@ -104,19 +105,46 @@ class CommandParser:
             except Exception as e:
                 print(f"Failed to load YAML from {path}: {e}")
 
-    def parse(self, cmd_str: str) -> Optional[Dict[str, Any]]:
-        try:
-            tokens = shlex.split(cmd_str.strip())
-        except ValueError:
-            return None
-        if not tokens:
-            return None
-
-        tool = tokens[0]
-        if tool in self.tool_map:
-            return self.tool_map[tool].parse(tokens)
+    def split_env_and_command(self, cmd_str: str) -> List[str]:
+        """Split command string into environment assignment and actual command(s)."""
+        # e.g., "FOO=bar BAZ=qux python run.py && echo done"
+        env_pattern = re.compile(r"^((?:\w+=[^ ]+\s*)+)(.*)")
+        match = env_pattern.match(cmd_str)
+        if match:
+            env_part = match.group(1).strip()
+            cmd_part = match.group(2).strip()
+            return [env_part] if not cmd_part else [env_part, *[c.strip() for c in cmd_part.split("&&") if c.strip()]]
         else:
-            return self.parse_bash_command(tokens)
+            return [c.strip() for c in cmd_str.split("&&") if c.strip()]
+
+    def parse(self, cmd_str: str) -> List[Dict[str, Any]]:
+        parts = self.split_env_and_command(cmd_str)
+        results = []
+
+        for subcmd in parts:
+            if re.fullmatch(r"\w+=.+", subcmd.strip()) or all("=" in token for token in subcmd.strip().split()):
+                # It's a standalone env assignment
+                results.append({"command": "set_env", "args": [subcmd.strip()]})
+                continue
+
+            try:
+                tokens = shlex.split(subcmd.strip())
+            except ValueError:
+                continue
+
+            if not tokens:
+                continue
+
+            tool = tokens[0]
+            if tool in self.tool_map:
+                result = self.tool_map[tool].parse(tokens)
+                if result:
+                    results.append(result)
+            else:
+                result = self.parse_bash_command(tokens)
+                if result:
+                    results.append(result)
+        return results
 
     def parse_bash_command(self, tokens: List[str]) -> Optional[Dict[str, Any]]:
         if not tokens:
@@ -177,13 +205,17 @@ if __name__ == "__main__":
         "str_replace_editor str_replace /testbed/foo.py --old_str 'some_old' --new_str 'some_new'",
         "submit",
         "cd /home/user",
-        "ls -l -a /etc",
         "grep --color=auto 'pattern' file.txt",
         "rm -rf /tmp/*",
-        "echo 'Hello, World!'",
-        "python3 script.py --input=data.txt --verbose"
+        "echo 'Hello, World!' > /testbed/reproduce_error.py",
+        "python3 script.py --input=data.txt --verbose",
+        "cd /project && python3 run.py",
+        "PYTHONPATH=/testbed",
+        "PYTHONPATH=/testbed python3 main.py"
     ]
 
     for cmd in commands:
         result = parser.parse(cmd)
-        print(f">>> {cmd}\nParsed: {result}\n")
+        print(f"\n>>> {cmd}")
+        for r in result:
+            print(r)
