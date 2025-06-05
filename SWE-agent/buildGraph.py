@@ -6,8 +6,6 @@ import matplotlib.pyplot as plt
 from networkx.readwrite import json_graph
 from commandParser import CommandParser
 from pathlib import Path
-import re
-
 
 def get_phase(tool: str, subcommand: str, command: str, label: str) -> str:
     if tool == "str_replace_editor" and subcommand == "view":
@@ -44,7 +42,19 @@ def check_edit_status(tool, subcommand, args, observation):
 
     return "failure: unknown"
 
-def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix: str):
+def determine_resolution_status(instance_path: str, eval_report_path: str) -> str:
+    with open(eval_report_path, 'r') as f:
+        report = json.load(f)
+    
+    instance_id = os.path.basename(instance_path)
+    
+    if instance_id in report.get("resolved_ids", []):
+        return "resolved"
+    elif instance_id in report.get("unresolved_ids", []):
+        return "unresolved"
+    return "unsubmitted"
+
+def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix: str, eval_report_path: str):
     G = nx.MultiDiGraph()
     trajectory = traj_data.get("trajectory", [])
     previous_node = None
@@ -109,12 +119,15 @@ def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix:
 
     build_hierarchical_edges(G, localization_nodes)
 
+    resolution_status = determine_resolution_status(output_prefix, eval_report_path)
+    G.graph["resolution_status"] = resolution_status
+    G.graph["instance_name"] = os.path.basename(output_prefix)
+
     os.makedirs(os.path.dirname(output_prefix), exist_ok=True)
     with open(output_prefix + ".json", "w") as f:
         json.dump(json_graph.node_link_data(G, edges="edges"), f, indent=2)
 
     _draw_graph(G, output_prefix + ".png")
-
 
 def build_hierarchical_edges(G: nx.MultiDiGraph, localization_nodes):
     view_nodes = []
@@ -137,7 +150,6 @@ def build_hierarchical_edges(G: nx.MultiDiGraph, localization_nodes):
                 if parent_node:
                     G.add_edge(parent_node, node, type="hier")
                     break
-
 
 def _draw_graph(G: nx.MultiDiGraph, png_path: str):
     from matplotlib.patches import Patch
@@ -164,11 +176,10 @@ def _draw_graph(G: nx.MultiDiGraph, png_path: str):
         color = phase_colors.get(data.get("phase", "general"), "skyblue")
         status = data.get("args", {}).get("edit_status") if isinstance(data.get("args"), dict) else None
 
-        # Add status symbol
         if status == "success":
-            data["label"] += " \u2713"  # tick
+            data["label"] += " ✓"
         elif status and status.startswith("failure"):
-            data["label"] += " \u2717"  # cross
+            data["label"] += " ✗"
 
         labels[node] = data["label"]
         node_colors.append(color)
@@ -191,16 +202,17 @@ def _draw_graph(G: nx.MultiDiGraph, png_path: str):
     ]
     plt.legend(handles=legend_elements, loc="lower center", ncol=5, bbox_to_anchor=(0.5, -0.12))
 
-    plt.title("Trajectory Graph", fontsize=14)
+    title = f"{G.graph.get('instance_name', 'instance_id')} - {G.graph.get('resolution_status', 'unknown')}"
+    plt.title(title, fontsize=14)
     plt.axis("off")
     plt.tight_layout()
     plt.savefig(png_path, dpi=300, bbox_inches="tight")
     plt.close()
 
-
-
 if __name__ == "__main__":
-    instance_dir = "trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/astropy__astropy-13398"
+    instance_dir = "trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/astropy__astropy-8872"
+    eval_report_path = "sb-cli-reports/Subset.swe_bench_verified__test__evaluate_swev.json"
+
     traj_file = None
     for fname in os.listdir(instance_dir):
         if fname.endswith(".traj"):
@@ -224,4 +236,4 @@ if __name__ == "__main__":
         "tools/registry/config.yaml"
     ])
 
-    build_graph_from_trajectory(traj_data, parser, output_prefix)
+    build_graph_from_trajectory(traj_data, parser, output_prefix, eval_report_path)
