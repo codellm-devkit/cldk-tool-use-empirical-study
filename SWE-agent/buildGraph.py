@@ -8,6 +8,19 @@ from commandParser import CommandParser
 from pathlib import Path
 
 
+def get_phase_color(tool: str, subcommand: str, command: str, label: str) -> str:
+    """Assign a color based on the logical phase."""
+    if tool == "str_replace_editor" and subcommand == "view":
+        return "lightcoral"  # Localization
+    if tool == "str_replace_editor" and subcommand == "str_replace":
+        return "gold"  # Patch
+    if command == "python" or (tool == "str_replace_editor" and subcommand == "create"):
+        return "palegreen"  # Verification
+    if tool == "submit":
+        return "mediumpurple"  # Submit
+    return "skyblue"  # Default/general
+
+
 def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix: str):
     G = nx.MultiDiGraph()
     trajectory = traj_data.get("trajectory", [])
@@ -20,24 +33,12 @@ def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix:
         execution_time = step.get("execution_time", 0.0)
         state = step.get("state", {})
 
-        # Handle empty action
         if action_str.strip() == "":
             node_label = "empty action"
             node_key = f"{node_counter}:{node_label}"
-            G.add_node(
-                node_key,
-                label=node_label,
-                execution_time=execution_time,
-                state=state,
-                args={},
-                color="lightgray"
-            )
+            G.add_node(node_key, label=node_label, execution_time=execution_time, state=state, args={}, color="lightgray")
             if previous_node is not None:
-                G.add_edge(
-                    previous_node, node_key,
-                    label=str(step_idx),
-                    type="exec"
-                )
+                G.add_edge(previous_node, node_key, label=str(step_idx), type="exec")
             previous_node = node_key
             node_counter += 1
             continue
@@ -46,74 +47,53 @@ def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix:
         if not parsed_commands:
             continue
 
-        num_subcommands = len(parsed_commands)
-        time_per_command = execution_time / num_subcommands if num_subcommands > 0 else 0
+        time_per_command = execution_time / len(parsed_commands)
 
-        for i, parsed in enumerate(parsed_commands):
-            if parsed is None:
-                node_label = action_str.strip()
-                args = {}
+        for parsed in parsed_commands:
+            tool = parsed.get("tool", "")
+            subcommand = parsed.get("subcommand", "")
+            command = parsed.get("command", "")
+            args = parsed.get("args", {})
+
+            if tool:
+                node_label = f"{tool}\n{subcommand}" if subcommand else tool
             else:
-                if "tool" in parsed:
-                    tool = parsed["tool"]
-                    subcommand = parsed.get("subcommand", "")
-                    node_label = f"{tool}\n{subcommand}" if subcommand else tool
-                else:
-                    node_label = parsed["command"]
-                args = parsed.get("args", {})
+                node_label = command or action_str.strip()
 
-            is_localization = node_label.startswith("str_replace_editor\nview")
-            node_color = "lightcoral" if is_localization else "skyblue"
+            color = get_phase_color(tool, subcommand, command, node_label)
 
             node_key = f"{node_counter}:{node_label}"
-            G.add_node(
-                node_key,
-                label=node_label,
-                execution_time=time_per_command,
-                state=state,
-                args=args,
-                color=node_color
-            )
+            G.add_node(node_key, label=node_label, execution_time=time_per_command, state=state, args=args, color=color)
 
-            if is_localization:
+            if node_label.startswith("str_replace_editor\nview"):
                 G.nodes[node_key]["path"] = args.get("path", "")
                 localization_nodes.append(node_key)
 
             if previous_node is not None:
-                G.add_edge(
-                    previous_node, node_key,
-                    label=str(step_idx),
-                    type="exec"
-                )
+                G.add_edge(previous_node, node_key, label=str(step_idx), type="exec")
 
             previous_node = node_key
             node_counter += 1
 
     build_hierarchical_edges(G, localization_nodes)
 
-    json_path = output_prefix + ".json"
-    with open(json_path, "w") as f:
+    os.makedirs(os.path.dirname(output_prefix), exist_ok=True)
+    with open(output_prefix + ".json", "w") as f:
         json.dump(json_graph.node_link_data(G, edges="edges"), f, indent=2)
 
     _draw_graph(G, output_prefix + ".png")
-    print(f"Graph saved to {json_path} and {output_prefix}.png")
+    print(f"Graph saved to {output_prefix}.json and {output_prefix}.png")
 
 
 def build_hierarchical_edges(G: nx.MultiDiGraph, localization_nodes):
     view_nodes = []
-
     for node in localization_nodes:
-        data = G.nodes[node]
-        path = data.get("path")
+        path = G.nodes[node].get("path")
         if path:
-            view_nodes.append((node, Path(path), "view_range" in data.get("args", {})))
+            view_nodes.append((node, Path(path), "view_range" in G.nodes[node].get("args", {})))
 
     view_nodes.sort(key=lambda x: len(x[1].parts))
-
-    path_to_node = {}
-    for node, path, is_range in view_nodes:
-        if not is_range:
-            path_to_node[str(path)] = node
+    path_to_node = {str(path): node for node, path, is_range in view_nodes if not is_range}
 
     for node, path, is_range in view_nodes:
         if is_range:
@@ -133,41 +113,23 @@ def _draw_graph(G: nx.MultiDiGraph, png_path: str):
 
     try:
         from networkx.drawing.nx_agraph import graphviz_layout
-        pos = graphviz_layout(G, prog='dot')
+        pos = graphviz_layout(G, prog="dot")
     except:
         pos = nx.spring_layout(G, seed=42)
 
-    node_colors = [d.get("color", "skyblue") for _, d in G.nodes(data=True)]
-    labels = {n: d["label"] for n, d in G.nodes(data=True)}
+    node_colors = [data.get("color", "skyblue") for _, data in G.nodes(data=True)]
+    labels = {node: data["label"] for node, data in G.nodes(data=True)}
 
     nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1800, edgecolors='black', linewidths=0.5)
     nx.draw_networkx_labels(G, pos, labels, font_size=8, font_weight='bold')
 
-    exec_edges = [(u, v, k) for u, v, k, d in G.edges(keys=True, data=True) if d.get("type") == "exec"]
-    hier_edges = [(u, v, k) for u, v, k, d in G.edges(keys=True, data=True) if d.get("type") == "hier"]
+    exec_edges = [(u, v) for u, v, _, d in G.edges(keys=True, data=True) if d.get("type") == "exec"]
+    hier_edges = [(u, v) for u, v, _, d in G.edges(keys=True, data=True) if d.get("type") == "hier"]
 
-    nx.draw_networkx_edges(
-        G, pos,
-        edgelist=[(u, v) for u, v, _ in exec_edges],
-        edge_color="gray",
-        arrows=True,
-        connectionstyle="arc3,rad=0.0"
-    )
+    nx.draw_networkx_edges(G, pos, edgelist=exec_edges, edge_color="gray", arrows=True, connectionstyle="arc3,rad=0.0")
+    nx.draw_networkx_edges(G, pos, edgelist=hier_edges, edge_color="green", style="dashed", arrows=True, connectionstyle="arc3,rad=-0.3")
 
-    nx.draw_networkx_edges(
-        G, pos,
-        edgelist=[(u, v) for u, v, _ in hier_edges],
-        edge_color="green",
-        style="dashed",
-        arrows=True,
-        connectionstyle="arc3,rad=-0.3"
-    )
-
-    edge_labels = {
-        (u, v): d["label"]
-        for u, v, k, d in G.edges(keys=True, data=True)
-        if d.get("type") == "exec" and "label" in d
-    }
+    edge_labels = {(u, v): d["label"] for u, v, _, d in G.edges(keys=True, data=True) if d.get("type") == "exec"}
     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8, font_color="darkgreen")
 
     plt.title("Trajectory Graph", fontsize=14)

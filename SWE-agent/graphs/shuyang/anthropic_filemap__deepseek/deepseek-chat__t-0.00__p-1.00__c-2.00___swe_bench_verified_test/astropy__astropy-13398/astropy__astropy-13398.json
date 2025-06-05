@@ -134,7 +134,7 @@
         "old_str": "from .icrs import ICRS\nfrom .gcrs import GCRS, PrecessedGeocentric\nfrom .cirs import CIRS\nfrom .itrs import ITRS\nfrom .equatorial import TEME, TETE\nfrom .utils import get_polar_motion, get_jd12, EARTH_CENTER",
         "new_str": "from .icrs import ICRS\nfrom .gcrs import GCRS, PrecessedGeocentric\nfrom .cirs import CIRS\nfrom .itrs import ITRS\nfrom .equatorial import TEME, TETE\nfrom .altaz import AltAz\nfrom .hadec import HADec\nfrom .utils import get_polar_motion, get_jd12, EARTH_CENTER, PIOVER2\nfrom astropy.coordinates.matrix_utilities import rotation_matrix"
       },
-      "color": "skyblue",
+      "color": "gold",
       "id": "10:str_replace_editor\nstr_replace"
     },
     {
@@ -148,7 +148,7 @@
         "old_str": "# # first define helper functions\n\n\ndef teme_to_itrs_mat(time):",
         "new_str": "# # first define helper functions\n\n\ndef itrs_to_observed_mat(observed_frame):\n    lon, lat, height = observed_frame.location.to_geodetic('WGS84')\n    elong = lon.to_value(u.radian)\n\n    if isinstance(observed_frame, AltAz):\n        # form ITRS to AltAz matrix\n        elat = lat.to_value(u.radian)\n        # AltAz frame is left handed\n        minus_x = np.eye(3)\n        minus_x[0][0] = -1.0\n        mat = (minus_x\n               @ rotation_matrix(PIOVER2 - elat, 'y', unit=u.radian)\n               @ rotation_matrix(elong, 'z', unit=u.radian))\n    else:\n        # form ITRS to HADec matrix\n        # HADec frame is left handed\n        minus_y = np.eye(3)\n        minus_y[1][1] = -1.0\n        mat = (minus_y\n               @ rotation_matrix(elong, 'z', unit=u.radian))\n    return mat\n\n\ndef teme_to_itrs_mat(time):"
       },
-      "color": "skyblue",
+      "color": "gold",
       "id": "11:str_replace_editor\nstr_replace"
     },
     {
@@ -162,7 +162,7 @@
         "old_str": "# now the actual transforms\n\n@frame_transform_graph.transform(FunctionTransformWithFiniteDifference, GCRS, TETE)",
         "new_str": "# now the actual transforms\n\n@frame_transform_graph.transform(FunctionTransformWithFiniteDifference, ITRS, AltAz)\n@frame_transform_graph.transform(FunctionTransformWithFiniteDifference, ITRS, HADec)\ndef itrs_to_observed(itrs_coo, observed_frame):\n    # form the Topocentric ITRS position\n    topocentric_itrs_repr = (itrs_coo.cartesian\n                             - observed_frame.location.get_itrs().cartesian)\n    rep = topocentric_itrs_repr.transform(itrs_to_observed_mat(observed_frame))\n    return observed_frame.realize_frame(rep)\n\n\n@frame_transform_graph.transform(FunctionTransformWithFiniteDifference, AltAz, ITRS)\n@frame_transform_graph.transform(FunctionTransformWithFiniteDifference, HADec, ITRS)\ndef observed_to_itrs(observed_coo, itrs_frame):\n    # form the Topocentric ITRS position\n    topocentric_itrs_repr = observed_coo.cartesian.transform(matrix_transpose(\n                            itrs_to_observed_mat(observed_coo)))\n    # form the Geocentric ITRS position\n    rep = topocentric_itrs_repr + observed_coo.location.get_itrs().cartesian\n    return itrs_frame.realize_frame(rep)\n\n\n@frame_transform_graph.transform(FunctionTransformWithFiniteDifference, GCRS, TETE)"
       },
-      "color": "skyblue",
+      "color": "gold",
       "id": "12:str_replace_editor\nstr_replace"
     },
     {
@@ -176,7 +176,7 @@
         "old_str": "# Create loopback transformations\nframe_transform_graph._add_merged_transform(ITRS, CIRS, ITRS)\nframe_transform_graph._add_merged_transform(PrecessedGeocentric, GCRS, PrecessedGeocentric)\nframe_transform_graph._add_merged_transform(TEME, ITRS, TEME)\nframe_transform_graph._add_merged_transform(TETE, ICRS, TETE)",
         "new_str": "# Create loopback transformations\nframe_transform_graph._add_merged_transform(ITRS, CIRS, ITRS)\nframe_transform_graph._add_merged_transform(PrecessedGeocentric, GCRS, PrecessedGeocentric)\nframe_transform_graph._add_merged_transform(TEME, ITRS, TEME)\nframe_transform_graph._add_merged_transform(TETE, ICRS, TETE)\nframe_transform_graph._add_merged_transform(ITRS, AltAz, ITRS)\nframe_transform_graph._add_merged_transform(ITRS, HADec, ITRS)"
       },
-      "color": "skyblue",
+      "color": "gold",
       "id": "13:str_replace_editor\nstr_replace"
     },
     {
@@ -189,7 +189,7 @@
         "path": "/testbed/test_itrs_transforms.py",
         "file_text": "#!/usr/bin/env python\n# Licensed under a 3-clause BSD style license - see LICENSE.rst\n\nimport numpy as np\nfrom astropy import units as u\nfrom astropy.time import Time\nfrom astropy.coordinates import EarthLocation, AltAz, HADec, ITRS\n\n# Define a location (e.g., Greenwich Observatory)\nlocation = EarthLocation(lat=51.4779 * u.deg, lon=0 * u.deg, height=0 * u.m)\n\n# Define an observation time\nobstime = Time(\"2023-10-01 00:00:00\", scale=\"utc\")\n\n# Define an ITRS coordinate (e.g., a point directly above the location)\nitrs_coo = ITRS(x=location.x, y=location.y, z=location.z + 1000 * u.m, obstime=obstime)\n\n# Test ITRS -> AltAz\naltaz_frame = AltAz(location=location, obstime=obstime)\naltaz_coo = itrs_coo.transform_to(altaz_frame)\nprint(f\"ITRS -> AltAz: {altaz_coo}\")\n\n# Test AltAz -> ITRS\nitrs_coo_back = altaz_coo.transform_to(ITRS(obstime=obstime))\nprint(f\"AltAz -> ITRS: {itrs_coo_back}\")\nprint(f\"Original ITRS: {itrs_coo}\")\nprint(f\"Difference: {itrs_coo_back.cartesian - itrs_coo.cartesian}\")\n\n# Test ITRS -> HADec\nhadec_frame = HADec(location=location, obstime=obstime)\nhadec_coo = itrs_coo.transform_to(hadec_frame)\nprint(f\"ITRS -> HADec: {hadec_coo}\")\n\n# Test HADec -> ITRS\nitrs_coo_back = hadec_coo.transform_to(ITRS(obstime=obstime))\nprint(f\"HADec -> ITRS: {itrs_coo_back}\")\nprint(f\"Original ITRS: {itrs_coo}\")\nprint(f\"Difference: {itrs_coo_back.cartesian - itrs_coo.cartesian}\")"
       },
-      "color": "skyblue",
+      "color": "palegreen",
       "id": "14:str_replace_editor\ncreate"
     },
     {
@@ -213,7 +213,7 @@
       "args": [
         "test_itrs_transforms.py"
       ],
-      "color": "skyblue",
+      "color": "palegreen",
       "id": "16:python"
     },
     {
@@ -227,7 +227,7 @@
         "old_str": "# Create loopback transformations\nframe_transform_graph._add_merged_transform(ITRS, CIRS, ITRS)\nframe_transform_graph._add_merged_transform(PrecessedGeocentric, GCRS, PrecessedGeocentric)\nframe_transform_graph._add_merged_transform(TEME, ITRS, TEME)\nframe_transform_graph._add_merged_transform(TETE, ICRS, TETE)\nframe_transform_graph._add_merged_transform(ITRS, AltAz, ITRS)\nframe_transform_graph._add_merged_transform(ITRS, HADec, ITRS)",
         "new_str": "# Create loopback transformations\nframe_transform_graph._add_merged_transform(ITRS, CIRS, ITRS)\nframe_transform_graph._add_merged_transform(PrecessedGeocentric, GCRS, PrecessedGeocentric)\nframe_transform_graph._add_merged_transform(TEME, ITRS, TEME)\nframe_transform_graph._add_merged_transform(TETE, ICRS, TETE)"
       },
-      "color": "skyblue",
+      "color": "gold",
       "id": "17:str_replace_editor\nstr_replace"
     },
     {
@@ -251,7 +251,7 @@
       "args": [
         "test_itrs_transforms.py"
       ],
-      "color": "skyblue",
+      "color": "palegreen",
       "id": "19:python"
     },
     {
@@ -265,7 +265,7 @@
         "old_str": "import numpy as np\nimport erfa\n\nfrom astropy.coordinates.baseframe import frame_transform_graph",
         "new_str": "import numpy as np\nimport erfa\n\nfrom astropy import units as u\nfrom astropy.coordinates.baseframe import frame_transform_graph"
       },
-      "color": "skyblue",
+      "color": "gold",
       "id": "20:str_replace_editor\nstr_replace"
     },
     {
@@ -289,7 +289,7 @@
       "args": [
         "test_itrs_transforms.py"
       ],
-      "color": "skyblue",
+      "color": "palegreen",
       "id": "22:python"
     },
     {
@@ -299,7 +299,7 @@
         "working_dir": "/testbed"
       },
       "args": {},
-      "color": "skyblue",
+      "color": "mediumpurple",
       "id": "23:submit"
     },
     {
@@ -321,7 +321,7 @@
         "working_dir": "/testbed"
       },
       "args": {},
-      "color": "skyblue",
+      "color": "mediumpurple",
       "id": "25:submit"
     }
   ],
