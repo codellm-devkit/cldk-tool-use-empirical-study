@@ -6,20 +6,43 @@ import matplotlib.pyplot as plt
 from networkx.readwrite import json_graph
 from commandParser import CommandParser
 from pathlib import Path
+import re
 
 
-def get_phase_color(tool: str, subcommand: str, command: str, label: str) -> str:
-    """Assign a color based on the logical phase."""
+def get_phase(tool: str, subcommand: str, command: str, label: str) -> str:
     if tool == "str_replace_editor" and subcommand == "view":
-        return "lightcoral"  # Localization
+        return "localization"
     if tool == "str_replace_editor" and subcommand == "str_replace":
-        return "gold"  # Patch
+        return "patch"
     if command == "python" or (tool == "str_replace_editor" and subcommand == "create"):
-        return "palegreen"  # Verification
+        return "verification"
     if tool == "submit":
-        return "mediumpurple"  # Submit
-    return "skyblue"  # Default/general
+        return "submit"
+    return "general"
 
+def get_phase_color(phase: str) -> str:
+    return {
+        "localization": "lightcoral",
+        "patch": "gold",
+        "verification": "palegreen",
+        "submit": "mediumpurple",
+        "general": "skyblue"
+    }.get(phase, "skyblue")
+
+def check_edit_status(tool, subcommand, args, observation):
+    if tool != "str_replace_editor" or subcommand != "str_replace" or not observation:
+        return None
+
+    if "has been edited." in observation:
+        return "success"
+    if "did not appear verbatim" in observation:
+        return "failure: not found"
+    if "Multiple occurrences of old_str" in observation:
+        return "failure: multiple occurrences"
+    if "old_str" in observation and "is the same as new_str" in observation:
+        return "failure: no change"
+
+    return "failure: unknown"
 
 def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix: str):
     G = nx.MultiDiGraph()
@@ -36,7 +59,7 @@ def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix:
         if action_str.strip() == "":
             node_label = "empty action"
             node_key = f"{node_counter}:{node_label}"
-            G.add_node(node_key, label=node_label, execution_time=execution_time, state=state, args={}, color="lightgray")
+            G.add_node(node_key, label=node_label, execution_time=execution_time, state=state, args={}, phase="general")
             if previous_node is not None:
                 G.add_edge(previous_node, node_key, label=str(step_idx), type="exec")
             previous_node = node_key
@@ -59,14 +82,23 @@ def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix:
                 node_label = f"{tool}\n{subcommand}" if subcommand else tool
             else:
                 node_label = command or action_str.strip()
+            phase = get_phase(tool, subcommand, command, node_label)
 
-            color = get_phase_color(tool, subcommand, command, node_label)
+            edit_status = check_edit_status(tool, subcommand, args, step.get("observation", ""))
+            if edit_status and isinstance(args, dict):
+                args["edit_status"] = edit_status
 
             node_key = f"{node_counter}:{node_label}"
-            G.add_node(node_key, label=node_label, execution_time=time_per_command, state=state, args=args, color=color)
+            G.add_node(
+                node_key,
+                label=node_label,
+                execution_time=time_per_command,
+                state=state,
+                args=args,
+                phase=phase
+            )
 
-            if node_label.startswith("str_replace_editor\nview"):
-                G.nodes[node_key]["path"] = args.get("path", "")
+            if phase == "localization":
                 localization_nodes.append(node_key)
 
             if previous_node is not None:
@@ -82,13 +114,12 @@ def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix:
         json.dump(json_graph.node_link_data(G, edges="edges"), f, indent=2)
 
     _draw_graph(G, output_prefix + ".png")
-    print(f"Graph saved to {output_prefix}.json and {output_prefix}.png")
 
 
 def build_hierarchical_edges(G: nx.MultiDiGraph, localization_nodes):
     view_nodes = []
     for node in localization_nodes:
-        path = G.nodes[node].get("path")
+        path = G.nodes[node].get("args").get("path")
         if path:
             view_nodes.append((node, Path(path), "view_range" in G.nodes[node].get("args", {})))
 
@@ -109,31 +140,60 @@ def build_hierarchical_edges(G: nx.MultiDiGraph, localization_nodes):
 
 
 def _draw_graph(G: nx.MultiDiGraph, png_path: str):
-    plt.figure(figsize=(max(12, len(G.nodes) * 0.8), 10))
+    from matplotlib.patches import Patch
+    from networkx.drawing.nx_agraph import graphviz_layout
+
+    plt.figure(figsize=(max(12, len(G.nodes) * 0.6), 10))
 
     try:
-        from networkx.drawing.nx_agraph import graphviz_layout
         pos = graphviz_layout(G, prog="dot")
     except:
         pos = nx.spring_layout(G, seed=42)
 
-    node_colors = [data.get("color", "skyblue") for _, data in G.nodes(data=True)]
-    labels = {node: data["label"] for node, data in G.nodes(data=True)}
+    phase_colors = {
+        "localization": "lightcoral",
+        "patch": "gold",
+        "verification": "palegreen",
+        "submit": "mediumpurple",
+        "general": "skyblue"
+    }
 
-    nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1800, edgecolors='black', linewidths=0.5)
+    node_colors = []
+    labels = {}
+    for node, data in G.nodes(data=True):
+        color = phase_colors.get(data.get("phase", "general"), "skyblue")
+        status = data.get("args", {}).get("edit_status") if isinstance(data.get("args"), dict) else None
+
+        # Add status symbol
+        if status == "success":
+            data["label"] += " \u2713"  # tick
+        elif status and status.startswith("failure"):
+            data["label"] += " \u2717"  # cross
+
+        labels[node] = data["label"]
+        node_colors.append(color)
+
+    nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1800, edgecolors='black')
     nx.draw_networkx_labels(G, pos, labels, font_size=8, font_weight='bold')
 
     exec_edges = [(u, v) for u, v, _, d in G.edges(keys=True, data=True) if d.get("type") == "exec"]
     hier_edges = [(u, v) for u, v, _, d in G.edges(keys=True, data=True) if d.get("type") == "hier"]
 
     nx.draw_networkx_edges(G, pos, edgelist=exec_edges, edge_color="gray", arrows=True, connectionstyle="arc3,rad=0.0")
-    nx.draw_networkx_edges(G, pos, edgelist=hier_edges, edge_color="green", style="dashed", arrows=True, connectionstyle="arc3,rad=-0.3")
+    nx.draw_networkx_edges(G, pos, edgelist=hier_edges, edge_color="green", arrows=True, style="dashed", connectionstyle="arc3,rad=-0.2")
 
     edge_labels = {(u, v): d["label"] for u, v, _, d in G.edges(keys=True, data=True) if d.get("type") == "exec"}
     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8, font_color="darkgreen")
 
+    legend_elements = [
+        Patch(facecolor=color, edgecolor='black', label=phase)
+        for phase, color in phase_colors.items()
+    ]
+    plt.legend(handles=legend_elements, loc="lower center", ncol=5, bbox_to_anchor=(0.5, -0.12))
+
     plt.title("Trajectory Graph", fontsize=14)
     plt.axis("off")
+    plt.tight_layout()
     plt.savefig(png_path, dpi=300, bbox_inches="tight")
     plt.close()
 
