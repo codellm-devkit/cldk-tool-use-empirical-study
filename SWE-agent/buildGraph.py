@@ -1,11 +1,16 @@
 import json
 import os
 import sys
+import hashlib
 import networkx as nx
 import matplotlib.pyplot as plt
+from pathlib import Path
 from networkx.readwrite import json_graph
 from commandParser import CommandParser
-from pathlib import Path
+
+def hash_node_signature(label, args, state):
+    normalized = json.dumps({"label": label, "args": args, "state": state}, sort_keys=True)
+    return hashlib.md5(normalized.encode("utf-8")).hexdigest()
 
 def get_phase(tool: str, subcommand: str, command: str, label: str) -> str:
     if tool == "str_replace_editor" and subcommand == "view":
@@ -18,19 +23,9 @@ def get_phase(tool: str, subcommand: str, command: str, label: str) -> str:
         return "submit"
     return "general"
 
-def get_phase_color(phase: str) -> str:
-    return {
-        "localization": "lightcoral",
-        "patch": "gold",
-        "verification": "palegreen",
-        "submit": "mediumpurple",
-        "general": "skyblue"
-    }.get(phase, "skyblue")
-
 def check_edit_status(tool, subcommand, args, observation):
     if tool != "str_replace_editor" or subcommand != "str_replace" or not observation:
         return None
-
     if "has been edited." in observation:
         return "success"
     if "did not appear verbatim" in observation:
@@ -39,15 +34,12 @@ def check_edit_status(tool, subcommand, args, observation):
         return "failure: multiple occurrences"
     if "old_str" in observation and "is the same as new_str" in observation:
         return "failure: no change"
-
     return "failure: unknown"
 
 def determine_resolution_status(instance_path: str, eval_report_path: str) -> str:
     with open(eval_report_path, 'r') as f:
         report = json.load(f)
-    
     instance_id = os.path.basename(instance_path)
-    
     if instance_id in report.get("resolved_ids", []):
         return "resolved"
     elif instance_id in report.get("unresolved_ids", []):
@@ -56,9 +48,9 @@ def determine_resolution_status(instance_path: str, eval_report_path: str) -> st
 
 def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix: str, eval_report_path: str):
     G = nx.MultiDiGraph()
+    node_signature_to_key = {}
     trajectory = traj_data.get("trajectory", [])
     previous_node = None
-    node_counter = 0
     localization_nodes = []
 
     for step_idx, step in enumerate(trajectory):
@@ -68,12 +60,19 @@ def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix:
 
         if action_str.strip() == "":
             node_label = "empty action"
-            node_key = f"{node_counter}:{node_label}"
-            G.add_node(node_key, label=node_label, execution_time=execution_time, state=state, args={}, phase="general")
-            if previous_node is not None:
+            node_signature = hash_node_signature(node_label, {}, state)
+            if node_signature in node_signature_to_key:
+                node_key = node_signature_to_key[node_signature]
+                if previous_node:
+                    G.add_edge(previous_node, node_key, label=str(step_idx), type="exec")
+                previous_node = node_key
+                continue
+            node_key = f"{len(G.nodes)}:{node_label}"
+            G.add_node(node_key, label=node_label, execution_time=[execution_time], state=state, args={}, phase="general", step_indices=[step_idx])
+            node_signature_to_key[node_signature] = node_key
+            if previous_node:
                 G.add_edge(previous_node, node_key, label=str(step_idx), type="exec")
             previous_node = node_key
-            node_counter += 1
             continue
 
         parsed_commands = parser.parse(action_str)
@@ -98,24 +97,34 @@ def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix:
             if edit_status and isinstance(args, dict):
                 args["edit_status"] = edit_status
 
-            node_key = f"{node_counter}:{node_label}"
+            node_signature = hash_node_signature(node_label, args, state)
+            if node_signature in node_signature_to_key:
+                node_key = node_signature_to_key[node_signature]
+                G.nodes[node_key]["execution_time"].append(time_per_command)
+                G.nodes[node_key]["step_indices"].append(step_idx)
+                if previous_node:
+                    G.add_edge(previous_node, node_key, label=str(step_idx), type="exec")
+                previous_node = node_key
+                continue
+
+            node_key = f"{len(G.nodes)}:{node_label}"
             G.add_node(
                 node_key,
                 label=node_label,
-                execution_time=time_per_command,
+                execution_time=[time_per_command],
                 state=state,
                 args=args,
-                phase=phase
+                phase=phase,
+                step_indices=[step_idx]
             )
+            node_signature_to_key[node_signature] = node_key
 
             if phase == "localization":
                 localization_nodes.append(node_key)
 
-            if previous_node is not None:
+            if previous_node:
                 G.add_edge(previous_node, node_key, label=str(step_idx), type="exec")
-
             previous_node = node_key
-            node_counter += 1
 
     build_hierarchical_edges(G, localization_nodes)
 
@@ -132,7 +141,7 @@ def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix:
 def build_hierarchical_edges(G: nx.MultiDiGraph, localization_nodes):
     view_nodes = []
     for node in localization_nodes:
-        path = G.nodes[node].get("args").get("path")
+        path = G.nodes[node].get("args", {}).get("path")
         if path:
             view_nodes.append((node, Path(path), "view_range" in G.nodes[node].get("args", {})))
 
@@ -153,11 +162,10 @@ def build_hierarchical_edges(G: nx.MultiDiGraph, localization_nodes):
 
 def _draw_graph(G: nx.MultiDiGraph, png_path: str):
     from matplotlib.patches import Patch
-    from networkx.drawing.nx_agraph import graphviz_layout
-
     plt.figure(figsize=(max(12, len(G.nodes) * 0.6), 10))
 
     try:
+        from networkx.drawing.nx_agraph import graphviz_layout
         pos = graphviz_layout(G, prog="dot")
     except:
         pos = nx.spring_layout(G, seed=42)
@@ -174,32 +182,49 @@ def _draw_graph(G: nx.MultiDiGraph, png_path: str):
     labels = {}
     for node, data in G.nodes(data=True):
         color = phase_colors.get(data.get("phase", "general"), "skyblue")
-        status = data.get("args", {}).get("edit_status") if isinstance(data.get("args"), dict) else None
-
+        label = data["label"]
+        args = data.get("args", {})
+        status = args.get("edit_status") if isinstance(args, dict) else None
         if status == "success":
-            data["label"] += " ✓"
+            label += " ✓"
         elif status and status.startswith("failure"):
-            data["label"] += " ✗"
-
-        labels[node] = data["label"]
+            label += " ✗"
+        labels[node] = label
         node_colors.append(color)
 
     nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1800, edgecolors='black')
     nx.draw_networkx_labels(G, pos, labels, font_size=8, font_weight='bold')
 
-    exec_edges = [(u, v) for u, v, _, d in G.edges(keys=True, data=True) if d.get("type") == "exec"]
-    hier_edges = [(u, v) for u, v, _, d in G.edges(keys=True, data=True) if d.get("type") == "hier"]
+    for u, v, k, d in G.edges(keys=True, data=True):
+        style = "solid"
+        color = "gray"
+        rad = 0.1 + 0.1 * (k % 3)
 
-    nx.draw_networkx_edges(G, pos, edgelist=exec_edges, edge_color="gray", arrows=True, connectionstyle="arc3,rad=0.0")
-    nx.draw_networkx_edges(G, pos, edgelist=hier_edges, edge_color="green", arrows=True, style="dashed", connectionstyle="arc3,rad=-0.2")
+        if d.get("type") == "hier":
+            style = "dashed"
+            color = "green"
+            rad = -0.2 - 0.05 * (k % 2)
 
-    edge_labels = {(u, v): d["label"] for u, v, _, d in G.edges(keys=True, data=True) if d.get("type") == "exec"}
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8, font_color="darkgreen")
+        nx.draw_networkx_edges(
+            G, pos,
+            edgelist=[(u, v)],
+            connectionstyle=f"arc3,rad={rad}",
+            style=style,
+            edge_color=color,
+            arrows=True
+        )
 
-    legend_elements = [
-        Patch(facecolor=color, edgecolor='black', label=phase)
-        for phase, color in phase_colors.items()
-    ]
+        if d.get("type") == "exec" and "label" in d:
+            x1, y1 = pos[u]
+            x2, y2 = pos[v]
+            mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+            nx_offset = -(y2 - y1) * 0.03
+            ny_offset = (x2 - x1) * 0.03
+            plt.text(mx + nx_offset, my + ny_offset, d["label"],
+                     fontsize=8, color="darkgreen", ha='center', va='center',
+                     bbox=dict(facecolor='white', edgecolor='none', pad=0.1))
+
+    legend_elements = [Patch(facecolor=color, edgecolor='black', label=phase) for phase, color in phase_colors.items()]
     plt.legend(handles=legend_elements, loc="lower center", ncol=5, bbox_to_anchor=(0.5, -0.12))
 
     title = f"{G.graph.get('instance_name', 'instance_id')} - {G.graph.get('resolution_status', 'unknown')}"
@@ -210,7 +235,7 @@ def _draw_graph(G: nx.MultiDiGraph, png_path: str):
     plt.close()
 
 if __name__ == "__main__":
-    instance_dir = "trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/astropy__astropy-8872"
+    instance_dir = "trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/astropy__astropy-13398"
     eval_report_path = "sb-cli-reports/Subset.swe_bench_verified__test__evaluate_swev.json"
 
     traj_file = None
