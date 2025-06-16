@@ -46,7 +46,8 @@ def batch_generate_graphs(root_instance_dir, eval_report_path):
         else:
             subdir = "unsubmitted"
 
-        output_prefix = traj_file.replace("trajectories", f"graphs/{subdir}").replace(".traj", "")
+        # output_prefix = traj_file.replace("trajectories", f"graphs/{subdir}").replace(".traj", "")
+        output_prefix = traj_file.replace("trajectories", f"graphs").replace(".traj", "")
         os.makedirs(os.path.dirname(output_prefix), exist_ok=True)
 
         with open(traj_file, "r") as f:

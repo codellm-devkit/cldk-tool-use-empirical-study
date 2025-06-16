@@ -3,8 +3,11 @@ import json
 import networkx as nx
 from statistics import mean
 from gsppy.gsp import GSP
+import getpass
+import pandas as pd
+from collections import defaultdict, Counter
 
-
+# --------------------------- Graph Analyzer ---------------------------
 class TrajectoryGraphAnalyzer:
     def __init__(self, graph_data):
         self.raw_data = graph_data
@@ -13,11 +16,23 @@ class TrajectoryGraphAnalyzer:
     def _load_graph(self):
         return nx.node_link_graph(self.raw_data, edges="edges")
 
-    def get_node_count(self):
-        return self.graph.number_of_nodes()
-
-    def get_edge_count(self):
-        return self.graph.number_of_edges()
+    def get_metric_dict(self):
+        mf_node = self.get_most_frequent_node()
+        return {
+            "node_count": self.graph.number_of_nodes(),
+            "edge_count": self.graph.number_of_edges(),
+            "exec_edge_count": len(self.get_exec_edges()),
+            "loop_count": self.get_loop_count(),
+            "max_loop_length": self.get_max_loop_length(),
+            "min_loop_length": self.get_min_loop_length(),
+            "avg_loop_length": self.get_avg_loop_length(),
+            "avg_degree": self.get_avg_degree(),
+            "longest_path": self.get_longest_simple_path(),
+            "most_freq_node": mf_node.replace("\n", " ") if mf_node else None,
+            "most_freq_node_freq": self.get_frequency(mf_node),
+            "in_degree_most_freq": self.get_in_degree(mf_node),
+            "out_degree_most_freq": self.get_out_degree(mf_node),
+        }
 
     def get_exec_edges(self):
         return [(u, v) for u, v, d in self.graph.edges(data=True) if d.get("type") == "exec"]
@@ -54,13 +69,13 @@ class TrajectoryGraphAnalyzer:
         return mean(degrees) if degrees else 0
 
     def get_frequency(self, node):
-        return len(self.graph.nodes[node].get("step_indices", []))
+        return len(self.graph.nodes[node].get("step_indices", [])) if node else 0
 
     def get_in_degree(self, node):
-        return self.graph.in_degree(node)
+        return self.graph.in_degree(node) if node else 0
 
     def get_out_degree(self, node):
-        return self.graph.out_degree(node)
+        return self.graph.out_degree(node) if node else 0
 
     def get_most_frequent_node(self):
         return max(
@@ -69,70 +84,57 @@ class TrajectoryGraphAnalyzer:
             default=None
         )
 
-    def get_longest_path(self):
+    def get_longest_simple_path(self):
         exec_graph = self.get_exec_graph()
         if nx.is_directed_acyclic_graph(exec_graph):
             path = nx.dag_longest_path(exec_graph)
-            return len(path)
+            return len(path) - 1
         else:
             condensed = nx.condensation(exec_graph)
             path = nx.dag_longest_path(condensed)
-            return len(path)
-
-    def aggregate_nodes_by_step_index(self):
-        step_sequence = []
-        for node in self.graph.nodes(data=True):
-            step_indices = node[1].get("step_indices", [])
-            for idx in step_indices:
-                step_sequence.append((idx, node[1]))
-        step_sequence.sort(key=lambda x: x[0])
-        ordered_nodes = [node for _, node in step_sequence]
-        return ordered_nodes
+            return len(path) - 1
 
     def extract_phase_sequence(self):
-        ordered_nodes = self.aggregate_nodes_by_step_index()
-        phase_sequence = []
-        prev_phase = None
-        for node in ordered_nodes:
-            curr_phase = node.get('phase')
-            if curr_phase and curr_phase != "general" and curr_phase != prev_phase:
-                phase_sequence.append(curr_phase)
-                prev_phase = curr_phase
-        return phase_sequence
+        step_sequence = []
+        for node in self.graph.nodes(data=True):
+            for idx in node[1].get("step_indices", []):
+                step_sequence.append((idx, node[1]))
+        step_sequence.sort(key=lambda x: x[0])
+        seq, prev = [], None
+        for _, node in step_sequence:
+            curr = node.get("phase")
+            if curr and curr != "general" and curr != prev:
+                seq.append(curr)
+                prev = curr
+        return seq
 
     def extract_label_sequence(self):
-        ordered_nodes = self.aggregate_nodes_by_step_index()
-        label_sequence = []
-        for node in ordered_nodes:
-            label = node.get('label', 'Unknown Node').replace('\n', ': ').strip()
-            label_sequence.append(label)
-        return label_sequence
+        step_sequence = []
+        for node in self.graph.nodes(data=True):
+            for idx in node[1].get("step_indices", []):
+                step_sequence.append((idx, node[1]))
+        step_sequence.sort(key=lambda x: x[0])
+        return [n.get("label", "Unknown").replace('\n', ': ').strip() for _, n in step_sequence]
 
-
+# --------------------------- GSP Miner ---------------------------
 class SequentialPatternMiner:
     def __init__(self, sequences):
         self.sequences = sequences
 
     def find_frequent_patterns(self, min_support=0.3):
         if len(self.sequences) <= 1:
-            print("⚠️ Warning: Only one transaction found. GSP requires multiple transactions.")
+            print("\u26a0\ufe0f Only one transaction. Returning self.")
             if self.sequences:
                 return [{tuple(self.sequences[0]): 1}]
             else:
                 return []
-        try:
-            gsp = GSP(self.sequences)
-            return gsp.search(min_support)
-        except ValueError as e:
-            print(f"⚠️ GSP Error: {e}")
-            if self.sequences:
-                return [{tuple(self.sequences[0]): 1}]
-            return []
+        gsp = GSP(self.sequences)
+        return gsp.search(min_support)
 
     def flatten_patterns(self, patterns):
         flat = []
         for d in patterns:
-            flat.extend(d.items())  # Each dict: {pattern: freq}
+            flat.extend(d.items())
         return flat
 
     def get_most_frequent_patterns(self, patterns):
@@ -150,59 +152,83 @@ class SequentialPatternMiner:
         return [(pat, freq) for pat, freq in flat if len(pat) == max_len]
 
 
+# --------------------------- Main Analysis ---------------------------
 if __name__ == "__main__":
-    instance_dir = "graphs/unsubmitted/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/"
+    user = getpass.getuser()
+    instance_dir = f"graphs/{user}"
+    out_dir = os.path.join(instance_dir, "analysis")
+    os.makedirs(out_dir, exist_ok=True)
 
-    phase_sequences = []
-    label_sequences = []
+    resolve_states = ["resolved", "unresolved", "unsubmitted"]
+    difficulty_rename = {
+        "<15 min fix": "easy",
+        "15 min - 1 hour": "medium",
+        "1-4 hours": "hard",
+        ">4 hours": "very_hard"
+    }
+
+    categories = defaultdict(lambda: {"phases": [], "labels": [], "metrics": [], "freq_nodes": Counter()})
+    rows = []
 
     for root, _, files in os.walk(instance_dir):
         for fname in files:
-            if fname.endswith(".json"):
-                json_path = os.path.join(root, fname)
-                with open(json_path, "r") as f:
-                    data = json.load(f)
+            if not fname.endswith(".json"): continue
+            with open(os.path.join(root, fname)) as f:
+                data = json.load(f)
+            analyzer = TrajectoryGraphAnalyzer(data)
+            metrics = analyzer.get_metric_dict()
+            phases = analyzer.extract_phase_sequence()
+            labels = analyzer.extract_label_sequence()
+            mf_node = metrics["most_freq_node"]
+            freq_node = mf_node.split(":")[-1].strip() if mf_node else "Unknown"
 
-                print(f"\nProcessing: {fname}")
-                analyzer = TrajectoryGraphAnalyzer(data)
+            resolution = data.get("graph", {}).get("resolution_status", "unknown")
+            difficulty_raw = data.get("graph", {}).get("difficulty", "unknown")
+            difficulty = difficulty_rename.get(difficulty_raw, difficulty_raw)
 
-                phase_seq = analyzer.extract_phase_sequence()
-                label_seq = analyzer.extract_label_sequence()
+            keys = [resolution, difficulty, f"{resolution}_{difficulty}"]
+            for k in keys:
+                categories[k]["phases"].append(phases)
+                categories[k]["labels"].append(labels)
+                categories[k]["metrics"].append(metrics)
+                categories[k]["freq_nodes"][freq_node] += 1
 
-                print("Phase Sequence:", phase_seq)
+            metrics["resolution"] = resolution
+            metrics["difficulty"] = difficulty
+            metrics["instance"] = data.get("graph", {}).get("instance_name")
+            rows.append(metrics)
 
-                phase_sequences.append(phase_seq)
-                label_sequences.append(label_seq)
+    df = pd.DataFrame(rows)
+    df.to_csv(os.path.join(out_dir, "trajectory_metrics.csv"), index=False)
 
-                print("Graph Metrics:")
-                print("Node Count:", analyzer.get_node_count())
-                print("Edge Count:", analyzer.get_edge_count())
-                print("Execution Edge Count:", len(analyzer.get_exec_edges()))        
-                print("Loop Count:", analyzer.get_loop_count())
-                print("Max Loop Length:", analyzer.get_max_loop_length())
-                print("Min Loop Length:", analyzer.get_min_loop_length())
-                print("Avg Loop Length:", analyzer.get_avg_loop_length())
-                print("Avg Degree:", analyzer.get_avg_degree())
-                print("Most Frequent Node:", analyzer.get_most_frequent_node())
-                print("Longest Path Length:", analyzer.get_longest_path())
-                print("Most Frequent Node Frequency:", analyzer.get_frequency(analyzer.get_most_frequent_node()))
-                print("In-Degree of Most Frequent Node:", analyzer.get_in_degree(analyzer.get_most_frequent_node()))
-                print("Out-Degree of Most Frequent Node:", analyzer.get_out_degree(analyzer.get_most_frequent_node()))
-                print("\n" + "="*50 + "\n")
+    for k, v in categories.items():
+        filename = k.replace(" ", "_").replace("<", "lt").replace(">", "gt").replace("/", "-")
+        with open(os.path.join(out_dir, f"{filename}.txt"), "w") as fout:
+            fout.write(f"===== Category: {k} ({len(v['phases'])} instances) =====\n")
+            if not v["metrics"]:
+                fout.write("No data.\n")
+                continue
 
-    # Sequential pattern mining
-    print("\nFrequent Phase Patterns:")
-    miner = SequentialPatternMiner(phase_sequences)
-    phase_patterns = miner.find_frequent_patterns(min_support=0.3)
-    for pattern in phase_patterns:
-        print(pattern)
+            fout.write("\n-- Averaged Metrics --\n")
+            df_k = pd.DataFrame(v["metrics"])
+            fout.write(df_k.drop(columns=["most_freq_node", "instance"]).mean(numeric_only=True).to_string())
 
-    most_freq = miner.get_most_frequent_patterns(phase_patterns)
-    print("\nMost Frequent Phase Pattern(s):")
-    for p, f in most_freq:
-        print(f"{p}: {f}")
+            fout.write("\n\n-- Phase Patterns --\n")
+            pm = SequentialPatternMiner(v["phases"])
+            ppat = pm.find_frequent_patterns()
+            for p, f in pm.get_most_frequent_patterns(ppat):
+                fout.write(f"Most Frequent: {p}: {f}\n")
+            for p, f in pm.get_longest_patterns(ppat):
+                fout.write(f"Longest: {p}: {f}\n")
 
-    longest = miner.get_longest_patterns(phase_patterns)
-    print("\nLongest Phase Pattern(s):")
-    for p, f in longest:
-        print(f"{p}: {f}")
+            fout.write("\n-- Action Patterns --\n")
+            am = SequentialPatternMiner(v["labels"])
+            apat = am.find_frequent_patterns()
+            for p, f in am.get_most_frequent_patterns(apat):
+                fout.write(f"Most Frequent: {p}: {f}\n")
+            for p, f in am.get_longest_patterns(apat):
+                fout.write(f"Longest: {p}: {f}\n")
+
+            fout.write("\n-- Most Frequent Nodes --\n")
+            for label, count in v["freq_nodes"].most_common():
+                fout.write(f"{label}: {count}\n")

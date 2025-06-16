@@ -7,6 +7,11 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from networkx.readwrite import json_graph
 from commandParser import CommandParser
+from datasets import load_dataset
+
+# Load SWE-bench_Verified difficulty mapping
+swe_bench_ds = load_dataset("princeton-nlp/SWE-bench_Verified", split="test")
+difficulty_lookup = {row["instance_id"]: row["difficulty"] for row in swe_bench_ds}
 
 def hash_node_signature(label, args, state):
     normalized = json.dumps({"label": label, "args": args, "state": state}, sort_keys=True)
@@ -128,9 +133,11 @@ def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix:
 
     build_hierarchical_edges(G, localization_nodes)
 
+    instance_name = os.path.basename(output_prefix)
     resolution_status = determine_resolution_status(output_prefix, eval_report_path)
     G.graph["resolution_status"] = resolution_status
-    G.graph["instance_name"] = os.path.basename(output_prefix)
+    G.graph["instance_name"] = instance_name
+    G.graph["difficulty"] = difficulty_lookup.get(instance_name, "unknown")
 
     os.makedirs(os.path.dirname(output_prefix), exist_ok=True)
     with open(output_prefix + ".json", "w") as f:
@@ -251,7 +258,7 @@ if __name__ == "__main__":
     with open(traj_file, "r") as f:
         traj_data = json.load(f)
 
-    output_prefix = traj_file.replace("trajectories", "graphs").replace(".traj", "")
+    output_prefix = traj_file.replace("trajectories", "graphs/samples").replace(".traj", "")
     os.makedirs(os.path.dirname(output_prefix), exist_ok=True)
 
     parser = CommandParser()
