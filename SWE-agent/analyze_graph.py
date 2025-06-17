@@ -18,6 +18,7 @@ class TrajectoryGraphAnalyzer:
 
     def get_metric_dict(self):
         mf_node = self.get_most_frequent_node()
+        loc = self.get_localization_summary()
         return {
             "node_count": self.graph.number_of_nodes(),
             "edge_count": self.graph.number_of_edges(),
@@ -32,6 +33,9 @@ class TrajectoryGraphAnalyzer:
             "most_freq_node_freq": self.get_frequency(mf_node),
             "in_degree_most_freq": self.get_in_degree(mf_node),
             "out_degree_most_freq": self.get_out_degree(mf_node),
+            "loc_focus_ratio": loc["focus_ratio"],
+            "loc_dominant_zone": loc["dominant_zone"],
+            "loc_cluster_num": loc["num_clusters"],
             "total_execution_time": self.get_total_execution_time(),
         }
 
@@ -122,6 +126,72 @@ class TrajectoryGraphAnalyzer:
         for _, data in self.graph.nodes(data=True):
             total += sum(data.get("execution_time", []))
         return round(total, 2)
+    
+    def get_localization_summary(self):
+        """
+        Returns:
+        - focus_ratio: percent of actions that are localization
+        - dominant_zone: early/middle/late/mixed/none
+        - num_clusters: number of contiguous localization clusters
+        """
+        # Build ordered list of action phases per step index
+        steps = []
+        for node in self.graph.nodes(data=True):
+            for idx in node[1].get("step_indices", []):
+                steps.append((idx, node[1].get("phase", "general")))
+        steps.sort(key=lambda x: x[0])
+        phases = [p for _, p in steps]
+        total_actions = len(phases)
+        if total_actions == 0:
+            return {
+                "focus_ratio": 0,
+                "dominant_zone": "none",
+                "num_clusters": 0
+            }
+
+        # Binning for dominant zone
+        bins = [0, 0, 0]  # early, middle, late
+
+        # Clusters
+        clusters = []
+        current = 0
+
+        for i, p in enumerate(phases):
+            if p == "localization":
+                if i < total_actions // 3:
+                    bins[0] += 1
+                elif i < 2 * total_actions // 3:
+                    bins[1] += 1
+                else:
+                    bins[2] += 1
+
+                current += 1
+            else:
+                if current > 0:
+                    clusters.append(current)
+                    current = 0
+
+        if current > 0:
+            clusters.append(current)
+
+        total_loc = sum(bins)
+        ratio = round(total_loc / total_actions, 2)
+
+        if total_loc == 0:
+            dominant = "none"
+        else:
+            max_b = max(bins)
+            if max_b / total_loc >= 0.5:
+                dominant = ["early", "middle", "late"][bins.index(max_b)]
+            else:
+                dominant = "mixed"
+
+        return {
+            "focus_ratio": ratio,
+            "dominant_zone": dominant,
+            "num_clusters": len(clusters)
+        }
+
 
 # --------------------------- GSP Miner ---------------------------
 class SequentialPatternMiner:
@@ -166,7 +236,6 @@ if __name__ == "__main__":
     out_dir = os.path.join(instance_dir, "analysis")
     os.makedirs(out_dir, exist_ok=True)
 
-    resolve_states = ["resolved", "unresolved", "unsubmitted"]
     difficulty_rename = {
         "<15 min fix": "easy",
         "15 min - 1 hour": "medium",
@@ -174,14 +243,22 @@ if __name__ == "__main__":
         ">4 hours": "very_hard"
     }
 
-    categories = defaultdict(lambda: {"phases": [], "labels": [], "metrics": [], "freq_nodes": Counter()})
+    categories = defaultdict(lambda: {
+        "phases": [],
+        "labels": [],
+        "metrics": [],
+        "freq_nodes": Counter(),
+        "dominant_zones": []
+    })
     rows = []
 
     for root, _, files in os.walk(instance_dir):
         for fname in files:
-            if not fname.endswith(".json"): continue
+            if not fname.endswith(".json"):
+                continue
             with open(os.path.join(root, fname)) as f:
                 data = json.load(f)
+
             analyzer = TrajectoryGraphAnalyzer(data)
             metrics = analyzer.get_metric_dict()
             phases = analyzer.extract_phase_sequence()
@@ -199,6 +276,7 @@ if __name__ == "__main__":
                 categories[k]["labels"].append(labels)
                 categories[k]["metrics"].append(metrics)
                 categories[k]["freq_nodes"][freq_node] += 1
+                categories[k]["dominant_zones"].append(metrics["loc_dominant_zone"])
 
             metrics["difficulty"] = difficulty
             metrics["resolution"] = resolution
@@ -216,11 +294,34 @@ if __name__ == "__main__":
                 fout.write("No data.\n")
                 continue
 
-            fout.write("\n-- Averaged Metrics --\n")
             df_k = pd.DataFrame(v["metrics"])
-            fout.write(df_k.drop(columns=["most_freq_node", "instance"]).mean(numeric_only=True).to_string())
 
-            fout.write("\n\n-- Phase Patterns --\n")
+            # ---------- General Metrics ----------
+            fout.write("\n-- Averaged General Metrics --\n")
+            # Drop loc-focused fields from this block to avoid duplication
+            drop_cols = ["most_freq_node", "instance", "loc_focus_ratio", "loc_dominant_zone", "loc_cluster_num"]
+            general_avg = df_k.drop(columns=drop_cols).mean(numeric_only=True).round(2)
+            fout.write(general_avg.to_string())
+
+            # ---------- Localization Focus & Clusters ----------
+            fout.write("\n\n-- Localization Focus & Clusters --\n")
+            mean_focus = df_k["loc_focus_ratio"].mean().round(2)
+            mean_clusters = df_k["loc_cluster_num"].mean().round(2)
+
+            # Count dominant zones
+            zone_counter = Counter(v["dominant_zones"])
+            total = sum(zone_counter.values())
+            zone_percents = {zone: f"{(count/total*100):.1f}%" for zone, count in zone_counter.items()}
+
+            fout.write(f"Mean Localization Focus Ratio: {mean_focus}\n")
+            fout.write(f"Mean Number of Localization Clusters: {mean_clusters}\n")
+            fout.write("Dominant Zone Distribution:\n")
+            for zone in ["early", "middle", "late", "mixed", "none"]:
+                percent = zone_percents.get(zone, "0.0%")
+                fout.write(f"  {zone}: {percent}\n")
+
+            # ---------- Phase Patterns ----------
+            fout.write("\n-- Phase Patterns --\n")
             pm = SequentialPatternMiner(v["phases"])
             ppat = pm.find_frequent_patterns()
             for p, f in pm.get_most_frequent_patterns(ppat):
@@ -228,6 +329,7 @@ if __name__ == "__main__":
             for p, f in pm.get_longest_patterns(ppat):
                 fout.write(f"Longest: {p}: {f}\n")
 
+            # ---------- Action Patterns ----------
             fout.write("\n-- Action Patterns --\n")
             am = SequentialPatternMiner(v["labels"])
             apat = am.find_frequent_patterns()
@@ -236,6 +338,7 @@ if __name__ == "__main__":
             for p, f in am.get_longest_patterns(apat):
                 fout.write(f"Longest: {p}: {f}\n")
 
+            # ---------- Most Frequent Nodes ----------
             fout.write("\n-- Most Frequent Nodes --\n")
             for label, count in v["freq_nodes"].most_common():
                 fout.write(f"{label}: {count}\n")
