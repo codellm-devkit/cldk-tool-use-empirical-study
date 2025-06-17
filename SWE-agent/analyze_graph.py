@@ -32,6 +32,7 @@ class TrajectoryGraphAnalyzer:
             "most_freq_node_freq": self.get_frequency(mf_node),
             "in_degree_most_freq": self.get_in_degree(mf_node),
             "out_degree_most_freq": self.get_out_degree(mf_node),
+            "total_execution_time": self.get_total_execution_time(),
         }
 
     def get_exec_edges(self):
@@ -116,6 +117,12 @@ class TrajectoryGraphAnalyzer:
         step_sequence.sort(key=lambda x: x[0])
         return [n.get("label", "Unknown").replace('\n', ': ').strip() for _, n in step_sequence]
 
+    def get_total_execution_time(self):
+        total = 0.0
+        for _, data in self.graph.nodes(data=True):
+            total += sum(data.get("execution_time", []))
+        return round(total, 2)
+
 # --------------------------- GSP Miner ---------------------------
 class SequentialPatternMiner:
     def __init__(self, sequences):
@@ -193,8 +200,8 @@ if __name__ == "__main__":
                 categories[k]["metrics"].append(metrics)
                 categories[k]["freq_nodes"][freq_node] += 1
 
-            metrics["resolution"] = resolution
             metrics["difficulty"] = difficulty
+            metrics["resolution"] = resolution
             metrics["instance"] = data.get("graph", {}).get("instance_name")
             rows.append(metrics)
 

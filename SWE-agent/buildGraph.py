@@ -8,6 +8,7 @@ from pathlib import Path
 from networkx.readwrite import json_graph
 from commandParser import CommandParser
 from datasets import load_dataset
+from collections import defaultdict
 
 # Load SWE-bench_Verified difficulty mapping
 swe_bench_ds = load_dataset("princeton-nlp/SWE-bench_Verified", split="test")
@@ -146,26 +147,63 @@ def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix:
     _draw_graph(G, output_prefix + ".png")
 
 def build_hierarchical_edges(G: nx.MultiDiGraph, localization_nodes):
-    view_nodes = []
+    # Split path nodes and range nodes
+    path_nodes = []  # (node_id, Path)
+    range_nodes_by_path = defaultdict(list)  # path_str -> [(node_id, [start, end])]
+
     for node in localization_nodes:
-        path = G.nodes[node].get("args", {}).get("path")
+        data = G.nodes[node]
+        path = data.get("args", {}).get("path")
+        view_range = data.get("args", {}).get("view_range")
         if path:
-            view_nodes.append((node, Path(path), "view_range" in G.nodes[node].get("args", {})))
+            path_obj = Path(path)
+            if view_range is None:
+                path_nodes.append((node, path_obj))
+            else:
+                range_nodes_by_path[str(path_obj)].append((node, view_range))
 
-    view_nodes.sort(key=lambda x: len(x[1].parts))
-    path_to_node = {str(path): node for node, path, is_range in view_nodes if not is_range}
+    # Path hierarchy: connect parent path to child path by containment
+    for child_node, child_path in path_nodes:
+        best_parent_node = None
+        best_parent_path = None
+        for parent_node, parent_path in path_nodes:
+            if parent_node == child_node:
+                continue
+            if (
+                len(parent_path.parts) < len(child_path.parts)
+                and child_path.parts[:len(parent_path.parts)] == parent_path.parts
+            ):
+                if best_parent_path is None or len(parent_path.parts) > len(best_parent_path.parts):
+                    best_parent_node = parent_node
+                    best_parent_path = parent_path
+        if best_parent_node:
+            G.add_edge(best_parent_node, child_node, type="hier")
 
-    for node, path, is_range in view_nodes:
-        if is_range:
-            parent = path_to_node.get(str(path))
-            if parent:
-                G.add_edge(parent, node, type="hier")
-        else:
-            for parent_path in path.parents:
-                parent_node = path_to_node.get(str(parent_path))
-                if parent_node:
-                    G.add_edge(parent_node, node, type="hier")
-                    break
+    # For each path:
+    #  - attach range nodes by nesting (subset)
+    #  - mark outermost ranges (not nested in any other)
+    path_to_node = {str(p): n for n, p in path_nodes}
+
+    for path_str, range_nodes in range_nodes_by_path.items():
+        is_nested = {n: False for n, _ in range_nodes}
+
+        # detect nesting: mark inner ranges
+        for i, (node_i, r_i) in enumerate(range_nodes):
+            for j, (node_j, r_j) in enumerate(range_nodes):
+                if i == j:
+                    continue
+                a1, a2 = r_i
+                b1, b2 = r_j
+                if b1 >= a1 and b2 <= a2:
+                    G.add_edge(node_i, node_j, type="hier")
+                    is_nested[node_j] = True
+
+        # link only outermost ranges to path node (if exists)
+        path_node = path_to_node.get(path_str)
+        if path_node:
+            for node, _ in range_nodes:
+                if not is_nested[node]:
+                    G.add_edge(path_node, node, type="hier")
 
 def _draw_graph(G: nx.MultiDiGraph, png_path: str):
     from matplotlib.patches import Patch
@@ -242,7 +280,7 @@ def _draw_graph(G: nx.MultiDiGraph, png_path: str):
     plt.close()
 
 if __name__ == "__main__":
-    instance_dir = "trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/astropy__astropy-13398"
+    instance_dir = "trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/astropy__astropy-8872"
     eval_report_path = "sb-cli-reports/Subset.swe_bench_verified__test__evaluate_swev.json"
 
     traj_file = None

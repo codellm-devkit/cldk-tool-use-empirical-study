@@ -1,28 +1,50 @@
-from collections import defaultdict, Counter
+import networkx as nx
 
-def aggregate_repeated_ngrams(sequences, min_count=2, max_n=4):
-    pattern_counter = Counter()
-    for seq in sequences:
-        local_seen = set()
-        for n in range(2, max_n + 1):
-            for i in range(len(seq) - n + 1):
-                pat = tuple(seq[i:i+n])
-                if seq.count(pat) >= min_count:
-                    local_seen.add(pat)
-        for pat in local_seen:
-            pattern_counter[pat] += 1
-    return pattern_counter
+# Create a directed graph
+G = nx.DiGraph()
+G.add_edges_from([
+    ('A', 'B'),
+    ('B', 'C'),
+    ('C', 'D'),
+    ('C', 'E'),
+    ('D', 'F'),
+    ('E', 'F')
+])
 
-sequences = [
-    ['A', 'B', 'C', 'A', 'B', 'C', 'D'],
-    ['A', 'B', 'C', 'A', 'B', 'C', 'D'],
-    ['A', 'B', 'C', 'A', 'B', 'C'],
-    ['A', 'B', 'C', 'D'],
-    ['A', 'B', 'C']
-]
-if __name__ == "__main__":
-    result = aggregate_repeated_ngrams(sequences, min_count=2, max_n=4)
-    print("Aggregated Repeated n-grams:", result)
+# Use built-in DFS:
+dfs_nodes = list(nx.dfs_preorder_nodes(G, source='A'))
+print("DFS traversal starting at A:", dfs_nodes)
+
+topo_order = list(nx.topological_sort(G))
+print("Topological Order:", topo_order)
+
+# Check if a graph is a DAG:
+print("Is DAG:", nx.is_directed_acyclic_graph(G))
+# from collections import defaultdict, Counter
+
+# def aggregate_repeated_ngrams(sequences, min_count=2, max_n=4):
+#     pattern_counter = Counter()
+#     for seq in sequences:
+#         local_seen = set()
+#         for n in range(2, max_n + 1):
+#             for i in range(len(seq) - n + 1):
+#                 pat = tuple(seq[i:i+n])
+#                 if seq.count(pat) >= min_count:
+#                     local_seen.add(pat)
+#         for pat in local_seen:
+#             pattern_counter[pat] += 1
+#     return pattern_counter
+
+# sequences = [
+#     ['A', 'B', 'C', 'A', 'B', 'C', 'D'],
+#     ['A', 'B', 'C', 'A', 'B', 'C', 'D'],
+#     ['A', 'B', 'C', 'A', 'B', 'C'],
+#     ['A', 'B', 'C', 'D'],
+#     ['A', 'B', 'C']
+# ]
+# if __name__ == "__main__":
+#     result = aggregate_repeated_ngrams(sequences, min_count=2, max_n=4)
+#     print("Aggregated Repeated n-grams:", result)
 # import getpass
 
 # print(getpass.getuser())
