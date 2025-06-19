@@ -147,8 +147,7 @@ def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix:
     _draw_graph(G, output_prefix + ".png")
 
 def build_hierarchical_edges(G: nx.MultiDiGraph, localization_nodes):
-    # Split path nodes and range nodes
-    path_nodes = []  # (node_id, Path)
+    path_nodes = []  # [(node_id, Path)]
     range_nodes_by_path = defaultdict(list)  # path_str -> [(node_id, [start, end])]
 
     for node in localization_nodes:
@@ -162,26 +161,22 @@ def build_hierarchical_edges(G: nx.MultiDiGraph, localization_nodes):
             else:
                 range_nodes_by_path[str(path_obj)].append((node, view_range))
 
-    # Path hierarchy: connect parent path to child path by containment
+    # --- 1) Path hierarchy by folder containment ---
     for child_node, child_path in path_nodes:
         best_parent_node = None
         best_parent_path = None
         for parent_node, parent_path in path_nodes:
             if parent_node == child_node:
                 continue
-            if (
-                len(parent_path.parts) < len(child_path.parts)
-                and child_path.parts[:len(parent_path.parts)] == parent_path.parts
-            ):
+            if (len(parent_path.parts) < len(child_path.parts) and
+                child_path.parts[:len(parent_path.parts)] == parent_path.parts):
                 if best_parent_path is None or len(parent_path.parts) > len(best_parent_path.parts):
                     best_parent_node = parent_node
                     best_parent_path = parent_path
         if best_parent_node:
             G.add_edge(best_parent_node, child_node, type="hier")
 
-    # For each path:
-    #  - attach range nodes by nesting (subset)
-    #  - mark outermost ranges (not nested in any other)
+    # --- 2) Range nodes: handle nesting + link outermost ---
     path_to_node = {str(p): n for n, p in path_nodes}
 
     for path_str, range_nodes in range_nodes_by_path.items():
@@ -198,12 +193,27 @@ def build_hierarchical_edges(G: nx.MultiDiGraph, localization_nodes):
                     G.add_edge(node_i, node_j, type="hier")
                     is_nested[node_j] = True
 
-        # link only outermost ranges to path node (if exists)
+        # link outermost ranges to:
+        #   - exact path node if exists
+        #   - else closest parent path node whose path contains this path
         path_node = path_to_node.get(path_str)
         if path_node:
             for node, _ in range_nodes:
                 if not is_nested[node]:
                     G.add_edge(path_node, node, type="hier")
+        else:
+            # No exact path node → find nearest ancestor
+            path_parts = Path(path_str).parts
+            best_ancestor_node = None
+            best_ancestor_depth = -1
+            for pn, pp in path_nodes:
+                if len(pp.parts) < len(path_parts) and path_parts[:len(pp.parts)] == pp.parts:
+                    if len(pp.parts) > best_ancestor_depth:
+                        best_ancestor_node = pn
+                        best_ancestor_depth = len(pp.parts)
+            for node, _ in range_nodes:
+                if not is_nested[node] and best_ancestor_node:
+                    G.add_edge(best_ancestor_node, node, type="hier")
 
 def _draw_graph(G: nx.MultiDiGraph, png_path: str):
     from matplotlib.patches import Patch
@@ -280,7 +290,7 @@ def _draw_graph(G: nx.MultiDiGraph, png_path: str):
     plt.close()
 
 if __name__ == "__main__":
-    instance_dir = "trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/astropy__astropy-8872"
+    instance_dir = "trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/astropy__astropy-13579"
     eval_report_path = "sb-cli-reports/Subset.swe_bench_verified__test__evaluate_swev.json"
 
     traj_file = None
