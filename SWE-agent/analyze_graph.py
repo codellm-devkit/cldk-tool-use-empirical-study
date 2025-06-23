@@ -36,6 +36,7 @@ class TrajectoryGraphAnalyzer:
             "loc_focus_ratio": loc["focus_ratio"],
             "loc_dominant_zone": loc["dominant_zone"],
             "loc_cluster_num": loc["num_clusters"],
+            "loc_avg_node_freq": loc["loc_avg_node_freq"],
             "total_execution_time": self.get_total_execution_time(),
         }
 
@@ -133,46 +134,38 @@ class TrajectoryGraphAnalyzer:
         - focus_ratio: percent of actions that are localization
         - dominant_zone: early/middle/late/mixed/none
         - num_clusters: number of contiguous localization clusters
+        - loc_avg_node_freq: mean revisit frequency of unique localization nodes
         """
-        # Build ordered list of action phases per step index
+        # Ordered phases
         steps = []
-        for node in self.graph.nodes(data=True):
-            for idx in node[1].get("step_indices", []):
-                steps.append((idx, node[1].get("phase", "general")))
+        loc_nodes_freq = []
+        for node_id, data in self.graph.nodes(data=True):
+            phase = data.get("phase", "general")
+            freq = len(data.get("step_indices", []))
+            if phase == "localization":
+                loc_nodes_freq.append(freq)
+            for idx in data.get("step_indices", []):
+                steps.append((idx, phase))
         steps.sort(key=lambda x: x[0])
         phases = [p for _, p in steps]
+
         total_actions = len(phases)
         if total_actions == 0:
-            return {
-                "focus_ratio": 0,
-                "dominant_zone": "none",
-                "num_clusters": 0
-            }
+            return dict(focus_ratio=0, dominant_zone="none", num_clusters=0, loc_avg_node_freq=0)
 
-        # Binning for dominant zone
-        bins = [0, 0, 0]  # early, middle, late
-
-        # Clusters
-        clusters = []
-        current = 0
-
+        # Bins + clusters
+        bins = [0, 0, 0]
+        clusters, current = [], 0
         for i, p in enumerate(phases):
             if p == "localization":
-                if i < total_actions // 3:
-                    bins[0] += 1
-                elif i < 2 * total_actions // 3:
-                    bins[1] += 1
-                else:
-                    bins[2] += 1
-
+                if i < total_actions // 3: bins[0] += 1
+                elif i < 2 * total_actions // 3: bins[1] += 1
+                else: bins[2] += 1
                 current += 1
             else:
-                if current > 0:
-                    clusters.append(current)
-                    current = 0
-
-        if current > 0:
-            clusters.append(current)
+                if current > 0: clusters.append(current)
+                current = 0
+        if current > 0: clusters.append(current)
 
         total_loc = sum(bins)
         ratio = round(total_loc / total_actions, 2)
@@ -181,16 +174,16 @@ class TrajectoryGraphAnalyzer:
             dominant = "none"
         else:
             max_b = max(bins)
-            if max_b / total_loc >= 0.5:
-                dominant = ["early", "middle", "late"][bins.index(max_b)]
-            else:
-                dominant = "mixed"
+            dominant = ["early", "middle", "late"][bins.index(max_b)] if max_b / total_loc >= 0.5 else "mixed"
 
-        return {
-            "focus_ratio": ratio,
-            "dominant_zone": dominant,
-            "num_clusters": len(clusters)
-        }
+        loc_avg_freq = round(mean(loc_nodes_freq), 2) if loc_nodes_freq else 0
+
+        return dict(
+            focus_ratio=ratio,
+            dominant_zone=dominant,
+            num_clusters=len(clusters),
+            loc_avg_node_freq=loc_avg_freq
+        )
 
 
 # --------------------------- GSP Miner ---------------------------
@@ -248,7 +241,8 @@ if __name__ == "__main__":
         "labels": [],
         "metrics": [],
         "freq_nodes": Counter(),
-        "dominant_zones": []
+        "dominant_zones": [],
+        "top_loc_info": []  # NEW: store tuple of (id, avg_loc_freq, loc_percent, dominant)
     })
     rows = []
 
@@ -270,17 +264,24 @@ if __name__ == "__main__":
             difficulty_raw = data.get("graph", {}).get("difficulty", "unknown")
             difficulty = difficulty_rename.get(difficulty_raw, difficulty_raw)
 
+            inst_id = data.get("graph", {}).get("instance_name")
+            avg_loc_freq = metrics["loc_avg_node_freq"]
+            loc_focus_ratio = metrics["loc_focus_ratio"]
+            dominant = metrics["loc_dominant_zone"]
+
             keys = [resolution, difficulty, f"{resolution}_{difficulty}"]
             for k in keys:
                 categories[k]["phases"].append(phases)
                 categories[k]["labels"].append(labels)
                 categories[k]["metrics"].append(metrics)
                 categories[k]["freq_nodes"][freq_node] += 1
-                categories[k]["dominant_zones"].append(metrics["loc_dominant_zone"])
+                categories[k]["dominant_zones"].append(dominant)
+                if avg_loc_freq > 1:
+                    categories[k]["top_loc_info"].append((inst_id, avg_loc_freq, loc_focus_ratio, dominant))
 
             metrics["difficulty"] = difficulty
             metrics["resolution"] = resolution
-            metrics["instance"] = data.get("graph", {}).get("instance_name")
+            metrics["instance"] = inst_id
             rows.append(metrics)
 
     df = pd.DataFrame(rows)
@@ -298,8 +299,9 @@ if __name__ == "__main__":
 
             # ---------- General Metrics ----------
             fout.write("\n-- Averaged General Metrics --\n")
-            # Drop loc-focused fields from this block to avoid duplication
-            drop_cols = ["most_freq_node", "instance", "loc_focus_ratio", "loc_dominant_zone", "loc_cluster_num"]
+            drop_cols = ["most_freq_node", "instance",
+                         "loc_focus_ratio", "loc_dominant_zone",
+                         "loc_cluster_num", "loc_avg_node_freq"]
             general_avg = df_k.drop(columns=drop_cols).mean(numeric_only=True).round(2)
             fout.write(general_avg.to_string())
 
@@ -308,7 +310,6 @@ if __name__ == "__main__":
             mean_focus = df_k["loc_focus_ratio"].mean().round(2)
             mean_clusters = df_k["loc_cluster_num"].mean().round(2)
 
-            # Count dominant zones
             zone_counter = Counter(v["dominant_zones"])
             total = sum(zone_counter.values())
             zone_percents = {zone: f"{(count/total*100):.1f}%" for zone, count in zone_counter.items()}
@@ -319,6 +320,15 @@ if __name__ == "__main__":
             for zone in ["early", "middle", "late", "mixed", "none"]:
                 percent = zone_percents.get(zone, "0.0%")
                 fout.write(f"  {zone}: {percent}\n")
+
+            # ---------- NEW: Top instances by loc avg freq > 1 ----------
+            fout.write("\nTop Instances with High Localization Node Frequency (>1):\n")
+            top_freqs = sorted(v["top_loc_info"], key=lambda x: x[1], reverse=True)[:5]
+            if not top_freqs:
+                fout.write("  None found.\n")
+            else:
+                for inst, freq, focus, dom in top_freqs:
+                    fout.write(f"  {inst} | AvgFreq: {freq:.2f} | LocPercent: {focus:.2f} | Dominant: {dom}\n")
 
             # ---------- Phase Patterns ----------
             fout.write("\n-- Phase Patterns --\n")
