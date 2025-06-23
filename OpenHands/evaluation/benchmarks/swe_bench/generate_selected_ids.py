@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 import json
 from pathlib import Path
@@ -31,7 +30,7 @@ def write_plain_list(iids, output_path: Path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate selected_ids TOML snippet from OpenHands output")
-    parser.add_argument("jsonl", type=Path, help="Path to output.jsonl")
+    parser.add_argument("jsonl", type=Path, default="../../evaluation_outputs/outputs/princeton-nlp__SWE-bench_Verified-test/CodeActAgent/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/output.jsonl")
     parser.add_argument("--toml", type=Path, default=Path("selected_ids.toml"), help="Path to write TOML snippet")
     parser.add_argument("--list", type=Path, default=Path("completed_ids.txt"), help="Optional: plain list")
     args = parser.parse_args()
