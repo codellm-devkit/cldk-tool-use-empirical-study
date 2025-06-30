@@ -1,0 +1,61 @@
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index a44adfc760..93ca93a962 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -425,7 +425,8 @@ class SQLCompiler:
+                 # If the columns list is limited, then all combined queries
+                 # must have the same columns list. Set the selects defined on
+                 # the query on all combined queries, if not already set.
+-                if not compiler.query.values_select and self.query.values_select:
++                if (not compiler.query.values_select or 
++                    compiler.query.values_select != self.query.values_select) and self.query.values_select:
+                     compiler.query.set_values((
+                         *self.query.extra_select,
+                         *self.query.values_select,
+diff --git a/reproduce_issue.py b/reproduce_issue.py
+new file mode 100644
+index 0000000000..64513a9cc1
+--- /dev/null
++++ b/reproduce_issue.py
+@@ -0,0 +1,41 @@
++
++import os
++import django
++from django.conf import settings
++
++if not settings.configured:
++    settings.configure(
++        INSTALLED_APPS=['django.contrib.contenttypes'],
++        DATABASES={
++            'default': {
++                'ENGINE': 'django.db.backends.sqlite3',
++                'NAME': ':memory:',
++            }
++        }
++    )
++    django.setup()
++
++from django.db import models
++
++class ReservedName(models.Model):
++    name = models.CharField(max_length=30)
++    order = models.IntegerField()
++
++    class Meta:
++        app_label = 'tests'
++
++def test_composed_values_list():
++    from django.db import connection
++    with connection.schema_editor() as editor:
++        editor.create_model(ReservedName)
++    try:
++        ReservedName.objects.create(name='a', order=2)
++        qs1 = ReservedName.objects.all()
++        print("First evaluation (name, order):", qs1.union(qs1).values_list('name', 'order').get())
++        print("Second evaluation (order only):", qs1.union(qs1).values_list('order').get())
++    finally:
++        with connection.schema_editor() as editor:
++            editor.delete_model(ReservedName)
++
++if __name__ == '__main__':
++    test_composed_values_list()

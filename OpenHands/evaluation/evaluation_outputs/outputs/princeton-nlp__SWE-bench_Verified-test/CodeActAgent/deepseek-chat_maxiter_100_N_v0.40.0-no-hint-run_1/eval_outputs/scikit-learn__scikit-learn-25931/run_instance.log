@@ -1,0 +1,115 @@
+2025-06-27 15:59:22,451 - INFO - Creating container for scikit-learn__scikit-learn-25931...
+2025-06-27 15:59:22,984 - INFO - Container for scikit-learn__scikit-learn-25931 created: 1b8e995739ca1238c203d6ae92ee3c470fa54f29059cde60d5f4a71885c8976f
+2025-06-27 15:59:23,227 - INFO - Container for scikit-learn__scikit-learn-25931 started: 1b8e995739ca1238c203d6ae92ee3c470fa54f29059cde60d5f4a71885c8976f
+2025-06-27 15:59:23,227 - INFO - Intermediate patch for scikit-learn__scikit-learn-25931 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/scikit-learn__scikit-learn-25931/patch.diff, now applying to container...
+2025-06-27 15:59:23,351 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:47: trailing whitespace.
+    
+Checking patch sklearn/ensemble/_iforest.py...
+Checking patch sklearn/ensemble/tests/test_iforest.py...
+Applied patch sklearn/ensemble/_iforest.py cleanly.
+Applied patch sklearn/ensemble/tests/test_iforest.py cleanly.
+warning: 1 line adds whitespace errors.
+
+2025-06-27 15:59:23,646 - INFO - Git diff before:
+diff --git a/sklearn/ensemble/_iforest.py b/sklearn/ensemble/_iforest.py
+index 4d6c1c3f0..86a41acc6 100644
+--- a/sklearn/ensemble/_iforest.py
++++ b/sklearn/ensemble/_iforest.py
+@@ -5,6 +5,7 @@
+ import numbers
+ import numpy as np
+ from scipy.sparse import issparse
++import warnings
+ from warnings import warn
+ from numbers import Integral, Real
+ 
+@@ -288,7 +289,9 @@ class IsolationForest(OutlierMixin, BaseBagging):
+             Fitted estimator.
+         """
+         self._validate_params()
+-        X = self._validate_data(X, accept_sparse=["csc"], dtype=tree_dtype)
++        with warnings.catch_warnings():
++            warnings.simplefilter("ignore", UserWarning)  # Skip feature name check
++            X = self._validate_data(X, accept_sparse=["csc"], dtype=tree_dtype)
+         if issparse(X):
+             # Pre-sort indices to avoid that each individual tree of the
+             # ensemble sorts the indices.
+@@ -345,7 +348,9 @@ class IsolationForest(OutlierMixin, BaseBagging):
+             return self
+ 
+         # else, define offset_ wrt contamination parameter
+-        self.offset_ = np.percentile(self.score_samples(X), 100.0 * self.contamination)
++        with warnings.catch_warnings():
++            warnings.simplefilter("ignore", UserWarning)  # Skip feature name check for training data
++            self.offset_ = np.percentile(self.score_samples(X), 100.0 * self.contamination)
+ 
+         return self
+ 
+diff --git a/sklearn/ensemble/tests/test_iforest.py b/sklearn/ensemble/tests/test_iforest.py
+index 5f046540f..3ebced05a 100644
+--- a/sklearn/ensemble/tests/test_iforest.py
++++ b/sklearn/ensemble/tests/test_iforest.py
+@@ -49,6 +49,18 @@ def test_iforest(global_random_seed):
+             ).predict(X_test)
+ 
+ 
++def test_iforest_feature_names_warning():
++    """Check that IsolationForest doesn't warn about feature names with DataFrames."""
++    pd = pytest.importorskip("pandas")
++    X = pd.DataFrame({"a": [-1.1, 0.3, 0.5, 100]})
++    
++    # Should not raise warning about feature names
++    with warnings.catch_warnings():
++        warnings.simplefilter("error", category=UserWarning)  # Only error on UserWarnings
++        warnings.filterwarnings("ignore", category=DeprecationWarning)  # Ignore pandas deprecation
++        IsolationForest(random_state=0, contamination=0.05).fit(X)
++
++
+ def test_iforest_sparse(global_random_seed):
+     """Check IForest for various parameter settings on sparse input."""
+     rng = check_random_state(global_random_seed)
+2025-06-27 15:59:23,647 - INFO - Eval script for scikit-learn__scikit-learn-25931 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/scikit-learn__scikit-learn-25931/eval.sh; copying to container...
+2025-06-27 15:59:33,687 - INFO - Test runtime: 9.96 seconds
+2025-06-27 15:59:33,688 - INFO - Test output for scikit-learn__scikit-learn-25931 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/scikit-learn__scikit-learn-25931/test_output.txt
+2025-06-27 15:59:33,752 - INFO - Git diff after:
+diff --git a/sklearn/ensemble/_iforest.py b/sklearn/ensemble/_iforest.py
+index 4d6c1c3f0..86a41acc6 100644
+--- a/sklearn/ensemble/_iforest.py
++++ b/sklearn/ensemble/_iforest.py
+@@ -5,6 +5,7 @@
+ import numbers
+ import numpy as np
+ from scipy.sparse import issparse
++import warnings
+ from warnings import warn
+ from numbers import Integral, Real
+ 
+@@ -288,7 +289,9 @@ class IsolationForest(OutlierMixin, BaseBagging):
+             Fitted estimator.
+         """
+         self._validate_params()
+-        X = self._validate_data(X, accept_sparse=["csc"], dtype=tree_dtype)
++        with warnings.catch_warnings():
++            warnings.simplefilter("ignore", UserWarning)  # Skip feature name check
++            X = self._validate_data(X, accept_sparse=["csc"], dtype=tree_dtype)
+         if issparse(X):
+             # Pre-sort indices to avoid that each individual tree of the
+             # ensemble sorts the indices.
+@@ -345,7 +348,9 @@ class IsolationForest(OutlierMixin, BaseBagging):
+             return self
+ 
+         # else, define offset_ wrt contamination parameter
+-        self.offset_ = np.percentile(self.score_samples(X), 100.0 * self.contamination)
++        with warnings.catch_warnings():
++            warnings.simplefilter("ignore", UserWarning)  # Skip feature name check for training data
++            self.offset_ = np.percentile(self.score_samples(X), 100.0 * self.contamination)
+ 
+         return self
+2025-06-27 15:59:33,752 - INFO - Git diff changed after running eval script
+2025-06-27 15:59:33,753 - INFO - Grading answer for scikit-learn__scikit-learn-25931...
+2025-06-27 15:59:33,753 - INFO - report: {'scikit-learn__scikit-learn-25931': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['sklearn/ensemble/tests/test_iforest.py::test_iforest_preserve_feature_names'], 'failure': []}, 'PASS_TO_PASS': {'success': ['sklearn/ensemble/tests/test_iforest.py::test_iforest[42]', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_sparse[42]', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_error', 'sklearn/ensemble/tests/test_iforest.py::test_recalculate_max_depth', 'sklearn/ensemble/tests/test_iforest.py::test_max_samples_attribute', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_parallel_regression[42]', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_performance[42]', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_works[42-0.25]', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_works[42-auto]', 'sklearn/ensemble/tests/test_iforest.py::test_max_samples_consistency', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_subsampled_features', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_average_path_length', 'sklearn/ensemble/tests/test_iforest.py::test_score_samples', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_warm_start', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_chunks_works1[42-0.25-3]', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_chunks_works1[42-auto-2]', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_chunks_works2[42-0.25-3]', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_chunks_works2[42-auto-2]', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_with_uniform_data', 'sklearn/ensemble/tests/test_iforest.py::test_iforest_with_n_jobs_does_not_segfault', 'sklearn/ensemble/tests/test_iforest.py::test_base_estimator_property_deprecated'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-25931: resolved: True
+2025-06-27 15:59:33,753 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-25931.20250627_135628...
+2025-06-27 15:59:48,942 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-25931.20250627_135628...
+2025-06-27 15:59:48,956 - INFO - Container sweb.eval.scikit-learn__scikit-learn-25931.20250627_135628 removed.

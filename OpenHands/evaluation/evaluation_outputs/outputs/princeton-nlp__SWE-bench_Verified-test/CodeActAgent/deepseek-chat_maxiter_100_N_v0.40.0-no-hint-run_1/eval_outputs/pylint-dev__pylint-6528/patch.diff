@@ -1,0 +1,50 @@
+diff --git a/pylint/lint/expand_modules.py b/pylint/lint/expand_modules.py
+index b20cd873c..09dca1298 100644
+--- a/pylint/lint/expand_modules.py
++++ b/pylint/lint/expand_modules.py
+@@ -122,17 +122,26 @@ def expand_modules(
+             not (modname.endswith(".__init__") or modname == "__init__")
+             and os.path.basename(filepath) == "__init__.py"
+         )
++        def _should_ignore(path: str, name: str) -> bool:
++            """Check if a file should be ignored based on all ignore patterns."""
++            return (name in ignore_list or 
++                    _is_in_ignore_list_re(name, ignore_list_re) or 
++                    _is_in_ignore_list_re(path, ignore_list_paths_re))
++
+         if has_init or is_namespace or is_directory:
++            # First filter by ignore patterns during file discovery
++            filtered_files = []
+             for subfilepath in modutils.get_module_files(
+-                os.path.dirname(filepath), ignore_list, list_all=is_namespace
++                os.path.dirname(filepath), [], list_all=is_namespace
+             ):
+                 if filepath == subfilepath:
+                     continue
+-                if _is_in_ignore_list_re(
+-                    os.path.basename(subfilepath), ignore_list_re
+-                ) or _is_in_ignore_list_re(subfilepath, ignore_list_paths_re):
+-                    continue
++                name = os.path.basename(subfilepath)
++                if not _should_ignore(subfilepath, name):
++                    filtered_files.append(subfilepath)
+ 
++            # Process the filtered files
++            for subfilepath in filtered_files:
+                 modpath = _modpath_from_file(
+                     subfilepath, is_namespace, path=additional_search_path
+                 )
+diff --git a/test_ignore/.hidden_dir/hidden.py b/test_ignore/.hidden_dir/hidden.py
+new file mode 100644
+index 000000000..1ad52ad14
+--- /dev/null
++++ b/test_ignore/.hidden_dir/hidden.py
+@@ -0,0 +1 @@
++# test file
+diff --git a/test_ignore/visible.py b/test_ignore/visible.py
+new file mode 100644
+index 000000000..1ad52ad14
+--- /dev/null
++++ b/test_ignore/visible.py
+@@ -0,0 +1 @@
++# test file

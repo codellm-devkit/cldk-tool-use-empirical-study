@@ -1,0 +1,81 @@
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index aaf35ee37c..c8c2cdeeb4 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -576,6 +576,16 @@ class Query(BaseExpression):
+         change_map = {}
+         conjunction = (connector == AND)
+ 
++        # Find maximum existing alias number to avoid overlaps
++        max_alias_num = 0
++        for alias in chain(self.alias_map, rhs.alias_map):
++            if alias.startswith(self.alias_prefix):
++                try:
++                    num = int(alias[len(self.alias_prefix):])
++                    max_alias_num = max(max_alias_num, num)
++                except ValueError:
++                    pass
++
+         # Determine which existing joins can be reused. When combining the
+         # query with AND we must recreate all joins for m2m filters. When
+         # combining with OR we can reuse joins. The reason is that in AND
+@@ -589,6 +599,16 @@ class Query(BaseExpression):
+         # the AND case. The results will be correct but this creates too many
+         # joins. This is something that could be fixed later on.
+         reuse = set() if conjunction else set(self.alias_map)
++        # Temporarily modify table_alias behavior to use safe numbering
++        original_table_alias = self.table_alias
++        def safe_table_alias(*args, **kwargs):
++            alias, created = original_table_alias(*args, **kwargs)
++            if created and alias.startswith(self.alias_prefix):
++                base_num = max_alias_num + 1
++                new_num = base_num + len(self.alias_map)
++                alias = f"{self.alias_prefix}{new_num}"
++            return alias, created
++        self.table_alias = safe_table_alias
+         # Base table must be present in the query - this is the same
+         # table on both sides.
+         self.get_initial_alias()
+@@ -638,6 +658,9 @@ class Query(BaseExpression):
+         else:
+             self.select = ()
+ 
++        # Restore original table_alias method
++        self.table_alias = original_table_alias
++
+         if connector == OR:
+             # It would be nice to be able to handle this, but the queries don't
+             # really make sense (or return consistent value sets). Not worth
+diff --git a/tests/queries/test_query.py b/tests/queries/test_query.py
+index 6ed766e3ae..860ca8c282 100644
+--- a/tests/queries/test_query.py
++++ b/tests/queries/test_query.py
+@@ -151,6 +151,28 @@ class TestQuery(SimpleTestCase):
+         with self.assertRaisesMessage(TypeError, msg):
+             query.build_where(Func(output_field=CharField()))
+ 
++    def test_query_combination_with_sequential_aliases(self):
++        """
++        Test that query combination works with sequential table aliases.
++        Regression test for issue where qs1 | qs2 would fail with sequential aliases.
++        """
++        # Create first query with multiple joins to generate sequential aliases
++        q1 = Query(Item)
++        q1.join(q1.setup_joins(['author', 'author__extra'], Item._meta, None)[0].joins[-1])
++        q1.join(q1.setup_joins(['author', 'author__extra'], Item._meta, None)[0].joins[-1])
++        
++        # Create second query
++        q2 = Query(Item)
++        q2.join(q2.setup_joins(['author'], Item._meta, None)[0].joins[-1])
++        
++        # Test both combination orders
++        combined1 = q1.combine(q2, 'OR')
++        combined2 = q2.combine(q1, 'OR')
++        
++        # Verify no assertion errors occurred
++        self.assertGreater(len(combined1.alias_map), len(q1.alias_map))
++        self.assertGreater(len(combined2.alias_map), len(q2.alias_map))
++
+ 
+ class JoinPromoterTest(SimpleTestCase):
+     def test_repr(self):

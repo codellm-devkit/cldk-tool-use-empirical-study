@@ -1,0 +1,191 @@
+diff --git a/django/db/migrations/operations/models.py b/django/db/migrations/operations/models.py
+index 967a91fdc8..22bceac930 100644
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -861,6 +861,37 @@ class AddIndex(IndexOperation):
+     def migration_name_fragment(self):
+         return "%s_%s" % (self.model_name_lower, self.index.name.lower())
+ 
++    def reduce(self, operation, app_label):
++        """
++        Optimize with other index operations:
++        - AddIndex + RemoveIndex (same index) = nothing
++        - AddIndex + RenameIndex = AddIndex with new name
++        """
++        if (
++            isinstance(operation, RemoveIndex)
++            and self.model_name_lower == operation.model_name_lower
++            and self.index.name == operation.name
++        ):
++            return []
++        elif (
++            isinstance(operation, RenameIndex)
++            and self.model_name_lower == operation.model_name_lower
++            and self.index.name == operation.old_name
++        ):
++            index_kwargs = {
++                'name': operation.new_name,
++                'fields': self.index.fields,
++            }
++            if hasattr(self.index, 'expressions') and self.index.expressions:
++                index_kwargs['expressions'] = self.index.expressions
++            return [
++                AddIndex(
++                    model_name=self.model_name,
++                    index=models.Index(**index_kwargs),
++                ),
++            ]
++        return super().reduce(operation, app_label)
++
+ 
+ class RemoveIndex(IndexOperation):
+     """Remove an index from a model."""
+@@ -904,6 +935,31 @@ class RemoveIndex(IndexOperation):
+     def migration_name_fragment(self):
+         return "remove_%s_%s" % (self.model_name_lower, self.name.lower())
+ 
++    def reduce(self, operation, app_label):
++        """
++        Optimize with other index operations:
++        - RemoveIndex + AddIndex (same index) = nothing
++        - RemoveIndex + RenameIndex = RemoveIndex with old name
++        """
++        if (
++            isinstance(operation, AddIndex)
++            and self.model_name_lower == operation.model_name_lower
++            and self.name == operation.index.name
++        ):
++            return []
++        elif (
++            isinstance(operation, RenameIndex)
++            and self.model_name_lower == operation.model_name_lower
++            and self.name == operation.new_name
++        ):
++            return [
++                RemoveIndex(
++                    model_name=self.model_name,
++                    name=operation.old_name,
++                ),
++            ]
++        return super().reduce(operation, app_label)
++
+ 
+ class RenameIndex(IndexOperation):
+     """Rename an index."""
+diff --git a/test_settings.py b/test_settings.py
+new file mode 100644
+index 0000000000..29da9cd81f
+--- /dev/null
++++ b/test_settings.py
+@@ -0,0 +1,12 @@
++
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++INSTALLED_APPS = [
++    'django.contrib.contenttypes',
++    'tests.migrations',
++]
++SECRET_KEY = 'test-key'
+diff --git a/tests/migrations/test_optimizer.py b/tests/migrations/test_optimizer.py
+index 8cd4c67fbd..16cafa44ef 100644
+--- a/tests/migrations/test_optimizer.py
++++ b/tests/migrations/test_optimizer.py
+@@ -1,5 +1,6 @@
+ from django.db import migrations, models
+ from django.db.migrations import operations
++from django.db.models import Index
+ from django.db.migrations.optimizer import MigrationOptimizer
+ from django.db.migrations.serializer import serializer_factory
+ from django.test import SimpleTestCase
+@@ -1158,3 +1159,87 @@ class OptimizerTests(SimpleTestCase):
+                 ),
+             ]
+         )
++
++    def test_add_remove_index(self):
++        """
++        AddIndex and RemoveIndex should collapse into nothing when for the same index.
++        """
++        self.assertOptimizesTo(
++            [
++                migrations.AddIndex(
++                    model_name="Pony",
++                    index=Index(fields=["pink"], name="test_index"),
++                ),
++                migrations.RemoveIndex(
++                    model_name="Pony",
++                    name="test_index",
++                ),
++            ],
++            [],
++        )
++
++    def test_remove_add_index(self):
++        """
++        RemoveIndex and AddIndex should collapse into nothing when for the same index.
++        """
++        self.assertOptimizesTo(
++            [
++                migrations.RemoveIndex(
++                    model_name="Pony",
++                    name="test_index",
++                ),
++                migrations.AddIndex(
++                    model_name="Pony",
++                    index=Index(fields=["pink"], name="test_index"),
++                ),
++            ],
++            [],
++        )
++
++    def test_add_rename_index(self):
++        """
++        AddIndex should absorb RenameIndex operations.
++        """
++        self.assertOptimizesTo(
++            [
++                migrations.AddIndex(
++                    model_name="Pony",
++                    index=Index(fields=["pink"], name="old_name"),
++                ),
++                migrations.RenameIndex(
++                    model_name="Pony",
++                    new_name="new_name",
++                    old_name="old_name",
++                ),
++            ],
++            [
++                migrations.AddIndex(
++                    model_name="Pony",
++                    index=Index(fields=["pink"], name="new_name"),
++                ),
++            ],
++        )
++
++    def test_remove_rename_index(self):
++        """
++        RemoveIndex should use old_name when followed by RenameIndex.
++        """
++        self.assertOptimizesTo(
++            [
++                migrations.RemoveIndex(
++                    model_name="Pony",
++                    name="new_name",
++                ),
++                migrations.RenameIndex(
++                    model_name="Pony",
++                    new_name="new_name",
++                    old_name="old_name",
++                ),
++            ],
++            [
++                migrations.RemoveIndex(
++                    model_name="Pony",
++                    name="old_name",
++                ),
++            ],
++        )

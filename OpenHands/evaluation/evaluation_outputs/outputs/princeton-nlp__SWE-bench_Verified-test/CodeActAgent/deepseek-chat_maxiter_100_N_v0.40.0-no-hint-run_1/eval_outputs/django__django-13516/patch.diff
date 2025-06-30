@@ -1,0 +1,59 @@
+diff --git a/django/core/management/base.py b/django/core/management/base.py
+index e6cbf8c64f..14c0355dd8 100644
+--- a/django/core/management/base.py
++++ b/django/core/management/base.py
+@@ -150,6 +150,10 @@ class OutputWrapper(TextIOBase):
+         style_func = style_func or self.style_func
+         self._out.write(style_func(msg))
+ 
++    def flush(self):
++        if hasattr(self._out, 'flush'):
++            self._out.flush()
++
+ 
+ class BaseCommand:
+     """
+diff --git a/test_flush.py b/test_flush.py
+new file mode 100644
+index 0000000000..0e991a4dc8
+--- /dev/null
++++ b/test_flush.py
+@@ -0,0 +1,17 @@
++
++
++import sys
++import time
++from django.core.management.base import OutputWrapper
++
++# Test the modified OutputWrapper
++wrapper = OutputWrapper(sys.stdout)
++
++print("Testing OutputWrapper flush behavior:")
++for i in range(5):
++    wrapper.write(f"Progress: {i+1}/5")
++    wrapper.flush()  # This should make output appear immediately
++    time.sleep(1)
++
++print("\nTest complete")
++
+diff --git a/tests/migrations/test_flush_migration/0001_initial.py b/tests/migrations/test_flush_migration/0001_initial.py
+new file mode 100644
+index 0000000000..c02552542b
+--- /dev/null
++++ b/tests/migrations/test_flush_migration/0001_initial.py
+@@ -0,0 +1,15 @@
++
++import time
++from django.db import migrations
++
++def slow_operation(apps, schema_editor):
++    print("Starting slow operation...")
++    for i in range(5):
++        time.sleep(1)
++        print(f"Progress: {i+1}/5")
++    print("Operation complete")
++
++class Migration(migrations.Migration):
++    operations = [
++        migrations.RunPython(slow_operation),
++    ]

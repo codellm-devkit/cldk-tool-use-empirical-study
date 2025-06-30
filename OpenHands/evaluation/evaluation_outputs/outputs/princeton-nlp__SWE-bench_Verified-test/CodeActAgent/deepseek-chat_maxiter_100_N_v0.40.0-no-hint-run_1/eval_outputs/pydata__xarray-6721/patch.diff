@@ -1,0 +1,35 @@
+diff --git a/xarray/core/common.py b/xarray/core/common.py
+index 3c328f42..a03001aa 100644
+--- a/xarray/core/common.py
++++ b/xarray/core/common.py
+@@ -2023,13 +2023,28 @@ def get_chunksizes(
+ 
+     chunks: dict[Any, tuple[int, ...]] = {}
+     for v in variables:
+-        if hasattr(v.data, "chunks"):
++        # First check for zarr array chunks
++        if hasattr(v.data, 'chunks') and hasattr(v.data, 'shape'):
++            if not isinstance(v.data, np.ndarray):  # Skip numpy arrays
++                for dim, c in zip(v.dims, v.data.chunks):
++                    chunks[dim] = (c,)
++                    continue
++        # Then try to get chunks from encoding
++        if v.encoding.get('chunks') or v.encoding.get('chunksizes'):
++            encoding_chunks = v.encoding.get('chunks') or v.encoding.get('chunksizes')
++            for dim, c in zip(v.dims, encoding_chunks):
++                if dim in chunks and c != chunks[dim]:
++                    raise ValueError(
++                        f"Object has inconsistent chunks along dimension {dim}. ")
++                chunks[dim] = (c,)
++        # Finally fall back to checking data.chunks
++        elif hasattr(v.data, "chunks"):
+             for dim, c in v.chunksizes.items():
+                 if dim in chunks and c != chunks[dim]:
+                     raise ValueError(
+                         f"Object has inconsistent chunks along dimension {dim}. "
+-                        "This can be fixed by calling unify_chunks()."
+-                    )
++                        "This can be fixed by calling unify_chunks().")
++
+                 chunks[dim] = c
+     return Frozen(chunks)

@@ -1,0 +1,30 @@
+diff --git a/sphinx/ext/napoleon/__init__.py b/sphinx/ext/napoleon/__init__.py
+index 10b1ff3a3..5aaa34ff7 100644
+--- a/sphinx/ext/napoleon/__init__.py
++++ b/sphinx/ext/napoleon/__init__.py
+@@ -433,12 +433,24 @@ def _skip_member(app: Sphinx, what: str, name: str, obj: Any,
+                     if '.' in cls_path:
+                         import importlib
+                         import functools
++                        import inspect
+ 
+                         mod = importlib.import_module(obj.__module__)
+                         mod_path = cls_path.split('.')
+                         cls = functools.reduce(getattr, mod_path, mod)
+                     else:
+-                        cls = obj.__globals__[cls_path]
++                        # First try standard lookup
++                        try:
++                            cls = obj.__globals__[cls_path]
++                        except (KeyError, AttributeError):
++                            # Fallback for decorated methods
++                            if hasattr(obj, '__wrapped__'):
++                                obj = obj.__wrapped__
++                                cls = obj.__globals__[cls_path]
++                            else:
++                                # Final fallback via module inspection
++                                mod = importlib.import_module(obj.__module__)
++                                cls = getattr(mod, cls_path)
+                 except Exception:
+                     cls_is_owner = False
+                 else:

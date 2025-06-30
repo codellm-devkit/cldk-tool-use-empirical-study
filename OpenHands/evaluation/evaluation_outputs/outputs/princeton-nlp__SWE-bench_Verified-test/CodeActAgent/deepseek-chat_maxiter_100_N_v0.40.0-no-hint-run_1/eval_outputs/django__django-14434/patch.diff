@@ -1,0 +1,18 @@
+diff --git a/django/db/backends/base/schema.py b/django/db/backends/base/schema.py
+index ad2f5a7da1..ca104485ee 100644
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -1241,9 +1241,11 @@ class BaseDatabaseSchemaEditor:
+             return self.quote_name(self._create_index_name(*args, **kwargs))
+ 
+         compiler = Query(model, alias_cols=False).get_compiler(connection=self.connection)
+-        table = Table(model._meta.db_table, self.quote_name)
++        table_name = model._meta.db_table
+         if name is None:
+-            name = IndexName(model._meta.db_table, columns, '_uniq', create_unique_name)
++            # Ensure we pass column names (strings) rather than Table objects
++            column_names = [col.name if hasattr(col, 'name') else str(col) for col in columns]
++            name = IndexName(table_name, column_names, '_uniq', create_unique_name)
+         else:
+             name = self.quote_name(name)
+         if condition or include or opclasses or expressions:

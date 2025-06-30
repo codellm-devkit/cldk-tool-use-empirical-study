@@ -1,0 +1,165 @@
+2025-06-27 14:37:10,422 - INFO - Creating container for django__django-16485...
+2025-06-27 14:37:11,784 - INFO - Container for django__django-16485 created: 8ef6f1bc27984127a40a252c1ebbcf789d7d5fce189ef4462c66f96b0ebfa556
+2025-06-27 14:37:11,995 - INFO - Container for django__django-16485 started: 8ef6f1bc27984127a40a252c1ebbcf789d7d5fce189ef4462c66f96b0ebfa556
+2025-06-27 14:37:11,996 - INFO - Intermediate patch for django__django-16485 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/django__django-16485/patch.diff, now applying to container...
+2025-06-27 14:37:12,157 - INFO - >>>>> Applied Patch:
+Checking patch django/template/defaultfilters.py...
+Applied patch django/template/defaultfilters.py cleanly.
+
+2025-06-27 14:37:12,914 - INFO - Git diff before:
+diff --git a/django/template/defaultfilters.py b/django/template/defaultfilters.py
+index 23c3a08c67..f7aab6a11e 100644
+--- a/django/template/defaultfilters.py
++++ b/django/template/defaultfilters.py
+@@ -153,9 +153,14 @@ def floatformat(text, arg=-1):
+     try:
+         input_val = str(text)
+         d = Decimal(input_val)
++        # Normalize zero values to prevent precision issues
++        if d.is_zero():
++            d = Decimal('0')
+     except InvalidOperation:
+         try:
+             d = Decimal(str(float(text)))
++            if d.is_zero():
++                d = Decimal('0')
+         except (ValueError, InvalidOperation, TypeError):
+             return ""
+     try:
+@@ -163,15 +168,39 @@ def floatformat(text, arg=-1):
+     except ValueError:
+         return input_val
+ 
++    # First handle all zero values regardless of precision
++    if d.is_zero():
++        if p == 0:  # Explicit special case for precision 0
++            return "0"
++        elif p <= 0:
++            return mark_safe(
++                formats.number_format(
++                    "0",
++                    0,
++                    use_l10n=use_l10n,
++                    force_grouping=force_grouping,
++                )
++            )
++        else:
++            return mark_safe(
++                formats.number_format(
++                    "0." + "0" * abs(p),
++                    abs(p),
++                    use_l10n=use_l10n,
++                    force_grouping=force_grouping,
++                )
++            )
++
+     try:
+         m = int(d) - d
+     except (ValueError, OverflowError, InvalidOperation):
+         return input_val
+ 
+-    if not m and p < 0:
++    # Handle whole numbers when precision <= 0
++    if not m and p <= 0:
+         return mark_safe(
+             formats.number_format(
+-                "%d" % (int(d)),
++                str(int(d)),
+                 0,
+                 use_l10n=use_l10n,
+                 force_grouping=force_grouping,
+@@ -184,6 +213,11 @@ def floatformat(text, arg=-1):
+     units = len(tupl[1])
+     units += -tupl[2] if m else tupl[2]
+     prec = abs(p) + units + 1
++    # Ensure we never create a context with prec < 1
++    prec = max(prec, 1)
++    # For zero precision cases, use at least 1 decimal place
++    if p == 0:
++        prec = max(prec, 2)
+ 
+     # Avoid conversion to scientific notation by accessing `sign`, `digits`,
+     # and `exponent` from Decimal.as_tuple() directly.
+2025-06-27 14:37:12,914 - INFO - Eval script for django__django-16485 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/django__django-16485/eval.sh; copying to container...
+2025-06-27 14:37:17,818 - INFO - Test runtime: 4.83 seconds
+2025-06-27 14:37:17,819 - INFO - Test output for django__django-16485 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/django__django-16485/test_output.txt
+2025-06-27 14:37:17,913 - INFO - Git diff after:
+diff --git a/django/template/defaultfilters.py b/django/template/defaultfilters.py
+index 23c3a08c67..f7aab6a11e 100644
+--- a/django/template/defaultfilters.py
++++ b/django/template/defaultfilters.py
+@@ -153,9 +153,14 @@ def floatformat(text, arg=-1):
+     try:
+         input_val = str(text)
+         d = Decimal(input_val)
++        # Normalize zero values to prevent precision issues
++        if d.is_zero():
++            d = Decimal('0')
+     except InvalidOperation:
+         try:
+             d = Decimal(str(float(text)))
++            if d.is_zero():
++                d = Decimal('0')
+         except (ValueError, InvalidOperation, TypeError):
+             return ""
+     try:
+@@ -163,15 +168,39 @@ def floatformat(text, arg=-1):
+     except ValueError:
+         return input_val
+ 
++    # First handle all zero values regardless of precision
++    if d.is_zero():
++        if p == 0:  # Explicit special case for precision 0
++            return "0"
++        elif p <= 0:
++            return mark_safe(
++                formats.number_format(
++                    "0",
++                    0,
++                    use_l10n=use_l10n,
++                    force_grouping=force_grouping,
++                )
++            )
++        else:
++            return mark_safe(
++                formats.number_format(
++                    "0." + "0" * abs(p),
++                    abs(p),
++                    use_l10n=use_l10n,
++                    force_grouping=force_grouping,
++                )
++            )
++
+     try:
+         m = int(d) - d
+     except (ValueError, OverflowError, InvalidOperation):
+         return input_val
+ 
+-    if not m and p < 0:
++    # Handle whole numbers when precision <= 0
++    if not m and p <= 0:
+         return mark_safe(
+             formats.number_format(
+-                "%d" % (int(d)),
++                str(int(d)),
+                 0,
+                 use_l10n=use_l10n,
+                 force_grouping=force_grouping,
+@@ -184,6 +213,11 @@ def floatformat(text, arg=-1):
+     units = len(tupl[1])
+     units += -tupl[2] if m else tupl[2]
+     prec = abs(p) + units + 1
++    # Ensure we never create a context with prec < 1
++    prec = max(prec, 1)
++    # For zero precision cases, use at least 1 decimal place
++    if p == 0:
++        prec = max(prec, 2)
+ 
+     # Avoid conversion to scientific notation by accessing `sign`, `digits`,
+     # and `exponent` from Decimal.as_tuple() directly.
+2025-06-27 14:37:17,913 - INFO - Grading answer for django__django-16485...
+2025-06-27 14:37:17,914 - INFO - report: {'django__django-16485': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_zero_values (template_tests.filter_tests.test_floatformat.FunctionTests.test_zero_values)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_floatformat01 (template_tests.filter_tests.test_floatformat.FloatformatTests.test_floatformat01)', 'test_floatformat02 (template_tests.filter_tests.test_floatformat.FloatformatTests.test_floatformat02)', 'test_float_dunder_method (template_tests.filter_tests.test_floatformat.FunctionTests.test_float_dunder_method)', 'test_force_grouping (template_tests.filter_tests.test_floatformat.FunctionTests.test_force_grouping)', 'test_infinity (template_tests.filter_tests.test_floatformat.FunctionTests.test_infinity)', 'test_inputs (template_tests.filter_tests.test_floatformat.FunctionTests.test_inputs)', '#15789', 'test_negative_zero_values (template_tests.filter_tests.test_floatformat.FunctionTests.test_negative_zero_values)', 'test_unlocalize (template_tests.filter_tests.test_floatformat.FunctionTests.test_unlocalize)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-16485: resolved: True
+2025-06-27 14:37:17,914 - INFO - Attempting to stop container sweb.eval.django__django-16485.20250627_135628...
+2025-06-27 14:37:33,133 - INFO - Attempting to remove container sweb.eval.django__django-16485.20250627_135628...
+2025-06-27 14:37:33,164 - INFO - Container sweb.eval.django__django-16485.20250627_135628 removed.

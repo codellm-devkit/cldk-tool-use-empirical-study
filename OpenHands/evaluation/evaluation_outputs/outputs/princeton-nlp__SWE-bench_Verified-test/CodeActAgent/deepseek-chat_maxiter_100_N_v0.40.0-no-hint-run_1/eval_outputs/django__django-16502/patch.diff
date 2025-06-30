@@ -1,0 +1,54 @@
+diff --git a/django/core/servers/basehttp.py b/django/core/servers/basehttp.py
+index fef5532e58..bd518e8cef 100644
+--- a/django/core/servers/basehttp.py
++++ b/django/core/servers/basehttp.py
+@@ -143,6 +143,19 @@ class ServerHandler(simple_server.ServerHandler):
+         if self.headers.get("Connection") == "close":
+             self.request_handler.close_connection = True
+ 
++    def run(self, application):
++        """Override to handle HEAD requests properly"""
++        if self.environ['REQUEST_METHOD'] == 'HEAD':
++            # Run application to get headers
++            result = application(self.environ, self.start_response)
++            # Discard any response body
++            for data in result:
++                pass
++            if hasattr(result, 'close'):
++                result.close()
++        else:
++            super().run(application)
++
+     def close(self):
+         self.get_stdin().read()
+         super().close()
+diff --git a/server.log b/server.log
+new file mode 100644
+index 0000000000..3862695eb9
+--- /dev/null
++++ b/server.log
+@@ -0,0 +1,24 @@
++Traceback (most recent call last):
++  File "<frozen runpy>", line 198, in _run_module_as_main
++  File "<frozen runpy>", line 88, in _run_code
++  File "/workspace/django__django__5.0/django/__main__.py", line 9, in <module>
++    management.execute_from_command_line()
++  File "/workspace/django__django__5.0/django/core/management/__init__.py", line 442, in execute_from_command_line
++    utility.execute()
++  File "/workspace/django__django__5.0/django/core/management/__init__.py", line 436, in execute
++    self.fetch_command(subcommand).run_from_argv(self.argv)
++  File "/workspace/django__django__5.0/django/core/management/base.py", line 402, in run_from_argv
++    self.execute(*args, **cmd_options)
++  File "/workspace/django__django__5.0/django/core/management/commands/runserver.py", line 74, in execute
++    super().execute(*args, **options)
++  File "/workspace/django__django__5.0/django/core/management/base.py", line 448, in execute
++    output = self.handle(*args, **options)
++             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++  File "/workspace/django__django__5.0/django/core/management/commands/runserver.py", line 81, in handle
++    if not settings.DEBUG and not settings.ALLOWED_HOSTS:
++           ^^^^^^^^^^^^^^
++  File "/workspace/django__django__5.0/django/conf/__init__.py", line 84, in __getattr__
++    self._setup(name)
++  File "/workspace/django__django__5.0/django/conf/__init__.py", line 64, in _setup
++    raise ImproperlyConfigured(
++django.core.exceptions.ImproperlyConfigured: Requested setting DEBUG, but settings are not configured. You must either define the environment variable DJANGO_SETTINGS_MODULE or call settings.configure() before accessing settings.

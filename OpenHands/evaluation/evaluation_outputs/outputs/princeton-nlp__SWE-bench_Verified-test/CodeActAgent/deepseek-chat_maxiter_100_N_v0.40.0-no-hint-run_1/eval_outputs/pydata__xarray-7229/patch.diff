@@ -1,0 +1,117 @@
+diff --git a/xarray/core/computation.py b/xarray/core/computation.py
+index 3f7e8f74..9bd82c37 100644
+--- a/xarray/core/computation.py
++++ b/xarray/core/computation.py
+@@ -1789,19 +1789,73 @@ def where(cond, x, y, keep_attrs=None):
+     y : scalar, array, Variable, DataArray or Dataset
+         values to choose from where `cond` is False
+     keep_attrs : bool or str or callable, optional
+-        How to treat attrs. If True, keep the attrs of `x`.
++        How to treat attrs. If True, keep the attrs of `x` for non-coordinate variables.
++        Coordinate attributes are always preserved.
+ 
+     Returns
+     -------
+     Dataset, DataArray, Variable or array
+         In priority order: Dataset, DataArray, Variable or array, whichever
+         type appears as an input argument.
++    """
++    from .dataarray import DataArray
++    from .dataset import Dataset
++    from .variable import Variable
++
++    # First extract and store all coordinate metadata
++    def extract_coordinate_metadata(obj):
++        if isinstance(obj, (DataArray, Dataset)):
++            return {
++                'coords': {name: {'dims': var.dims, 
++                                 'values': var.values,
++                                 'attrs': var.attrs.copy()}
++                          for name, var in obj.coords.items()},
++                'dims': obj.dims,
++                'attrs': obj.attrs.copy()
++            }
++        return {'coords': {}, 'dims': (), 'attrs': {}}
++
++    x_meta = extract_coordinate_metadata(x)
++    y_meta = extract_coordinate_metadata(y)
++
++    # Perform the core array operation
++    result_data = duck_array_ops.where(cond, x, y)
++
++    # Reconstruct the full xarray object
++    if isinstance(x, (DataArray, Dataset)) or isinstance(y, (DataArray, Dataset)):
++        from .dataarray import DataArray
++        from .dataset import Dataset
++        
++        # Merge coordinate metadata from both inputs
++        merged_coords = {**x_meta['coords'], **y_meta['coords']}
++        
++        # Create new coordinates dict preserving original attributes
++        new_coords = {}
++        for name, meta in merged_coords.items():
++            new_coords[name] = (meta['dims'], meta['values'], meta['attrs'])
++        
++        # Create the result object
++        if isinstance(x, Dataset) or isinstance(y, Dataset):
++            result = Dataset(coords=new_coords, attrs=x_meta['attrs'] if keep_attrs else y_meta['attrs'])
++        else:
++            result = DataArray(
++                data=result_data,
++                dims=x_meta['dims'],
++                coords=new_coords,
++                attrs=x_meta['attrs'] if keep_attrs else y_meta['attrs']
++            )
++    else:
++        result = result_data
++
++    return result
++
++
++def _where_method(data, cond, other=dtypes.NA, keep_attrs=None):
++    """Internal where method that handles NA fill values."""
++    if other is dtypes.NA:
++        other = dtypes.get_fill_value(data.dtype)
++    return where(cond, data, other, keep_attrs=keep_attrs)
+ 
+-    Examples
+-    --------
+-    >>> x = xr.DataArray(
+-    ...     0.1 * np.arange(10),
+-    ...     dims=["lat"],
+     ...     coords={"lat": np.arange(10)},
+     ...     name="sst",
+     ... )
+@@ -1849,32 +1903,6 @@ def where(cond, x, y, keep_attrs=None):
+            [0, 0]])
+     Dimensions without coordinates: x, y
+ 
+-    See Also
+-    --------
+-    numpy.where : corresponding numpy function
+-    Dataset.where, DataArray.where :
+-        equivalent methods
+-    """
+-    if keep_attrs is None:
+-        keep_attrs = _get_keep_attrs(default=False)
+-    if keep_attrs is True:
+-        # keep the attributes of x, the second parameter, by default to
+-        # be consistent with the `where` method of `DataArray` and `Dataset`
+-        keep_attrs = lambda attrs, context: getattr(x, "attrs", {})
+-
+-    # alignment for three arguments is complicated, so don't support it yet
+-    return apply_ufunc(
+-        duck_array_ops.where,
+-        cond,
+-        x,
+-        y,
+-        join="exact",
+-        dataset_join="exact",
+-        dask="allowed",
+-        keep_attrs=keep_attrs,
+-    )
+-
+-
+ @overload
+ def polyval(
+     coord: DataArray, coeffs: DataArray, degree_dim: Hashable = "degree"

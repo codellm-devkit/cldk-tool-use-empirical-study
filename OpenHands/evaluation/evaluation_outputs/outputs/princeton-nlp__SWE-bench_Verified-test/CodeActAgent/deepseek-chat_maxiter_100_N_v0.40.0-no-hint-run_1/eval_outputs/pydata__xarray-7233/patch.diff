@@ -1,0 +1,41 @@
+diff --git a/xarray/core/rolling.py b/xarray/core/rolling.py
+index c194ec08..5d911a76 100644
+--- a/xarray/core/rolling.py
++++ b/xarray/core/rolling.py
+@@ -973,8 +973,8 @@ class Coarsen(CoarsenArithmetic, Generic[T_Xarray]):
+             else:
+                 reshaped[key] = var
+ 
+-        should_be_coords = set(window_dim) & set(self.obj.coords)
+-        result = reshaped.set_coords(should_be_coords)
++        # Preserve all original coordinates, not just window dimensions
++        result = reshaped.set_coords(self.obj.coords)
+         if isinstance(self.obj, DataArray):
+             return self.obj._from_temp_dataset(result)
+         else:
+diff --git a/xarray/tests/test_coarsen_construct_coords.py b/xarray/tests/test_coarsen_construct_coords.py
+new file mode 100644
+index 00000000..a6a8eb3b
+--- /dev/null
++++ b/xarray/tests/test_coarsen_construct_coords.py
+@@ -0,0 +1,20 @@
++
++import numpy as np
++import xarray as xr
++
++def test_coarsen_construct_preserves_coords():
++    """Test that coarsen.construct preserves non-dimensional coordinates"""
++    da = xr.DataArray(np.arange(24), dims=["time"])
++    da = da.assign_coords(day=365 * da)
++    ds = da.to_dataset(name="T")
++    
++    # Original behavior - 'day' gets demoted to variable
++    result = ds.coarsen(time=12).construct(time=("year", "month"))
++    assert "day" in result.coords  # Should now pass
++    assert isinstance(result.coords["day"], xr.DataArray)
++    
++    # Test with multiple non-dim coords (using different names to avoid conflict)
++    da = da.assign_coords(season=da % 4)
++    ds = da.to_dataset(name="T")
++    result = ds.coarsen(time=12).construct(time=("year", "month"))
++    assert all(c in result.coords for c in ["day", "season"])

@@ -1,0 +1,131 @@
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index b99f03cd88..eff763f3bb 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1049,7 +1049,7 @@ class Query(BaseExpression):
+     def resolve_lookup_value(self, value, can_reuse, allow_joins, simple_col):
+         if hasattr(value, 'resolve_expression'):
+             kwargs = {'reuse': can_reuse, 'allow_joins': allow_joins}
+-            if isinstance(value, F):
++            if simple_col or isinstance(value, F):
+                 kwargs['simple_col'] = simple_col
+             value = value.resolve_expression(self, **kwargs)
+         elif isinstance(value, (list, tuple)):
+@@ -1057,13 +1057,10 @@ class Query(BaseExpression):
+             # to be resolved independently.
+             for sub_value in value:
+                 if hasattr(sub_value, 'resolve_expression'):
+-                    if isinstance(sub_value, F):
+-                        sub_value.resolve_expression(
+-                            self, reuse=can_reuse, allow_joins=allow_joins,
+-                            simple_col=simple_col,
+-                        )
+-                    else:
+-                        sub_value.resolve_expression(self, reuse=can_reuse, allow_joins=allow_joins)
++                    kwargs = {'reuse': can_reuse, 'allow_joins': allow_joins}
++                    if simple_col or isinstance(sub_value, F):
++                        kwargs['simple_col'] = simple_col
++                    sub_value.resolve_expression(self, **kwargs)
+         return value
+ 
+     def solve_lookup_type(self, lookup):
+@@ -1338,13 +1335,15 @@ class Query(BaseExpression):
+             if isinstance(child, Node):
+                 child_clause, needed_inner = self._add_q(
+                     child, used_aliases, branch_negated,
+-                    current_negated, allow_joins, split_subq)
++                    current_negated, allow_joins, split_subq,
++                    simple_col=simple_col or connector == OR,  # Propagate simple_col for OR
++                )
+                 joinpromoter.add_votes(needed_inner)
+             else:
+                 child_clause, needed_inner = self.build_filter(
+                     child, can_reuse=used_aliases, branch_negated=branch_negated,
+                     current_negated=current_negated, allow_joins=allow_joins,
+-                    split_subq=split_subq, simple_col=simple_col,
++                    split_subq=split_subq, simple_col=simple_col or connector == OR,
+                 )
+                 joinpromoter.add_votes(needed_inner)
+             if child_clause:
+diff --git a/tests/constraints/test_check_constraint_or.py b/tests/constraints/test_check_constraint_or.py
+new file mode 100644
+index 0000000000..29ab3ed9dd
+--- /dev/null
++++ b/tests/constraints/test_check_constraint_or.py
+@@ -0,0 +1,76 @@
++
++from django.db import models
++from django.db.models import Q
++from django.test import TestCase
++from django.db.backends.base.schema import BaseDatabaseSchemaEditor
++from django.db.backends.dummy.base import DatabaseWrapper as DummyDatabaseWrapper
++
++class MockCompiler:
++    def __init__(self, query, connection, using):
++        self.query = query
++        self.connection = connection
++        self.using = using
++        self.quote_name_unless_alias = connection.ops.quote_name
++    def as_sql(self):
++        return "", []
++    def compile(self, node):
++        return node.as_sql(self, self.connection)
++    def __call__(self, *args, **kwargs):
++        return self
++    def quote_name_unless_alias(self, name):
++        return self.connection.ops.quote_name(name)
++
++class MockConnection(DummyDatabaseWrapper):
++    def __init__(self):
++        super().__init__({})
++        self.features = type('features', (), {
++            'can_rollback_ddl': False,
++            'supports_column_check_constraints': True
++        })()
++        self.ops = type('ops', (), {
++            'quote_name': lambda self, name: f'"{name}"',
++            'compiler': lambda self, compiler_name: MockCompiler,
++            'field_cast_sql': lambda self, *args: '%s',
++            'prepare_sql_script': lambda self, sql: sql.split(';'),
++            'lookup_cast': lambda self, lookup, internal_type: '%s',
++            'operators': {
++                'exact': '= %s',
++                'isnull': 'IS %sNULL',
++                'lt': '< %s', 
++                'lte': '<= %s',
++                'gt': '> %s',
++                'gte': '>= %s'
++            },
++            'connection': self
++        })()
++
++class MockSchemaEditor(BaseDatabaseSchemaEditor):
++    def __init__(self):
++        super().__init__(connection=MockConnection())
++    def quote_value(self, value):
++        return str(value)
++    def _create_check_sql(self, model, name, check):
++        return f"CONSTRAINT {name} CHECK ({check})"
++
++class CheckConstraintORTests(TestCase):
++    def test_or_condition_unqualified_columns(self):
++        class TestModel(models.Model):
++            flag = models.BooleanField()
++            value = models.IntegerField(null=True)
++            
++            class Meta:
++                constraints = [
++                    models.CheckConstraint(
++                        check=Q(flag=True, value__isnull=False) | Q(flag=False),
++                        name='test_or_constraint'
++                    )
++                ]
++
++        # Test SQL generation with mock editor
++        editor = MockSchemaEditor()
++        sql = TestModel._meta.constraints[0].constraint_sql(TestModel, editor)
++        
++        # Verify no table-qualified columns in OR branch
++        self.assertNotIn('"."', sql)
++        # Verify proper SQL syntax
++        self.assertIn('(("value" IS NOT NULL AND "flag" = True) OR "flag" = False)', sql)

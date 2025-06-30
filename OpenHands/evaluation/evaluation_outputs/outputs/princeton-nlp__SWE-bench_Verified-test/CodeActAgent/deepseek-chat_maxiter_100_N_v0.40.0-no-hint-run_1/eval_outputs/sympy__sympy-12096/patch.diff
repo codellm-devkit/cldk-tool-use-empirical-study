@@ -1,0 +1,110 @@
+diff --git a/sympy/core/function.py b/sympy/core/function.py
+index 1b8005e1d2..71e2d7947c 100644
+--- a/sympy/core/function.py
++++ b/sympy/core/function.py
+@@ -507,7 +507,37 @@ def _eval_evalf(self, prec):
+             func = getattr(mpmath, fname)
+         except (AttributeError, KeyError):
+             try:
+-                return Float(self._imp_(*self.args), prec)
++                # First recursively evaluate all arguments
++                evaluated_args = []
++                for arg in self.args:
++                    if hasattr(arg, 'evalf'):
++                        evaled = arg.evalf(prec)
++                        if hasattr(evaled, '_imp_'):
++                            try:
++                                evaled = evaled._imp_()
++                                if hasattr(evaled, 'evalf'):
++                                    evaled = evaled.evalf(prec)
++                            except (AttributeError, TypeError):
++                                pass
++                        evaluated_args.append(evaled)
++                    else:
++                        evaluated_args.append(arg)
++                
++                # Try direct numerical evaluation
++                try:
++                    result = self._imp_(*evaluated_args)
++                    if hasattr(result, 'evalf'):
++                        return result.evalf(prec)
++                    return Float(result, prec)
++                except (AttributeError, TypeError, ValueError):
++                    # Fall back to symbolic evaluation
++                    try:
++                        evaluated = self.eval()
++                        if evaluated != self:
++                            return evaluated.evalf(prec)
++                        return self
++                    except (AttributeError, TypeError):
++                        return self
+             except (AttributeError, TypeError, ValueError):
+                 return
+ 
+diff --git a/sympy/utilities/lambdify.py b/sympy/utilities/lambdify.py
+index f5bf0ca39c..00751fdd52 100644
+--- a/sympy/utilities/lambdify.py
++++ b/sympy/utilities/lambdify.py
+@@ -674,9 +674,59 @@ def implemented_function(symfunc, implementation):
+     -------
+     afunc : sympy.FunctionClass instance
+        function with attached implementation
+-
+-    Examples
+-    ========
++    """
++    from sympy.core.function import UndefinedFunction, Function
++    from sympy.core.evalf import Float
++    
++    if isinstance(symfunc, str):
++        symfunc = UndefinedFunction(symfunc)
++        
++    class NewFunc(Function):
++        @classmethod
++        def eval(cls, *args):
++            try:
++                result = implementation(*args)
++                if hasattr(result, 'evalf'):
++                    return result
++                return Float(result)
++            except (TypeError, ValueError):
++                return None
++                
++        def _eval_evalf(self, prec):
++            # First evaluate all arguments recursively
++            evaluated_args = []
++            for arg in self.args:
++                if hasattr(arg, 'evalf'):
++                    evaled = arg.evalf(prec)
++                    if hasattr(evaled, '_imp_') and not evaled.is_Float:
++                        try:
++                            evaled = evaled._imp_()
++                        except (AttributeError, TypeError):
++                            pass
++                    evaluated_args.append(evaled)
++                else:
++                    evaluated_args.append(arg)
++            
++            # Apply implementation to evaluated args
++            try:
++                result = implementation(*evaluated_args)
++                if hasattr(result, 'evalf'):
++                    return result.evalf(prec)
++                return Float(result, prec)
++            except (TypeError, ValueError):
++                return self
++            
++        def eval(self):
++            # Try to evaluate symbolically
++            try:
++                args = [arg.eval() if hasattr(arg, 'eval') else arg for arg in self.args]
++                return self.func(*args)
++            except (TypeError, ValueError):
++                return self
++                
++    NewFunc.__name__ = symfunc.__name__
++    NewFunc._imp_ = staticmethod(implementation)
++    return NewFunc
+ 
+     >>> from sympy.abc import x
+     >>> from sympy.utilities.lambdify import lambdify, implemented_function

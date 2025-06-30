@@ -1,0 +1,33 @@
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index a791908caf..2786ff311f 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -342,7 +342,7 @@ class SQLCompiler:
+ 
+         for expr, is_ref in order_by:
+             resolved = expr.resolve_expression(self.query, allow_joins=True, reuse=None)
+-            if self.query.combinator:
++            if self.query.combinator and not getattr(self.query, 'final_ordering', False):
+                 src = resolved.get_source_expressions()[0]
+                 # Relabel order by columns to raw numbers if this is a combined
+                 # query; necessary since the columns can't be referenced by the
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index 08d7faf194..31cc8a6333 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -153,6 +153,7 @@ class Query(BaseExpression):
+     def __init__(self, model, where=WhereNode):
+         self.model = model
+         self.alias_refcount = {}
++        self.final_ordering = False
+         # alias_map is the most important data structure regarding joins.
+         # It's used for recording which joins exist in the query and what
+         # types they are. The key is the alias of the joined table (possibly
+@@ -279,6 +280,7 @@ class Query(BaseExpression):
+             raise ValueError("Need either using or connection")
+         if using:
+             connection = connections[using]
++        self.final_ordering = True
+         return connection.ops.compiler(self.compiler)(self, connection, using)
+ 
+     def get_meta(self):

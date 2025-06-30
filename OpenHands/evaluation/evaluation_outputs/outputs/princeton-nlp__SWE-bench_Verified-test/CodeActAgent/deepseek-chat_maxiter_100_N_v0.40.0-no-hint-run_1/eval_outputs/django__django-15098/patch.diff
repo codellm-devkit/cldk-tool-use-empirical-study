@@ -1,0 +1,109 @@
+diff --git a/django/urls/resolvers.py b/django/urls/resolvers.py
+index 6ea18dd22f..a961782208 100644
+--- a/django/urls/resolvers.py
++++ b/django/urls/resolvers.py
+@@ -302,6 +302,9 @@ class RoutePattern(CheckURLMixin):
+         return str(self._route)
+ 
+ 
++from django.utils.translation import to_language
++from django.utils.translation.trans_real import language_code_re
++
+ class LocalePrefixPattern:
+     def __init__(self, prefix_default_language=True):
+         self.prefix_default_language = prefix_default_language
+@@ -317,8 +320,29 @@ class LocalePrefixPattern:
+         language_code = get_language() or settings.LANGUAGE_CODE
+         if language_code == settings.LANGUAGE_CODE and not self.prefix_default_language:
+             return ''
+-        else:
++        
++        # Validate and normalize BCP 47 language code
++        if not language_code_re.match(language_code):
++            return '%s/' % language_code
++
++        # Check if code is already normalized (contains uppercase letters)
++        if any(c.isupper() for c in language_code):
+             return '%s/' % language_code
++            
++        # Only normalize if code is all lowercase
++        parts = language_code.split('-')
++        parts[0] = parts[0].lower()  # Language code always lowercase
++        
++        for i in range(1, len(parts)):
++            part = parts[i]
++            if len(part) == 4 and part.isalpha():  # Script code
++                parts[i] = part.capitalize()
++            elif len(part) == 2 and (part.isalpha() or part.isdigit()):  # Region code
++                parts[i] = part.upper()
++            else:  # Variants/extensions
++                parts[i] = part.lower()
++                
++        return '%s/' % '-'.join(parts)
+ 
+     def match(self, path):
+         language_prefix = self.language_prefix
+diff --git a/docs/topics/i18n/translation.txt b/docs/topics/i18n/translation.txt
+index 99fc41ebb6..dc90c11585 100644
+--- a/docs/topics/i18n/translation.txt
++++ b/docs/topics/i18n/translation.txt
+@@ -36,6 +36,22 @@ make some optimizations so as not to load the internationalization machinery.
+     :mod:`django.middleware.locale.LocaleMiddleware`). If you haven't yet,
+     see :ref:`how-django-discovers-language-preference`.
+ 
++Language Code Format
++-------------------
++
++Django supports both simple language codes (e.g. ``de``, ``pt-br``) and BCP 47/RFC 5646
++format codes with script/region components (e.g. ``en-Latn-US``, ``zh-Hans-CN``).
++
++For BCP 47 format codes, Django preserves the exact case provided in settings.
++Follow these conventions for proper case handling:
++
++* Language codes: lowercase (``en``)
++* Script codes: Titlecase (``Latn``)
++* Country codes: UPPERCASE (``US``)
++* Variants: lowercase
++
++Example: ``zh-Hans-CN`` for Chinese in Simplified script as used in China.
++
+ Internationalization: in Python code
+ ====================================
+ 
+diff --git a/tests/i18n/test_locale_prefix.py b/tests/i18n/test_locale_prefix.py
+new file mode 100644
+index 0000000000..c88b86c084
+--- /dev/null
++++ b/tests/i18n/test_locale_prefix.py
+@@ -0,0 +1,31 @@
++
++
++from django.test import SimpleTestCase
++from django.urls.resolvers import LocalePrefixPattern
++from django.conf import settings
++
++class LocalePrefixPatternTests(SimpleTestCase):
++    def test_language_prefix_normalization(self):
++        test_cases = [
++            ('en-us', 'en-us/'),  # Basic case
++            ('en-latn-us', 'en-latn-us/'),  # Script+region (preserve input case)
++            ('en-Latn-US', 'en-Latn-US/'),  # BCP 47 format (preserve input case)
++            ('sr-latn', 'sr-latn/'),  # Script only (preserve input case)
++            ('zh-hans-cn', 'zh-hans-cn/'),  # 3-part code (preserve input case)
++        ]
++        
++        pattern = LocalePrefixPattern(prefix_default_language=True)
++        
++        for input_code, expected_prefix in test_cases:
++            with self.settings(LANGUAGE_CODE=input_code):
++                print(f"\nTesting input: {input_code}")
++                print(f"Expected output: {expected_prefix}")
++                result = pattern.language_prefix
++                print(f"Actual output: {result}")
++                print(f"Parts: {input_code.split('-')}")
++                self.assertEqual(
++                    result,
++                    expected_prefix,
++                    f"Failed for {input_code}: expected {expected_prefix}, got {result}"
++                )
++

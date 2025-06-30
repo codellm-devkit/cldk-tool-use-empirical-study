@@ -1,0 +1,19 @@
+diff --git a/django/db/backends/sqlite3/schema.py b/django/db/backends/sqlite3/schema.py
+index b3a2f4282b..f30285edd8 100644
+--- a/django/db/backends/sqlite3/schema.py
++++ b/django/db/backends/sqlite3/schema.py
+@@ -11,6 +11,14 @@ from django.db.transaction import atomic
+ 
+ 
+ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
++    def _field_should_be_altered(self, old_field, new_field):
++        # For SQLite, treat choices changes as non-schema changes
++        if (hasattr(old_field, 'choices') and hasattr(new_field, 'choices') and
++                old_field.choices != new_field.choices and
++                old_field.db_parameters(connection=self.connection) == 
++                new_field.db_parameters(connection=self.connection)):
++            return False
++        return super()._field_should_be_altered(old_field, new_field)
+ 
+     sql_delete_table = "DROP TABLE %(table)s"
+     sql_create_fk = None

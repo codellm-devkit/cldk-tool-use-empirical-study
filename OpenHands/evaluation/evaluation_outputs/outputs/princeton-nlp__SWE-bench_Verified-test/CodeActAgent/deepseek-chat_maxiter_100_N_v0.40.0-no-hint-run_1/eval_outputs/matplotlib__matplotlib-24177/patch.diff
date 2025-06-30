@@ -1,0 +1,35 @@
+diff --git a/lib/matplotlib/axes/_axes.py b/lib/matplotlib/axes/_axes.py
+index 2412f815cd..d35b4e8cc7 100644
+--- a/lib/matplotlib/axes/_axes.py
++++ b/lib/matplotlib/axes/_axes.py
+@@ -6737,8 +6737,8 @@ such objects
+             hist_kwargs['range'] = bin_range
+ 
+         density = bool(density)
+-        if density and not stacked:
+-            hist_kwargs['density'] = density
++        if density:
++            hist_kwargs['density'] = False  # We'll handle normalization ourselves
+ 
+         # List to store all the top coordinates of the histograms
+         tops = []  # Will have shape (n_datasets, n_bins).
+@@ -6750,12 +6750,13 @@ such objects
+             tops.append(m)
+         tops = np.array(tops, float)  # causes problems later if it's an int
+         bins = np.array(bins, float)  # causes problems if float16
+-        if stacked:
+-            tops = tops.cumsum(axis=0)
+-            # If a stacked density plot, normalize so the area of all the
+-            # stacked histograms together is 1
+-            if density:
+-                tops = (tops / np.diff(bins)) / tops[-1].sum()
++        
++        # Apply density normalization if requested
++        if density:
++            if stacked:
++                tops = tops.cumsum(axis=0)
++            # Normalize so the area under histogram equals 1
++            tops = (tops / np.diff(bins)) / tops.sum(axis=1, keepdims=True)
+         if cumulative:
+             slc = slice(None)
+             if isinstance(cumulative, Number) and cumulative < 0:

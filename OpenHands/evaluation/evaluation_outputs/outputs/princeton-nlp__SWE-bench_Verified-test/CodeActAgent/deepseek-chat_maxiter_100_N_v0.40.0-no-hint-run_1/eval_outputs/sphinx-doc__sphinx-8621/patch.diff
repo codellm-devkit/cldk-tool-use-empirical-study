@@ -1,0 +1,101 @@
+diff --git a/sphinx/builders/html/transforms.py b/sphinx/builders/html/transforms.py
+index c91da57e9..d79804c02 100644
+--- a/sphinx/builders/html/transforms.py
++++ b/sphinx/builders/html/transforms.py
+@@ -36,25 +36,21 @@ class KeyboardTransform(SphinxPostTransform):
+                 x
+     """
+     default_priority = 400
+-    builders = ('html',)
+-    pattern = re.compile(r'(-|\+|\^|\s+)')
+-
+-    def run(self, **kwargs: Any) -> None:
+-        matcher = NodeMatcher(nodes.literal, classes=["kbd"])
+-        for node in self.document.traverse(matcher):  # type: nodes.literal
+-            parts = self.pattern.split(node[-1].astext())
+-            if len(parts) == 1:
+-                continue
++    builders = ('html',)                                continue
+ 
+             node.pop()
+             while parts:
+                 key = parts.pop(0)
+-                node += nodes.literal('', key, classes=["kbd"])
++                if key:  # Only add non-empty keys
++                    node += nodes.literal('', key, classes=["kbd"])
+ 
+                 try:
+                     # key separator (ex. -, +, ^)
+                     sep = parts.pop(0)
+-                    node += nodes.Text(sep)
++                    if sep:  # Only add non-empty separators
++                        # Don't add separator if next part is empty or another separator
++                        if parts and parts[0] and not self.pattern.match(parts[0]):
++                            node += nodes.Text(sep)
+                 except IndexError:
+                     pass
+ 
+diff --git a/tests/test_markup.py b/tests/test_markup.py
+index a2bcb2dc1..d1c3b6b97 100644
+--- a/tests/test_markup.py
++++ b/tests/test_markup.py
+@@ -266,6 +266,59 @@ def get_verifier(verify, verify_re):
+          '</kbd></p>'),
+         '\\sphinxkeyboard{\\sphinxupquote{M\\sphinxhyphen{}x  M\\sphinxhyphen{}s}}',
+     ),
++    (
++        # kbd role with standalone separator
++        'verify',
++        ':kbd:`-`',
++        '<p><kbd class="kbd docutils literal notranslate">-</kbd></p>',
++        '\\sphinxkeyboard{\\sphinxupquote{-}}',
++    ),
++    (
++        # kbd role with standalone plus
++        'verify',
++        ':kbd:`+`',
++        '<p><kbd class="kbd docutils literal notranslate">+</kbd></p>',
++        '\\sphinxkeyboard{\\sphinxupquote{+}}',
++    ),
++    (
++        # kbd role with compound key containing separator
++        'verify',
++        ':kbd:`Shift-+`',
++        ('<p><kbd class="kbd docutils literal notranslate">'
++         '<kbd class="kbd docutils literal notranslate">Shift</kbd>'
++         '+'
++         '<kbd class="kbd docutils literal notranslate">+</kbd>'
++         '</kbd></p>'),
++        '\\sphinxkeyboard{\\sphinxupquote{Shift++}}',
++    ),
++    (
++        # kbd role with multiple separators
++        'verify',
++        ':kbd:`Ctrl-+-F`',
++        ('<p><kbd class="kbd docutils literal notranslate">'
++         '<kbd class="kbd docutils literal notranslate">Ctrl</kbd>'
++         '+'
++         '<kbd class="kbd docutils literal notranslate">+</kbd>'
++         '+'
++         '<kbd class="kbd docutils literal notranslate">F</kbd>'
++         '</kbd></p>'),
++        '\\sphinxkeyboard{\\sphinxupquote{Ctrl+++F}}',
++    ),
++    (
++        # kbd role
++        'verify',
++        ':kbd:`M-x  M-s`',
++        ('<p><kbd class="kbd docutils literal notranslate">'
++         '<kbd class="kbd docutils literal notranslate">M</kbd>'
++         '-'
++         '<kbd class="kbd docutils literal notranslate">x</kbd>'
++         '  '
++         '<kbd class="kbd docutils literal notranslate">M</kbd>'
++         '-'
++         '<kbd class="kbd docutils literal notranslate">s</kbd>'
++         '</kbd></p>'),
++        '\\sphinxkeyboard{\\sphinxupquote{M\\sphinxhyphen{}x  M\\sphinxhyphen{}s}}',
++    ),
+     (
+         # non-interpolation of dashes in option role
+         'verify_re',

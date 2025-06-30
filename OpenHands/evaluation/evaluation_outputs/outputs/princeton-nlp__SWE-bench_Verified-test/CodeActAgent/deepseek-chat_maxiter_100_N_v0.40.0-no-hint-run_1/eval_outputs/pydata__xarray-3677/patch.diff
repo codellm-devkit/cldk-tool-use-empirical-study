@@ -1,0 +1,191 @@
+diff --git a/merge_utils.py b/merge_utils.py
+new file mode 100644
+index 00000000..27c228d5
+--- /dev/null
++++ b/merge_utils.py
+@@ -0,0 +1,16 @@
++
++
++"""Standalone utilities for merging xarray objects."""
++
++def safe_merge(dataset, other):
++    """
++    Safely merge a Dataset with either a Dataset or DataArray.
++    Works around xarray's circular import issues.
++    """
++    try:
++        # Duck typing approach
++        other_ds = other.to_dataset() if hasattr(other, 'to_dataset') else other
++        return dataset.merge(other_ds)
++    except Exception as e:
++        raise ValueError(f"Failed to merge objects: {e}")
++
+diff --git a/minimal_merge_test.py b/minimal_merge_test.py
+new file mode 100644
+index 00000000..5cb71975
+--- /dev/null
++++ b/minimal_merge_test.py
+@@ -0,0 +1,30 @@
++
++
++
++"""Minimal test for DataArray-Dataset merging without full xarray imports."""
++import sys
++from xarray.core.dataset import Dataset
++from xarray.core.dataarray import DataArray
++
++def test_merge():
++    ds = Dataset({'a': 0})
++    da = DataArray(1, name='b')
++    
++    # Convert DataArray to Dataset
++    da_as_ds = da.to_dataset()
++    
++    # Simple merge implementation
++    merged_vars = {**ds.variables, **da_as_ds.variables}
++    return Dataset(merged_vars)
++
++if __name__ == "__main__":
++    try:
++        result = test_merge()
++        print("Merge successful:")
++        print(result)
++        sys.exit(0)
++    except Exception as e:
++        print(f"Merge failed: {e}")
++        sys.exit(1)
++
++
+diff --git a/standalone_merge_test.py b/standalone_merge_test.py
+new file mode 100644
+index 00000000..53f5fa70
+--- /dev/null
++++ b/standalone_merge_test.py
+@@ -0,0 +1,27 @@
++
++
++"""Standalone test for DataArray-Dataset merging."""
++import sys
++from merge_utils import safe_merge
++
++def main():
++    try:
++        import xarray as xr
++    except ImportError:
++        print("xarray not installed")
++        return 1
++
++    print("Creating test objects...")
++    ds = xr.Dataset({'a': 0})
++    da = xr.DataArray(1, name='b')
++
++    print("\nTesting top-level merge:")
++    print(xr.merge([ds, da]))
++
++    print("\nTesting safe_merge:")
++    print(safe_merge(ds, da))
++    return 0
++
++if __name__ == "__main__":
++    sys.exit(main())
++
+diff --git a/test_merge_fix.py b/test_merge_fix.py
+new file mode 100644
+index 00000000..af12c17c
+--- /dev/null
++++ b/test_merge_fix.py
+@@ -0,0 +1,16 @@
++
++import xarray as xr
++from merge_utils import safe_merge
++
++ds = xr.Dataset({'a': 0})
++da = xr.DataArray(1, name='b')
++
++# Test top-level merge
++expected = xr.merge([ds, da])
++print("Top-level merge works:")
++print(expected)
++
++# Test safe_merge function
++print("\nSafe merge method:")
++result = safe_merge(ds, da)
++print(result)
+diff --git a/xarray/core/dataset.py b/xarray/core/dataset.py
+index ac0a923d..8d20e8aa 100644
+--- a/xarray/core/dataset.py
++++ b/xarray/core/dataset.py
+@@ -3604,9 +3604,10 @@ class Dataset(Mapping, ImplementsDatasetReduce, DataWithCoords):
+             If any variables conflict (see ``compat``).
+         """
+         _check_inplace(inplace)
++        other_converted = other.to_dataset() if hasattr(other, 'to_dataset') else other
+         merge_result = dataset_merge_method(
+             self,
+-            other,
++            other_converted,
+             overwrite_vars=overwrite_vars,
+             compat=compat,
+             join=join,
+diff --git a/xarray/core/merge.py b/xarray/core/merge.py
+index 10c7804d..6ab7f1fe 100644
+--- a/xarray/core/merge.py
++++ b/xarray/core/merge.py
+@@ -19,13 +19,13 @@ import pandas as pd
+ 
+ from . import dtypes, pdcompat
+ from .alignment import deep_align
++from .dataarray import DataArray
+ from .duck_array_ops import lazy_array_equiv
+ from .utils import Frozen, dict_equiv
+ from .variable import Variable, as_variable, assert_unique_multiindex_level_names
+ 
+ if TYPE_CHECKING:
+     from .coordinates import Coordinates
+-    from .dataarray import DataArray
+     from .dataset import Dataset
+ 
+     DimsLike = Union[Hashable, Sequence[Hashable]]
+@@ -814,16 +814,20 @@ def dataset_merge_method(
+     else:
+         overwrite_vars = {overwrite_vars}
+ 
++    try:
++        other_dataset = other.to_dataset() if hasattr(other, 'to_dataset') else other
++    except Exception:
++        other_dataset = other
+     if not overwrite_vars:
+-        objs = [dataset, other]
++        objs = [dataset, other_dataset]
+         priority_arg = None
+-    elif overwrite_vars == set(other):
+-        objs = [dataset, other]
++    elif overwrite_vars == set(other_dataset):
++        objs = [dataset, other_dataset]
+         priority_arg = 1
+     else:
+         other_overwrite: Dict[Hashable, CoercibleValue] = {}
+         other_no_overwrite: Dict[Hashable, CoercibleValue] = {}
+-        for k, v in other.items():
++        for k, v in other_dataset.items():
+             if k in overwrite_vars:
+                 other_overwrite[k] = v
+             else:
+diff --git a/xarray/utils/merge_utils.py b/xarray/utils/merge_utils.py
+new file mode 100644
+index 00000000..62c59021
+--- /dev/null
++++ b/xarray/utils/merge_utils.py
+@@ -0,0 +1,12 @@
++
++
++"""Utilities for merging DataArrays with Datasets."""
++from typing import Union
++from ..dataset import Dataset
++from ..dataarray import DataArray
++
++def safe_merge(dataset: Dataset, other: Union[Dataset, DataArray]):
++    """Merge a Dataset with either a Dataset or DataArray."""
++    other_ds = other.to_dataset() if isinstance(other, DataArray) else other
++    return dataset.merge(other_ds)
++

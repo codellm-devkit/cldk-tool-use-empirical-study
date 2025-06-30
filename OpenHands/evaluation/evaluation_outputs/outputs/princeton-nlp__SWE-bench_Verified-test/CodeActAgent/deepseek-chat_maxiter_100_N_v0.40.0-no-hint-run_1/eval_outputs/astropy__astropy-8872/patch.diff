@@ -1,0 +1,43 @@
+diff --git a/astropy/units/quantity.py b/astropy/units/quantity.py
+index ded609cbe9..6a0de0b398 100644
+--- a/astropy/units/quantity.py
++++ b/astropy/units/quantity.py
+@@ -216,7 +216,9 @@ class Quantity(np.ndarray, metaclass=InheritDocstrings):
+         The dtype of the resulting Numpy array or scalar that will
+         hold the value.  If not provided, it is determined from the input,
+         except that any input that cannot represent float (integer and bool)
+-        is converted to float.
++        is converted to float. Note that numpy.float16 scalar inputs may be
++        automatically promoted to float64 following numpy's type promotion rules,
++        while float16 arrays will preserve their dtype.
+ 
+     copy : bool, optional
+         If `True` (default), then the value is copied.  Otherwise, a copy will
+@@ -365,6 +367,17 @@ class Quantity(np.ndarray, metaclass=InheritDocstrings):
+                 elif unit is not value_unit:
+                     copy = False  # copy will be made in conversion at end
+ 
++        # Special handling for float16 scalars - convert to array first
++        if isinstance(value, np.float16):
++            value = np.array(value, dtype=np.float16)
++            if dtype is None:
++                dtype = np.float16
++        # General case for other types
++        elif isinstance(value, (np.number, np.ndarray)):
++            temp_value = np.asarray(value)
++            if dtype is None and temp_value.dtype.kind in 'fcmM':
++                dtype = temp_value.dtype
++                
+         value = np.array(value, dtype=dtype, copy=copy, order=order,
+                          subok=False, ndmin=ndmin)
+ 
+@@ -377,8 +390,8 @@ class Quantity(np.ndarray, metaclass=InheritDocstrings):
+                             "Numpy numeric type.")
+ 
+         # by default, cast any integer, boolean, etc., to float
+-        if dtype is None and (not (np.can_cast(np.float32, value.dtype)
+-                                   or value.dtype.fields)
++        if dtype is None and (value.dtype.kind not in 'fcmM'  # Preserve all float/complex types
++                              and not value.dtype.fields
+                               or value.dtype.kind == 'O'):
+             value = value.astype(float)

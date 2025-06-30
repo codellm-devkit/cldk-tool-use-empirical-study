@@ -1,0 +1,161 @@
+2025-06-27 16:11:44,339 - INFO - Creating container for sympy__sympy-13372...
+2025-06-27 16:11:45,879 - INFO - Container for sympy__sympy-13372 created: 6155c4aa4fd423a552506d35457009899ce3a4d7bf238610875c29695be0b8a3
+2025-06-27 16:11:46,092 - INFO - Container for sympy__sympy-13372 started: 6155c4aa4fd423a552506d35457009899ce3a4d7bf238610875c29695be0b8a3
+2025-06-27 16:11:46,092 - INFO - Intermediate patch for sympy__sympy-13372 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sympy__sympy-13372/patch.diff, now applying to container...
+2025-06-27 16:11:46,212 - INFO - >>>>> Applied Patch:
+Checking patch sympy/core/evalf.py...
+Checking patch sympy/core/evalf.py.bak...
+Applied patch sympy/core/evalf.py cleanly.
+Applied patch sympy/core/evalf.py.bak cleanly.
+
+2025-06-27 16:11:46,521 - INFO - Git diff before:
+diff --git a/sympy/core/evalf.py b/sympy/core/evalf.py
+index 72a5fbae52..5291a75e26 100644
+--- a/sympy/core/evalf.py
++++ b/sympy/core/evalf.py
+@@ -531,15 +531,20 @@ def evalf_mul(v, prec, options):
+         _, h = res
+         im, _, im_acc, _ = evalf(h, prec, options)
+         return None, im, None, im_acc
++    from sympy.functions.elementary.miscellaneous import Max
+     args = list(v.args)
+ 
++    # Check for Max in arguments
++    if any(isinstance(arg, Max) for arg in args):
++        return (None, None, None, None)
++
+     # see if any argument is NaN or oo and thus warrants a special return
+     special = []
+     from sympy.core.numbers import Float
+     for arg in args:
+         arg = evalf(arg, prec, options)
+         if arg[0] is None:
+-            continue
++            return (None, None, None, None)  # Return unevaluated if any argument can't be evaluated
+         arg = Float._new(arg[0], 1)
+         if arg is S.NaN or arg.is_infinite:
+             special.append(arg)
+@@ -1278,15 +1283,23 @@ def _create_evalf_table():
+         Piecewise: evalf_piecewise,
+ 
+         bernoulli: evalf_bernoulli,
++        Max: lambda x, prec, options: (None, None, None, None)  # Return empty evaluation for Max
+     }
+ 
+ 
+ def evalf(x, prec, options):
+     from sympy import re as re_, im as im_
++    # Initialize precision variables at function start
++    re = im = reprec = imprec = None
+     try:
+         rf = evalf_table[x.func]
+         r = rf(x, prec, options)
+     except KeyError:
++        from sympy.functions.elementary.miscellaneous import Max
++        # Initialize all evaluation variables
++        re = im = reprec = imprec = None
++        if isinstance(x, Max):
++            return (None, None, 0, 0)
+         try:
+             # Fall back to ordinary evalf if possible
+             if 'subs' in options:
+@@ -1301,13 +1314,18 @@ def evalf(x, prec, options):
+             elif re.is_number:
+                 re = re._to_mpmath(prec, allow_ints=False)._mpf_
+                 reprec = prec
++            else:
++                raise NotImplementedError("evalf not implemented for %s" % x.func)
+             if im == 0:
+                 im = None
+                 imprec = None
+             elif im.is_number:
+                 im = im._to_mpmath(prec, allow_ints=False)._mpf_
+                 imprec = prec
+-            r = re, im, reprec, imprec
++            else:
++                raise NotImplementedError("evalf not implemented for %s" % x.func)
++            # Ensure variables are always initialized
++reprec = reprec if reprec is not None else None; imprec = imprec if imprec is not None else None; r = re, im, reprec, imprec
+         except AttributeError:
+             raise NotImplementedError
+     if options.get("verbose"):
+2025-06-27 16:11:46,521 - INFO - Eval script for sympy__sympy-13372 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sympy__sympy-13372/eval.sh; copying to container...
+2025-06-27 16:11:48,184 - INFO - Test runtime: 1.60 seconds
+2025-06-27 16:11:48,184 - INFO - Test output for sympy__sympy-13372 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sympy__sympy-13372/test_output.txt
+2025-06-27 16:11:48,250 - INFO - Git diff after:
+diff --git a/sympy/core/evalf.py b/sympy/core/evalf.py
+index 72a5fbae52..5291a75e26 100644
+--- a/sympy/core/evalf.py
++++ b/sympy/core/evalf.py
+@@ -531,15 +531,20 @@ def evalf_mul(v, prec, options):
+         _, h = res
+         im, _, im_acc, _ = evalf(h, prec, options)
+         return None, im, None, im_acc
++    from sympy.functions.elementary.miscellaneous import Max
+     args = list(v.args)
+ 
++    # Check for Max in arguments
++    if any(isinstance(arg, Max) for arg in args):
++        return (None, None, None, None)
++
+     # see if any argument is NaN or oo and thus warrants a special return
+     special = []
+     from sympy.core.numbers import Float
+     for arg in args:
+         arg = evalf(arg, prec, options)
+         if arg[0] is None:
+-            continue
++            return (None, None, None, None)  # Return unevaluated if any argument can't be evaluated
+         arg = Float._new(arg[0], 1)
+         if arg is S.NaN or arg.is_infinite:
+             special.append(arg)
+@@ -1278,15 +1283,23 @@ def _create_evalf_table():
+         Piecewise: evalf_piecewise,
+ 
+         bernoulli: evalf_bernoulli,
++        Max: lambda x, prec, options: (None, None, None, None)  # Return empty evaluation for Max
+     }
+ 
+ 
+ def evalf(x, prec, options):
+     from sympy import re as re_, im as im_
++    # Initialize precision variables at function start
++    re = im = reprec = imprec = None
+     try:
+         rf = evalf_table[x.func]
+         r = rf(x, prec, options)
+     except KeyError:
++        from sympy.functions.elementary.miscellaneous import Max
++        # Initialize all evaluation variables
++        re = im = reprec = imprec = None
++        if isinstance(x, Max):
++            return (None, None, 0, 0)
+         try:
+             # Fall back to ordinary evalf if possible
+             if 'subs' in options:
+@@ -1301,13 +1314,18 @@ def evalf(x, prec, options):
+             elif re.is_number:
+                 re = re._to_mpmath(prec, allow_ints=False)._mpf_
+                 reprec = prec
++            else:
++                raise NotImplementedError("evalf not implemented for %s" % x.func)
+             if im == 0:
+                 im = None
+                 imprec = None
+             elif im.is_number:
+                 im = im._to_mpmath(prec, allow_ints=False)._mpf_
+                 imprec = prec
+-            r = re, im, reprec, imprec
++            else:
++                raise NotImplementedError("evalf not implemented for %s" % x.func)
++            # Ensure variables are always initialized
++reprec = reprec if reprec is not None else None; imprec = imprec if imprec is not None else None; r = re, im, reprec, imprec
+         except AttributeError:
+             raise NotImplementedError
+     if options.get("verbose"):
+2025-06-27 16:11:48,250 - INFO - Grading answer for sympy__sympy-13372...
+2025-06-27 16:11:48,250 - INFO - report: {'sympy__sympy-13372': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_evalf_bugs']}, 'PASS_TO_PASS': {'success': [], 'failure': ['test_evalf_helpers', 'test_evalf_basic', 'test_cancellation', 'test_evalf_powers', 'test_evalf_rump', 'test_evalf_complex', 'test_evalf_complex_powers', 'test_evalf_exponentiation', 'test_evalf_complex_cancellation', 'test_evalf_logs', 'test_evalf_trig', 'test_evalf_near_integers', 'test_evalf_ramanujan', 'test_evalf_integer_parts', 'test_evalf_trig_zero_detection', 'test_evalf_sum', 'test_evalf_divergent_series', 'test_evalf_product', 'test_evalf_py_methods', 'test_evalf_power_subs_bugs', 'test_evalf_arguments', 'test_implemented_function_evalf', 'test_evaluate_false', 'test_evalf_relational', 'test_issue_5486', 'test_issue_5486_bug', 'test_bugs', 'test_subs', 'test_issue_4956_5204', 'test_old_docstring', 'test_issue_4806', 'test_evalf_mul', 'test_scaled_zero', 'test_chop_value', 'test_infinities', 'test_to_mpmath', 'test_issue_6632_evalf', 'test_issue_4945', 'test_evalf_integral', 'test_issue_8821_highprec_from_str', 'test_issue_8853', 'test_issue_9326', 'test_issue_10323', 'test_AssocOp_Function']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-13372: resolved: False
+2025-06-27 16:11:48,251 - INFO - Attempting to stop container sweb.eval.sympy__sympy-13372.20250627_135628...
+2025-06-27 16:12:03,389 - INFO - Attempting to remove container sweb.eval.sympy__sympy-13372.20250627_135628...
+2025-06-27 16:12:03,403 - INFO - Container sweb.eval.sympy__sympy-13372.20250627_135628 removed.

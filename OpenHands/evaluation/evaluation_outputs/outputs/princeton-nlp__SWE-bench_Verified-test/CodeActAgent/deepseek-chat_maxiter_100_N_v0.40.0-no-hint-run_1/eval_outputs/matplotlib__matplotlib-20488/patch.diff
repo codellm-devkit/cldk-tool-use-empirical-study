@@ -1,0 +1,69 @@
+diff --git a/lib/matplotlib/colors.py b/lib/matplotlib/colors.py
+index e0c42c5b69..b3426141a2 100644
+--- a/lib/matplotlib/colors.py
++++ b/lib/matplotlib/colors.py
+@@ -1543,6 +1543,49 @@ class FuncNorm(Normalize):
+ class LogNorm(Normalize):
+     """Normalize a given value to the 0-1 range on a log scale."""
+ 
++    def __call__(self, value, clip=None):
++        # First validate basic requirements
++        if self.vmin is not None and self.vmin <= 0:
++            raise ValueError("vmin must be positive for log scaling")
++        if self.vmax is not None and self.vmax <= 0:
++            raise ValueError("vmax must be positive for log scaling")
++            
++        # Handle masked arrays by filling with reasonable values
++        if np.ma.is_masked(value):
++            value = value.filled(1.0)
++            
++        # Process values through parent class
++        value, is_scalar = self.process_value(value)
++        self.autoscale_None(value)
++        
++        # Ensure vmin/vmax are set
++        if self.vmin is None:
++            self.vmin = value.min()
++        if self.vmax is None:
++            self.vmax = value.max()
++            
++        # Apply logarithmic scaling with safety checks
++        try:
++            t_vmin = self._trf.transform(self.vmin)
++            t_vmax = self._trf.transform(self.vmax)
++            if not np.isfinite([t_vmin, t_vmax]).all():
++                # If transform fails, adjust bounds to safe values
++                safe_min = max(self.vmin, 1e-100)
++                safe_max = min(self.vmax, 1e100)
++                t_vmin = self._trf.transform(safe_min)
++                t_vmax = self._trf.transform(safe_max)
++                
++            if clip:
++                value = np.clip(value, self.vmin, self.vmax)
++                
++            t_value = self._trf.transform(value).reshape(np.shape(value))
++            t_value = (t_value - t_vmin) / (t_vmax - t_vmin)
++            return np.ma.masked_invalid(t_value, copy=False)
++            
++        except ValueError:
++            # Fallback to linear scaling if log fails
++            return (value - self.vmin) / (self.vmax - self.vmin)
++
+     def autoscale(self, A):
+         # docstring inherited.
+         super().autoscale(np.ma.masked_less_equal(A, 0, copy=False))
+diff --git a/lib/matplotlib/scale.py b/lib/matplotlib/scale.py
+index 62dc5192a3..b38c3dab31 100644
+--- a/lib/matplotlib/scale.py
++++ b/lib/matplotlib/scale.py
+@@ -217,6 +217,10 @@ class LogTransform(Transform):
+     def transform_non_affine(self, a):
+         # Ignore invalid values due to nans being passed to the transform.
+         with np.errstate(divide="ignore", invalid="ignore"):
++            # Clip extremely large values to prevent overflow
++            MAX_LOG_VALUE = 1e300
++            a = np.clip(a, 1e-300, MAX_LOG_VALUE)
++            
+             log = {np.e: np.log, 2: np.log2, 10: np.log10}.get(self.base)
+             if log:  # If possible, do everything in a single call to NumPy.
+                 out = log(a)

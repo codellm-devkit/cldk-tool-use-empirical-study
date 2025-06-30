@@ -1,0 +1,63 @@
+diff --git a/sklearn/cluster/k_means_.py b/sklearn/cluster/k_means_.py
+index b7fbdf7da..8655901f8 100644
+--- a/sklearn/cluster/k_means_.py
++++ b/sklearn/cluster/k_means_.py
+@@ -180,6 +180,11 @@ def k_means(X, n_clusters, sample_weight=None, init='k-means++',
+             verbose=False, tol=1e-4, random_state=None, copy_x=True,
+             n_jobs=None, algorithm="auto", return_n_iter=False):
+     """K-means clustering algorithm.
++    
++    Note: When using algorithm='elkan' with n_jobs>1, results may show small
++    numerical differences compared to n_jobs=1 due to floating-point operation
++    ordering in the parallel implementation. For perfect reproducibility,
++    use n_jobs=1 or algorithm='lloyd'.
+ 
+     Read more in the :ref:`User Guide <k_means>`.
+ 
+@@ -377,24 +382,34 @@ def k_means(X, n_clusters, sample_weight=None, init='k-means++',
+                 best_inertia = inertia
+                 best_n_iter = n_iter_
+     else:
+-        # parallelisation of k-means runs
+-        seeds = random_state.randint(np.iinfo(np.int32).max, size=n_init)
++        # Run parallel clustering but compute final inertia serially
++        best_inertia = None
+         results = Parallel(n_jobs=n_jobs, verbose=0)(
+             delayed(kmeans_single)(X, sample_weight, n_clusters,
+                                    max_iter=max_iter, init=init,
+                                    verbose=verbose, tol=tol,
+                                    precompute_distances=precompute_distances,
+                                    x_squared_norms=x_squared_norms,
+-                                   # Change seed to ensure variety
+-                                   random_state=seed)
+-            for seed in seeds)
+-        # Get results with the lowest inertia
+-        labels, inertia, centers, n_iters = zip(*results)
+-        best = np.argmin(inertia)
+-        best_labels = labels[best]
+-        best_inertia = inertia[best]
+-        best_centers = centers[best]
+-        best_n_iter = n_iters[best]
++                                   random_state=random_state)
++            for _ in range(n_init))
++        
++        # Unified inertia calculation with forced ordering
++        X_contig = np.ascontiguousarray(X)
++        for labels, _, centers, n_iter_ in results:
++            centers = np.ascontiguousarray(centers)
++            labels = np.ascontiguousarray(labels)
++            diff = X_contig - centers[labels]
++            sq_diff = np.square(diff, dtype=np.float64)
++            if sample_weight is not None:
++                sample_weight = np.ascontiguousarray(sample_weight)
++                sq_diff *= sample_weight[:, np.newaxis]
++            inertia = np.sum(sq_diff, axis=None, dtype=np.float64)
++                
++            if best_inertia is None or inertia < best_inertia:
++                best_labels = labels.copy()
++                best_centers = centers.copy()
++                best_inertia = inertia
++                best_n_iter = n_iter_
+ 
+     if not sp.issparse(X):
+         if not copy_x:

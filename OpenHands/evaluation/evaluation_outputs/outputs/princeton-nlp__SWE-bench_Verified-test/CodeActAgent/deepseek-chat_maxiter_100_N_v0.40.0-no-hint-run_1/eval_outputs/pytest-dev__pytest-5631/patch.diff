@@ -1,0 +1,39 @@
+diff --git a/src/_pytest/compat.py b/src/_pytest/compat.py
+index d238061b4..67a9e021d 100644
+--- a/src/_pytest/compat.py
++++ b/src/_pytest/compat.py
+@@ -11,6 +11,7 @@ from inspect import Parameter
+ from inspect import signature
+ 
+ import attr
++import numpy as np
+ import py
+ 
+ import _pytest
+@@ -65,12 +66,20 @@ def num_mock_patch_args(function):
+     if not patchings:
+         return 0
+     mock_modules = [sys.modules.get("mock"), sys.modules.get("unittest.mock")]
+-    if any(mock_modules):
+-        sentinels = [m.DEFAULT for m in mock_modules if m is not None]
+-        return len(
+-            [p for p in patchings if not p.attribute_name and p.new in sentinels]
+-        )
+-    return len(patchings)
++    if not any(mock_modules):
++        return len(patchings)
++        
++    sentinels = [m.DEFAULT for m in mock_modules if m is not None]
++    count = 0
++    for p in patchings:
++        if not p.attribute_name:
++            if hasattr(p.new, '__array__'):
++                # Handle numpy arrays with explicit comparison
++                count += any(np.array_equal(p.new, s) for s in sentinels)
++            else:
++                # Standard comparison for non-arrays
++                count += int(p.new in sentinels)
++    return count
+ 
+ 
+ def getfuncargnames(function, is_method=False, cls=None):

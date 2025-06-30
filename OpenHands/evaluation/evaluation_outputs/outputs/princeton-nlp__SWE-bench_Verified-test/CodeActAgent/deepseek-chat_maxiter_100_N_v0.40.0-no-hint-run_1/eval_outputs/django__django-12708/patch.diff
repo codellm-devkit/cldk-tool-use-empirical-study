@@ -1,0 +1,135 @@
+diff --git a/django/db/backends/base/schema.py b/django/db/backends/base/schema.py
+index 61f88401ab..b2e74bc238 100644
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -407,6 +407,19 @@ class BaseDatabaseSchemaEditor:
+             model, columns, exclude=meta_constraint_names | meta_index_names,
+             **constraint_kwargs
+         )
++        # Handle case where multiple constraints exist
++        if len(constraint_names) > 1:
++            # First try to find exact matches for our operation type
++            exact_matches = [
++                name for name in constraint_names
++                if len(self._constraint_names(model, columns, **constraint_kwargs)) == 1
++            ]
++            if exact_matches:
++                constraint_names = exact_matches
++            # If no exact matches, just use the first one
++            elif constraint_names:
++                constraint_names = [constraint_names[0]]
++                
+         if len(constraint_names) != 1:
+             raise ValueError("Found wrong number (%s) of constraints for %s(%s)" % (
+                 len(constraint_names),
+diff --git a/test_settings.py b/test_settings.py
+new file mode 100644
+index 0000000000..aba4354d23
+--- /dev/null
++++ b/test_settings.py
+@@ -0,0 +1,13 @@
++
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++INSTALLED_APPS = [
++    'django.contrib.contenttypes',
++    'django.contrib.auth',
++    'tests.model_indexes',
++]
++SECRET_KEY = 'test-secret-key'
+diff --git a/tests/model_indexes/models.py b/tests/model_indexes/models.py
+index 42651cd868..65d0475182 100644
+--- a/tests/model_indexes/models.py
++++ b/tests/model_indexes/models.py
+@@ -35,3 +35,12 @@ class ChildModel1(AbstractModel):
+ 
+ class ChildModel2(AbstractModel):
+     pass
++
++
++class UniqueIndexModel(models.Model):
++    field1 = models.CharField(max_length=50)
++    field2 = models.CharField(max_length=50)
++
++    class Meta:
++        unique_together = [['field1', 'field2']]
++        index_together = [['field1', 'field2']]
+diff --git a/tests/model_indexes/tests.py b/tests/model_indexes/tests.py
+index 15ec702937..d88e524363 100644
+--- a/tests/model_indexes/tests.py
++++ b/tests/model_indexes/tests.py
+@@ -5,7 +5,7 @@ from django.db import connection, models
+ from django.test import SimpleTestCase, TestCase, skipUnlessDBFeature
+ from django.test.utils import isolate_apps
+ 
+-from .models import Book, ChildModel1, ChildModel2
++from .models import Book, ChildModel1, ChildModel2, UniqueIndexModel
+ 
+ 
+ class SimpleIndexesTests(SimpleTestCase):
+@@ -160,7 +160,60 @@ class SimpleIndexesTests(SimpleTestCase):
+ 
+ class IndexesTests(TestCase):
+ 
+-    @skipUnlessDBFeature('supports_tablespaces')
++    def test_unique_and_index_together(self):
++        """Test that index_together can be removed when unique_together exists."""
++        # Handle SQLite foreign key constraint requirement
++        if connection.vendor == 'sqlite':
++            test_connection = connection.copy()
++            test_connection.connect()
++            with test_connection.cursor() as cursor:
++                cursor.execute('PRAGMA foreign_keys=OFF')
++        else:
++            test_connection = connection
++        
++        try:
++            # First delete the table if it exists from previous runs
++            with test_connection.schema_editor() as editor:
++                editor.delete_model(UniqueIndexModel)
++            
++            # Create fresh table
++            with test_connection.schema_editor() as editor:
++                editor.create_model(UniqueIndexModel)
++            
++            # First verify constraints exist
++            initial_constraints = test_connection.introspection.get_constraints(
++                test_connection.cursor(),
++                UniqueIndexModel._meta.db_table
++            )
++            print("Initial constraints:", initial_constraints)
++            
++            # Remove index_together while keeping unique_together
++            UniqueIndexModel._meta.index_together = []
++            try:
++                with test_connection.schema_editor() as editor:
++                    editor.alter_index_together(UniqueIndexModel, [['field1', 'field2']], [])
++            except Exception as e:
++                print("Error during constraint removal:", str(e))
++                raise
++            
++            # Verify unique constraint still exists
++            constraints = test_connection.introspection.get_constraints(
++                test_connection.cursor(), 
++                UniqueIndexModel._meta.db_table
++            )
++            print("Post-removal constraints:", constraints)
++            unique_constraints = [
++                c for c in constraints.values() 
++                if c['unique'] and set(c['columns']) == {'field1', 'field2'}
++            ]
++            self.assertEqual(len(unique_constraints), 1, "Unique constraint should remain")
++        finally:
++            # Clean up
++            with test_connection.schema_editor() as editor:
++                editor.delete_model(UniqueIndexModel)
++            if connection.vendor == 'sqlite':
++                test_connection.close()
++
+     def test_db_tablespace(self):
+         editor = connection.schema_editor()
+         # Index with db_tablespace attribute.

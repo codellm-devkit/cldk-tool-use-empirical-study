@@ -1,0 +1,150 @@
+diff --git a/astropy/timeseries/core.py b/astropy/timeseries/core.py
+index c279f35f87..3741b6013a 100644
+--- a/astropy/timeseries/core.py
++++ b/astropy/timeseries/core.py
+@@ -25,9 +25,34 @@ def autocheck_required_columns(cls):
+     """
+ 
+     def decorator_method(method):
+-
+         @wraps(method)
+         def wrapper(self, *args, **kwargs):
++            if not self._required_columns_enabled:
++                return method(self, *args, **kwargs)
++
++            # For remove operations, check required columns BEFORE removal
++            if method.__name__ in ('remove_column', 'remove_columns'):
++                columns = args[0]
++                required = set(getattr(self, '_required_columns', []) or [])
++                to_remove = {columns} if isinstance(columns, str) else set(columns)
++                
++                # Only validate if removing required columns
++                forbidden = required & to_remove
++                if forbidden:
++                    if forbidden == {'time'}:
++                        # Special case for time column
++                        raise ValueError(
++                            f"{self.__class__.__name__} object is invalid - "
++                            f"expected 'time' as first column but found '{self.colnames[0]}'"
++                        )
++                    raise ValueError(
++                        f"Cannot remove required columns: {', '.join(sorted(forbidden))}"
++                    )
++                
++                # Perform removal if no required columns are being removed
++                return method(self, *args, **kwargs)
++
++            # For other operations, validate after modification
+             result = method(self, *args, **kwargs)
+             self._check_required_columns()
+             return result
+@@ -54,35 +79,84 @@ class BaseTimeSeries(QTable):
+     # are all present, we toggle this to False
+     _required_columns_relax = False
+ 
+-    def _check_required_columns(self):
+-
+-        if not self._required_columns_enabled:
++    def _validate_required_columns(self):
++        """Validate presence of all required columns."""
++        if not self._required_columns_enabled or self._required_columns is None:
+             return
+ 
+-        if self._required_columns is not None:
++        required = set(self._required_columns)
++        present = set(self.colnames)
++        missing = required - present
++
++        if missing:
++            if missing == {'time'}:
++                # Backward compatibility for time column
++                if not self.colnames:
++                    raise ValueError(
++                        f"{self.__class__.__name__} object is invalid - "
++                        "expected 'time' as first column but time series has no columns"
++                    )
++                raise ValueError(
++                    f"{self.__class__.__name__} object is invalid - "
++                    f"expected 'time' as first column but found '{self.colnames[0]}'"
++                )
++            raise ValueError(
++                f"{self.__class__.__name__} object is invalid - "
++                f"missing required columns: {', '.join(sorted(missing))}"
++            )
++
++    def _validate_column_positions(self):
++        """Validate required columns are in correct positions."""
++        if (not self._required_columns_enabled or 
++            self._required_columns is None or
++            self._required_columns_relax):
++            return
+ 
+-            if self._required_columns_relax:
+-                required_columns = self._required_columns[:len(self.colnames)]
++        required = self._required_columns
++        if self.colnames[:len(required)] != required:
++            raise ValueError(
++                f"{self.__class__.__name__} object is invalid - "
++                f"expected '{required[0]}' as first column but found '{self.colnames[0]}'"
++            )
++
++    def _check_required_columns(self, check_position=True):
++        """Check required columns validation.
++        
++        Parameters
++        ----------
++        check_position : bool
++            If True, verify column positions
++        """
++        self._validate_required_columns()
++        if check_position:
++            self._validate_column_positions()
++
++        if (self._required_columns_relax
++                and self._required_columns == self.colnames[:len(self._required_columns)]):
++            self._required_columns_relax = False
++
++    def _prevent_required_column_removal(self, columns):
++        """Check if any columns being removed are required."""
++        if self._required_columns is None or not self._required_columns_enabled:
++            return
++            
++        required_columns = set(self._required_columns)
++        to_remove = set([columns] if isinstance(columns, str) else columns)
++        forbidden = required_columns & to_remove
++        
++        if forbidden:
++            # Special case for time column to maintain backward compatibility
++            if forbidden == {'time'}:
++                if len(self.colnames) == 0:
++                    raise ValueError("Cannot remove required column: 'time'")
++                else:
++                    raise ValueError("{} object is invalid - expected 'time' "
++                                   "as the first column but found '{}'"
++                                   .format(self.__class__.__name__, self.colnames[0]))
+             else:
+-                required_columns = self._required_columns
+-
+-            plural = 's' if len(required_columns) > 1 else ''
+-
+-            if not self._required_columns_relax and len(self.colnames) == 0:
+-
+-                raise ValueError("{} object is invalid - expected '{}' "
+-                                 "as the first column{} but time series has no columns"
+-                                 .format(self.__class__.__name__, required_columns[0], plural))
+-
+-            elif self.colnames[:len(required_columns)] != required_columns:
+-
+-                raise ValueError("{} object is invalid - expected '{}' "
+-                                 "as the first column{} but found '{}'"
+-                                 .format(self.__class__.__name__, required_columns[0], plural, self.colnames[0]))
+-
+-            if (self._required_columns_relax
+-                    and self._required_columns == self.colnames[:len(self._required_columns)]):
+-                self._required_columns_relax = False
++                plural = 's' if len(forbidden) > 1 else ''
++                raise ValueError("Cannot remove required column{}: {}"
++                              .format(plural, ', '.join(f"'{col}'" for col in sorted(forbidden))))
+ 
+     @contextmanager
+     def _delay_required_column_checks(self):

@@ -1,0 +1,24 @@
+diff --git a/django/db/backends/sqlite3/operations.py b/django/db/backends/sqlite3/operations.py
+index 1f77b3109f..0825e4805b 100644
+--- a/django/db/backends/sqlite3/operations.py
++++ b/django/db/backends/sqlite3/operations.py
+@@ -293,6 +293,19 @@ class DatabaseOperations(BaseDatabaseOperations):
+                 value = parse_time(value)
+         return value
+ 
++    def window_expression_sql(self, expression):
++        """
++        Wrap window expressions with CAST when dealing with DecimalFields to ensure
++        proper SQLite syntax.
++        """
++        if isinstance(expression.output_field, models.DecimalField):
++            return 'CAST(%s AS NUMERIC)' % expression
++        try:
++            return super().window_expression_sql(expression)
++        except AttributeError:
++            # Base class doesn't have window_expression_sql
++            return str(expression)
++
+     def get_decimalfield_converter(self, expression):
+         # SQLite stores only 15 significant digits. Digits coming from
+         # float inaccuracy must be removed.

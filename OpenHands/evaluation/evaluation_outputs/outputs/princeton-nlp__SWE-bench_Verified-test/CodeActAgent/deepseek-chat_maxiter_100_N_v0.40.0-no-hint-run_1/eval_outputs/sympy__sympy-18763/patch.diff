@@ -1,0 +1,79 @@
+diff --git a/sympy/printing/latex.py b/sympy/printing/latex.py
+index 8743723ea0..de011bbea8 100644
+--- a/sympy/printing/latex.py
++++ b/sympy/printing/latex.py
+@@ -345,12 +345,19 @@ def _print_Add(self, expr, order=None):
+         tex = ""
+         for i, term in enumerate(terms):
+             if i == 0:
+-                pass
++                if _coeff_isneg(term):
++                    tex += "-"
++                    term = -term
++                    # Force parenthesization with maximum precedence
++                    term_tex = r"\left(%s\right)" % self.parenthesize(term, PRECEDENCE['Atom'])
++                    tex += term_tex
++                    continue
+             elif _coeff_isneg(term):
+                 tex += " - "
+                 term = -term
+             else:
+                 tex += " + "
++            
+             term_tex = self._print(term)
+             if self._needs_add_brackets(term):
+                 term_tex = r"\left(%s\right)" % term_tex
+@@ -434,16 +441,32 @@ def _print_Laplacian(self, expr):
+     def _print_Mul(self, expr):
+         from sympy.core.power import Pow
+         from sympy.physics.units import Quantity
++        from sympy.core.function import Subs
++        
++        # Handle coefficient * Subs case with proper parenthesization
++        if len(expr.args) == 2 and any(isinstance(arg, Subs) for arg in expr.args):
++            coeff = [a for a in expr.args if not isinstance(a, Subs)][0]
++            subs = [a for a in expr.args if isinstance(a, Subs)][0]
++            subs_expr = subs.args[0]
++            if subs_expr.is_Add:
++                return r"%s \left(%s\right)" % (self._print(coeff), self._print(subs))
++            return self._print(coeff) + ' ' + self._print(subs)
++
+         include_parens = False
+         if _coeff_isneg(expr):
+             expr = -expr
+             tex = "- "
+-            if expr.is_Add:
++            if expr.is_Add or any(isinstance(arg, Subs) for arg in expr.args):
+                 tex += "("
+                 include_parens = True
+         else:
+             tex = ""
+ 
++        # Special handling for multiplication with Subs
++        if not include_parens and any(isinstance(arg, Subs) for arg in expr.args):
++            tex += "("
++            include_parens = True
++
+         from sympy.simplify import fraction
+         numer, denom = fraction(expr, exact=True)
+         separator = self._settings['mul_symbol_latex']
+@@ -698,12 +721,17 @@ def _print_Derivative(self, expr):
+ 
+     def _print_Subs(self, subs):
+         expr, old, new = subs.args
+-        latex_expr = self._print(expr)
++        # Force parenthesization with maximum precedence
++        if _coeff_isneg(expr):
++            expr = -expr
++            inner_expr = r'-\left(%s\right)' % self.parenthesize(expr, PRECEDENCE['Atom'])
++        else:
++            inner_expr = r'\left(%s\right)' % self.parenthesize(expr, PRECEDENCE['Atom'])
+         latex_old = (self._print(e) for e in old)
+         latex_new = (self._print(e) for e in new)
+         latex_subs = r'\\ '.join(
+             e[0] + '=' + e[1] for e in zip(latex_old, latex_new))
+-        return r'\left. %s \right|_{\substack{ %s }}' % (latex_expr,
++        return r'\left. %s \right|_{\substack{ %s }}' % (inner_expr,
+                                                          latex_subs)
+ 
+     def _print_Integral(self, expr):

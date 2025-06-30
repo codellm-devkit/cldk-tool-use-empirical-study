@@ -1,0 +1,168 @@
+2025-06-27 16:15:52,868 - INFO - Creating container for sympy__sympy-14976...
+2025-06-27 16:15:52,997 - INFO - Container for sympy__sympy-14976 created: e0d162165e0083e3cbdb0b4a38bbccb29c964e323591017ca99fe767b5911f1c
+2025-06-27 16:15:53,185 - INFO - Container for sympy__sympy-14976 started: e0d162165e0083e3cbdb0b4a38bbccb29c964e323591017ca99fe767b5911f1c
+2025-06-27 16:15:53,185 - INFO - Intermediate patch for sympy__sympy-14976 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sympy__sympy-14976/patch.diff, now applying to container...
+2025-06-27 16:15:53,300 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:53: trailing whitespace.
+        
+Checking patch sympy/printing/pycode.py...
+Checking patch sympy/utilities/lambdify.py...
+Applied patch sympy/printing/pycode.py cleanly.
+Applied patch sympy/utilities/lambdify.py cleanly.
+warning: 1 line adds whitespace errors.
+
+2025-06-27 16:15:53,685 - INFO - Git diff before:
+diff --git a/sympy/printing/pycode.py b/sympy/printing/pycode.py
+index d06901425d..911bf94af2 100644
+--- a/sympy/printing/pycode.py
++++ b/sympy/printing/pycode.py
+@@ -331,6 +331,32 @@ def _print_Float(self, e):
+         args = str(tuple(map(int, e._mpf_)))
+         return '{func}({args})'.format(func=self._module_format('mpmath.mpf'), args=args)
+ 
++    def _print_Number(self, e):
++        if 'mpmath' in self._module_format(''):
++            if hasattr(e, 'p') and hasattr(e, 'q'):  # Handle Rationals
++                return '(mpmath.mpf({})/mpmath.mpf({}))'.format(e.p, e.q)
++            return 'mpmath.mpf({})'.format(float(e))
++        return super()._print_Number(e)
++
++
++    def _print_Rational(self, e):
++        if 'mpmath' in self._module_format(''):
++            return '(mpmath.mpf({})/mpmath.mpf({}))'.format(e.p, e.q)
++        return '{}/{}'.format(e.p, e.q)
++
++    def _print_NumberSymbol(self, e):
++        if 'mpmath' in self._module_format(''):
++            return '{}({})'.format(
++                self._module_format('mpmath.mpf'),
++                str(float(e)))
++        return super()._print_NumberSymbol(e)
++
++    def _print_Integer(self, e):
++        if 'mpmath' in self._module_format(''):
++            return '{0}({1})'.format(
++                self._module_format('mpmath.mpf'),
++                self._print(e.p))
++        return super()._print_Integer(e)
+ 
+     def _print_uppergamma(self, e):
+         return "{0}({1}, {2}, {3})".format(
+diff --git a/sympy/utilities/lambdify.py b/sympy/utilities/lambdify.py
+index f71bea25f5..fd563ff8cf 100644
+--- a/sympy/utilities/lambdify.py
++++ b/sympy/utilities/lambdify.py
+@@ -680,6 +680,14 @@ def doprint(self, funcname, args, expr):
+ 
+         funcbody.extend(unpackings)
+ 
++        # Special handling for mpmath numeric literals
++        if 'mpmath' in getattr(self._exprrepr.__self__, '_module_format', lambda x: '')(''):
++            from sympy.core.numbers import Number, Rational
++            if isinstance(expr, Number):
++                if isinstance(expr, Rational):
++                    return 'return mpmath.mpf({}/{})'.format(expr.p, expr.q)
++                return 'return mpmath.mpf({})'.format(self._exprrepr(expr))
++        
+         funcbody.append('return ({})'.format(self._exprrepr(expr)))
+ 
+         funclines = [funcsig]
+@@ -741,6 +749,15 @@ def _preprocess(self, args, expr):
+             else:
+                 argstrs.append(str(arg))
+ 
++        # Handle mpmath number wrapping
++        if hasattr(self._exprrepr, '__self__') and \
++           hasattr(self._exprrepr.__self__, '_module_format') and \
++           'mpmath' in self._exprrepr.__self__._module_format(''):
++            from sympy.core.numbers import Number
++            if isinstance(expr, Number):
++                # Don't simplify numbers - let the printer handle them
++                pass
++
+         return argstrs, expr
+ 
+     def _subexpr(self, expr, dummies_dict):
+2025-06-27 16:15:53,688 - INFO - Eval script for sympy__sympy-14976 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sympy__sympy-14976/eval.sh; copying to container...
+2025-06-27 16:15:57,504 - INFO - Test runtime: 3.77 seconds
+2025-06-27 16:15:57,505 - INFO - Test output for sympy__sympy-14976 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sympy__sympy-14976/test_output.txt
+2025-06-27 16:15:57,569 - INFO - Git diff after:
+diff --git a/sympy/printing/pycode.py b/sympy/printing/pycode.py
+index d06901425d..911bf94af2 100644
+--- a/sympy/printing/pycode.py
++++ b/sympy/printing/pycode.py
+@@ -331,6 +331,32 @@ def _print_Float(self, e):
+         args = str(tuple(map(int, e._mpf_)))
+         return '{func}({args})'.format(func=self._module_format('mpmath.mpf'), args=args)
+ 
++    def _print_Number(self, e):
++        if 'mpmath' in self._module_format(''):
++            if hasattr(e, 'p') and hasattr(e, 'q'):  # Handle Rationals
++                return '(mpmath.mpf({})/mpmath.mpf({}))'.format(e.p, e.q)
++            return 'mpmath.mpf({})'.format(float(e))
++        return super()._print_Number(e)
++
++
++    def _print_Rational(self, e):
++        if 'mpmath' in self._module_format(''):
++            return '(mpmath.mpf({})/mpmath.mpf({}))'.format(e.p, e.q)
++        return '{}/{}'.format(e.p, e.q)
++
++    def _print_NumberSymbol(self, e):
++        if 'mpmath' in self._module_format(''):
++            return '{}({})'.format(
++                self._module_format('mpmath.mpf'),
++                str(float(e)))
++        return super()._print_NumberSymbol(e)
++
++    def _print_Integer(self, e):
++        if 'mpmath' in self._module_format(''):
++            return '{0}({1})'.format(
++                self._module_format('mpmath.mpf'),
++                self._print(e.p))
++        return super()._print_Integer(e)
+ 
+     def _print_uppergamma(self, e):
+         return "{0}({1}, {2}, {3})".format(
+diff --git a/sympy/utilities/lambdify.py b/sympy/utilities/lambdify.py
+index f71bea25f5..fd563ff8cf 100644
+--- a/sympy/utilities/lambdify.py
++++ b/sympy/utilities/lambdify.py
+@@ -680,6 +680,14 @@ def doprint(self, funcname, args, expr):
+ 
+         funcbody.extend(unpackings)
+ 
++        # Special handling for mpmath numeric literals
++        if 'mpmath' in getattr(self._exprrepr.__self__, '_module_format', lambda x: '')(''):
++            from sympy.core.numbers import Number, Rational
++            if isinstance(expr, Number):
++                if isinstance(expr, Rational):
++                    return 'return mpmath.mpf({}/{})'.format(expr.p, expr.q)
++                return 'return mpmath.mpf({})'.format(self._exprrepr(expr))
++        
+         funcbody.append('return ({})'.format(self._exprrepr(expr)))
+ 
+         funclines = [funcsig]
+@@ -741,6 +749,15 @@ def _preprocess(self, args, expr):
+             else:
+                 argstrs.append(str(arg))
+ 
++        # Handle mpmath number wrapping
++        if hasattr(self._exprrepr, '__self__') and \
++           hasattr(self._exprrepr.__self__, '_module_format') and \
++           'mpmath' in self._exprrepr.__self__._module_format(''):
++            from sympy.core.numbers import Number
++            if isinstance(expr, Number):
++                # Don't simplify numbers - let the printer handle them
++                pass
++
+         return argstrs, expr
+ 
+     def _subexpr(self, expr, dummies_dict):
+2025-06-27 16:15:57,569 - INFO - Grading answer for sympy__sympy-14976...
+2025-06-27 16:15:57,570 - INFO - report: {'sympy__sympy-14976': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_MpmathPrinter']}, 'PASS_TO_PASS': {'success': ['test_PythonCodePrinter', 'test_NumPyPrinter', 'test_SciPyPrinter', 'test_pycode_reserved_words', 'test_printmethod', 'test_codegen_ast_nodes', 'test_nsolve_denominator', 'test_nsolve', 'test_issue_6408', 'test_increased_dps', 'test_nsolve_precision', 'test_nsolve_complex', 'test_nsolve_dict_kwarg'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-14976: resolved: False
+2025-06-27 16:15:57,572 - INFO - Attempting to stop container sweb.eval.sympy__sympy-14976.20250627_135628...
+2025-06-27 16:16:12,737 - INFO - Attempting to remove container sweb.eval.sympy__sympy-14976.20250627_135628...
+2025-06-27 16:16:12,749 - INFO - Container sweb.eval.sympy__sympy-14976.20250627_135628 removed.

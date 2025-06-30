@@ -1,0 +1,93 @@
+diff --git a/src/_pytest/python.py b/src/_pytest/python.py
+index 306e5f217..8956a606e 100644
+--- a/src/_pytest/python.py
++++ b/src/_pytest/python.py
+@@ -176,9 +176,13 @@ def pytest_pyfunc_call(pyfuncitem):
+ def pytest_collect_file(path, parent):
+     ext = path.ext
+     if ext == ".py":
++        # Skip __init__.py unless explicitly given as argument
++        if path.basename == "__init__.py" and not parent.session.isinitpath(path):
++            return
++            
+         if not parent.session.isinitpath(path):
+             if not path_matches_patterns(
+-                path, parent.config.getini("python_files") + ["__init__.py"]
++                path, parent.config.getini("python_files")
+             ):
+                 return
+         ihook = parent.session.gethookproxy(path)
+@@ -192,7 +196,10 @@ def path_matches_patterns(path, patterns):
+ 
+ def pytest_pycollect_makemodule(path, parent):
+     if path.basename == "__init__.py":
+-        return Package(path, parent)
++        # Only return Package for __init__.py if it's in our initial paths
++        if parent.session.isinitpath(path):
++            return Package(path, parent)
++        return None
+     return Module(path, parent)
+ 
+ 
+@@ -562,6 +569,9 @@ class Package(Module):
+         nodes.FSCollector.__init__(
+             self, fspath, parent=parent, config=config, session=session, nodeid=nodeid
+         )
++        # Skip collection if this __init__.py wasn't explicitly requested
++        if not session.isinitpath(fspath):
++            self._skiplist = ["*"]  # Skip all files in this package
+         self.name = fspath.dirname
+         self.trace = session.trace
+         self._norecursepatterns = session._norecursepatterns
+@@ -616,7 +626,19 @@ class Package(Module):
+         ), "{!r} is not a file (isdir={!r}, exists={!r}, islink={!r})".format(
+             path, path.isdir(), path.exists(), path.islink()
+         )
++        
++        # Skip __init__.py files unless explicitly given as argument
++        if path.basename == "__init__.py" and not self.isinitpath(path):
++            return ()
++            
+         ihook = self.gethookproxy(path)
++        # Skip __init__.py files unless:
++        # 1. They are explicitly given as arguments, or
++        # 2. They are in a package being collected (handled in collect())
++        if path.basename == "__init__.py":
++            if not (self.isinitpath(path) or path.dirname == self.fspath.dirname):
++                return ()
++                
+         if not self.isinitpath(path):
+             if ihook.pytest_ignore_collect(path=path, config=self.config):
+                 return ()
+@@ -631,7 +653,9 @@ class Package(Module):
+                     duplicate_paths.add(path)
+ 
+         if self.fspath == path:  # __init__.py
+-            return [self]
++            if self.isinitpath(path):
++                return [self]
++            return ()
+ 
+         return ihook.pytest_collect_file(path=path, parent=self)
+ 
+@@ -641,9 +665,11 @@ class Package(Module):
+     def collect(self):
+         self._mount_obj_if_needed()
+         this_path = self.fspath.dirpath()
++        # Only collect __init__.py if it's in our initial paths or part of current package
+         init_module = this_path.join("__init__.py")
+-        if init_module.check(file=1) and path_matches_patterns(
+-            init_module, self.config.getini("python_files")
++        if (init_module.check(file=1) and 
++            self.isinitpath(init_module) and
++            path_matches_patterns(init_module, self.config.getini("python_files"))
+         ):
+             yield Module(init_module, self)
+         pkg_prefixes = set()
+diff --git a/test_regression/foobar/__init__.py b/test_regression/foobar/__init__.py
+new file mode 100644
+index 000000000..2cfffa40d
+--- /dev/null
++++ b/test_regression/foobar/__init__.py
+@@ -0,0 +1 @@
++assert False

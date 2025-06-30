@@ -1,0 +1,85 @@
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index 11031f2f2..0e955569d 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -319,6 +319,7 @@ class LogCaptureHandler(logging.StreamHandler):
+         """Creates a new log handler."""
+         super().__init__(StringIO())
+         self.records = []  # type: List[logging.LogRecord]
++        self.setLevel(logging.NOTSET)  # Always start with NOTSET level
+ 
+     def emit(self, record: logging.LogRecord) -> None:
+         """Keep the log records in a list in addition to the log text."""
+@@ -346,6 +347,8 @@ class LogCaptureFixture:
+         self._item = item
+         # dict of log name -> log level
+         self._initial_logger_levels = {}  # type: Dict[Optional[str], int]
++        # store original handler level
++        self._initial_handler_level = self.handler.level
+ 
+     def _finalize(self) -> None:
+         """Finalizes the fixture.
+@@ -356,6 +359,10 @@ class LogCaptureFixture:
+         for logger_name, level in self._initial_logger_levels.items():
+             logger = logging.getLogger(logger_name)
+             logger.setLevel(level)
++        # reset handler to NOTSET and clear records
++        self.handler.setLevel(logging.NOTSET)
++        self.handler.reset()
++        self._initial_logger_levels.clear()
+ 
+     @property
+     def handler(self) -> LogCaptureHandler:
+@@ -434,6 +441,9 @@ class LogCaptureFixture:
+         # save the original log-level to restore it during teardown
+         self._initial_logger_levels.setdefault(logger, logger_obj.level)
+         logger_obj.setLevel(level)
++        # Only store handler level if we haven't already
++        if not hasattr(self.handler, '_original_level'):
++            self.handler._original_level = self.handler.level
+         self.handler.setLevel(level)
+ 
+     @contextmanager
+@@ -469,10 +479,25 @@ def caplog(request: FixtureRequest) -> Generator[LogCaptureFixture, None, None]:
+     * caplog.records         -> list of logging.LogRecord instances
+     * caplog.record_tuples   -> list of (logger_name, level, message) tuples
+     * caplog.clear()         -> clear captured records and formatted log output string
++
++    Each test gets a fresh handler instance to ensure isolation.
++    """
++    # Initialize fresh handler and records for this test
++    request.node._store[caplog_handler_key] = LogCaptureHandler()
++    request.node._store[caplog_records_key] = {"setup": [], "call": [], "teardown": []}
++
++    Each test gets a fresh handler instance to ensure isolation.
++    """
++    # Create new handler for this test
++    request.node._store[caplog_handler_key] = LogCaptureHandler()
++    request.node._store[caplog_records_key] = {"setup": [], "call": [], "teardown": []}
++    * caplog.clear()         -> clear captured records and formatted log output string
+     """
+     result = LogCaptureFixture(request.node)
+-    yield result
+-    result._finalize()
++    try:
++        yield result
++    finally:
++        result._finalize()
+ 
+ 
+ def get_log_level_for_setting(config: Config, *setting_names: str) -> Optional[int]:
+diff --git a/test_caplog_fix.py b/test_caplog_fix.py
+new file mode 100644
+index 000000000..bd49e1167
+--- /dev/null
++++ b/test_caplog_fix.py
+@@ -0,0 +1,9 @@
++
++import pytest
++
++def test_foo(caplog):
++    caplog.set_level(42)
++
++def test_bar(caplog):
++    assert caplog.handler.level == 0
++

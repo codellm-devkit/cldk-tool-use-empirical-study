@@ -1,0 +1,30 @@
+diff --git a/sphinx/domains/python.py b/sphinx/domains/python.py
+index 000e2e8d3..438562306 100644
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -1155,11 +1155,21 @@ class PythonDomain(Domain):
+                     elif name in self.objects and self.objects[name].objtype in objtypes:
+                         newname = name
+                     else:
+-                        # "fuzzy" searching mode
++                        # "fuzzy" searching mode - modified to consider context
+                         searchname = '.' + name
+-                        matches = [(oname, self.objects[oname]) for oname in self.objects
+-                                   if oname.endswith(searchname) and
+-                                   self.objects[oname].objtype in objtypes]
++                        matches = []
++                        for oname in self.objects:
++                            if oname.endswith(searchname) and self.objects[oname].objtype in objtypes:
++                                # For attributes, only match within same class context
++                                if type == 'attr' and classname:
++                                    if '.' in oname and oname.split('.')[-2] == classname:
++                                        matches.append((oname, self.objects[oname]))
++                                else:
++                                    # For other types, prefer matches within same module
++                                    if modname and oname.startswith(modname + '.'):
++                                        matches.insert(0, (oname, self.objects[oname]))  # Prioritize same-module matches
++                                    else:
++                                        matches.append((oname, self.objects[oname]))
+         else:
+             # NOTE: searching for exact match, object type is not considered
+             if name in self.objects:

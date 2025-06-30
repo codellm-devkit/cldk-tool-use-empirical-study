@@ -1,0 +1,97 @@
+diff --git a/src/_pytest/python.py b/src/_pytest/python.py
+index 40116ab9c..9c9d19837 100644
+--- a/src/_pytest/python.py
++++ b/src/_pytest/python.py
+@@ -1486,6 +1486,17 @@ def _showfixtures_main(config: Config, session: Session) -> None:
+         if not fixturedefs:
+             continue
+         for fixturedef in fixturedefs:
++            # Skip all unittest fixtures unless in verbose mode
++            is_unittest_fixture = ('unittest_' in argname or 
++                                 '_unittest_' in argname or 
++                                 '__unittest_' in argname)
++            if is_unittest_fixture and not verbose:
++                continue
++            # Skip other hidden fixtures unless in verbose mode
++            is_hidden = (hasattr(fixturedef, '_pytestfixturefunction') and
++                        getattr(fixturedef._pytestfixturefunction, 'hidden', False))
++            if is_hidden and not verbose:
++                continue
+             loc = getlocation(fixturedef.func, str(curdir))
+             if (fixturedef.argname, loc) in seen:
+                 continue
+diff --git a/src/_pytest/unittest.py b/src/_pytest/unittest.py
+index 719eb4e88..8d3630484 100644
+--- a/src/_pytest/unittest.py
++++ b/src/_pytest/unittest.py
+@@ -140,13 +140,17 @@ def _make_xunit_fixture(
+         def cleanup(*args):
+             pass
+ 
++    # Create truly hidden unittest fixture
++    fixture_name = f"__unittest_{setup_name}_fixture_{obj.__qualname__}"
++    
+     @pytest.fixture(
+         scope=scope,
+         autouse=True,
+-        # Use a unique name to speed up lookup.
+-        name=f"unittest_{setup_name}_fixture_{obj.__qualname__}",
++        name=f"_{fixture_name.lstrip('_')}",
++        _pytestfixturefunction=type('', (), {'hidden': True}),
+     )
+     def fixture(self, request: FixtureRequest) -> Generator[None, None, None]:
++        """Internal unittest fixture (hidden by default)"""
+         if _is_skipped(self):
+             reason = self.__unittest_skip_why__
+             raise pytest.skip.Exception(reason, _use_item_location=True)
+diff --git a/testing/inspect_fixtures.py b/testing/inspect_fixtures.py
+new file mode 100644
+index 000000000..45140220c
+--- /dev/null
++++ b/testing/inspect_fixtures.py
+@@ -0,0 +1,11 @@
++
++import pytest
++from _pytest.fixtures import FixtureManager
++
++def test_inspect_fixtures(request):
++    fm = request.session._fixturemanager
++    for name, fixturedefs in fm._arg2fixturedefs.items():
++        if 'unittest' in name.lower():
++            print(f"Found unittest fixture: {name}")
++            return
++    pytest.fail("No unittest fixtures found")
+diff --git a/testing/test_fixture_visibility.py b/testing/test_fixture_visibility.py
+new file mode 100644
+index 000000000..3c82dcf36
+--- /dev/null
++++ b/testing/test_fixture_visibility.py
+@@ -0,0 +1,10 @@
++
++import unittest
++
++class TestFixtureVisibility(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls):
++        pass
++
++    def test_example(self):
++        pass
+diff --git a/testing/unittest_example.py b/testing/unittest_example.py
+new file mode 100644
+index 000000000..f0ed42938
+--- /dev/null
++++ b/testing/unittest_example.py
+@@ -0,0 +1,12 @@
++
++
++import unittest
++
++class ExampleTest(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls):
++        pass
++
++    def test_example(self):
++        pass
++

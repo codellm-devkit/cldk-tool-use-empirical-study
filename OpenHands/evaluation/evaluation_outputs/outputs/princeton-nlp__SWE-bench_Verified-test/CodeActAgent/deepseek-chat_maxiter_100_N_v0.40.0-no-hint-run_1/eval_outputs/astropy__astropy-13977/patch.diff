@@ -1,0 +1,153 @@
+diff --git a/astropy/units/core.py b/astropy/units/core.py
+index 8c3204b8b0..337625daca 100644
+--- a/astropy/units/core.py
++++ b/astropy/units/core.py
+@@ -2601,6 +2601,8 @@ def def_unit(
+     return result
+ 
+ 
++from .duckarray_handler import handle_duckarray
++
+ def _condition_arg(value):
+     """
+     Validate value is acceptable for conversion purposes.
+@@ -2621,8 +2623,17 @@ def _condition_arg(value):
+     ValueError
+         If value is not as expected
+     """
++    # Handle DuckArray cases first
++    duckarray_result = handle_duckarray(value)
++    if duckarray_result is not None:
++        return duckarray_result
++
+     if isinstance(value, (np.ndarray, float, int, complex, np.void)):
+         return value
++        
++    # Handle other custom array types
++    if hasattr(value, '__array_ufunc__'):
++        return value
+ 
+     avalue = np.array(value)
+     if avalue.dtype.kind not in ["i", "f", "c"]:
+diff --git a/astropy/units/duckarray_handler.py b/astropy/units/duckarray_handler.py
+new file mode 100644
+index 0000000000..cd501a4f95
+--- /dev/null
++++ b/astropy/units/duckarray_handler.py
+@@ -0,0 +1,19 @@
++
++"""Helper functions for handling DuckArray-like objects in astropy."""
++
++import numpy as np
++from astropy.units import Quantity
++
++def handle_duckarray(value):
++    """Process DuckArray-like objects for unit conversion.
++    
++    Args:
++        value: Input value to check
++        
++    Returns:
++        The underlying Quantity if DuckArray-like, otherwise None
++    """
++    if hasattr(value, '__array_ufunc__') and hasattr(value, 'ndarray'):
++        if isinstance(value.ndarray, Quantity):
++            return value.ndarray
++    return None
+diff --git a/astropy/units/duckarray_utils.py b/astropy/units/duckarray_utils.py
+new file mode 100644
+index 0000000000..3040c67275
+--- /dev/null
++++ b/astropy/units/duckarray_utils.py
+@@ -0,0 +1,20 @@
++
++"""Utilities for handling DuckArray-like objects in astropy."""
++
++import numpy as np
++from astropy.units import Quantity
++
++def process_duckarray(input_):
++    """Process DuckArray-like objects for unit conversion.
++    
++    Args:
++        input_: Input value to check
++        
++    Returns:
++        Tuple of (processed_input, should_return_not_implemented)
++    """
++    if hasattr(input_, 'ndarray') and hasattr(input_, '__array_ufunc__'):
++        if isinstance(input_.ndarray, Quantity):
++            return input_.ndarray, False
++        return None, True
++    return input_, False
+diff --git a/astropy/units/quantity.py b/astropy/units/quantity.py
+index b98abfafb0..3b8c004efd 100644
+--- a/astropy/units/quantity.py
++++ b/astropy/units/quantity.py
+@@ -605,6 +605,10 @@ class Quantity(np.ndarray):
+         if "info" in obj.__dict__:
+             self.info = obj.info
+ 
++    def _is_compatible_array(self, input_):
++        """Check if input is a compatible array type that we can handle."""
++        return isinstance(input_, (np.ndarray, float, int, complex, type(self)))
++
+     def __array_wrap__(self, obj, context=None):
+         if context is None:
+             # Methods like .squeeze() created a new `ndarray` and then call
+@@ -636,6 +640,12 @@ class Quantity(np.ndarray):
+         result : `~astropy.units.Quantity`
+             Results of the ufunc, with the unit set properly.
+         """
++        # First check for custom array types in inputs
++        for input_ in inputs:
++            if (hasattr(input_, '__array_ufunc__') and 
++                not isinstance(input_, (np.ndarray, float, int, complex, type(self)))):
++                return NotImplemented
++
+         # Determine required conversion functions -- to bring the unit of the
+         # input to that expected (e.g., radian for np.sin), or to get
+         # consistent units between two inputs (e.g., in np.add) --
+@@ -666,8 +676,23 @@ class Quantity(np.ndarray):
+         # Same for inputs, but here also convert if necessary.
+         arrays = []
+         for input_, converter in zip(inputs, converters):
++            # Handle custom array types before conversion
++            if hasattr(input_, '__array_ufunc__'):
++                if not isinstance(input_, (np.ndarray, float, int, complex, u.Quantity)):
++                    if not hasattr(input_, 'ndarray'):  # DuckArray check
++                        return NotImplemented
++                if isinstance(input_, u.Quantity) and not input_.unit.is_equivalent(self.unit):
++                    return NotImplemented
++            
++            # Skip conversion for custom array types
++            if hasattr(input_, '__array_ufunc__') and not isinstance(input_, (np.ndarray, float, int, complex)):
++                return NotImplemented
+             input_ = getattr(input_, "value", input_)
+-            arrays.append(converter(input_) if converter else input_)
++
++            try:
++                arrays.append(converter(input_) if converter else input_)
++            except ValueError:
++                return NotImplemented
+ 
+         # Call our superclass's __array_ufunc__
+         result = super().__array_ufunc__(function, method, *arrays, **kwargs)
+diff --git a/astropy/units/quantity_helper/converters.py b/astropy/units/quantity_helper/converters.py
+index 47b40c2072..0ccb5ff468 100644
+--- a/astropy/units/quantity_helper/converters.py
++++ b/astropy/units/quantity_helper/converters.py
+@@ -176,8 +176,14 @@ def converters_and_unit(function, method, *args):
+         # Find out the units of the arguments passed to the ufunc; usually,
+         # at least one is a quantity, but for two-argument ufuncs, the second
+         # could also be a Numpy array, etc.  These are given unit=None.
++        
++        # Check for custom array types before processing units
++        if any(hasattr(arg, '__array_ufunc__') and not isinstance(arg, (np.ndarray, float, int, complex)) for arg in args):
++            return [None]*len(args), None
++            
+         units = [getattr(arg, "unit", None) for arg in args]
+ 
++
+         # Determine possible conversion functions, and the result unit.
+         converters, result_unit = ufunc_helper(function, *units)

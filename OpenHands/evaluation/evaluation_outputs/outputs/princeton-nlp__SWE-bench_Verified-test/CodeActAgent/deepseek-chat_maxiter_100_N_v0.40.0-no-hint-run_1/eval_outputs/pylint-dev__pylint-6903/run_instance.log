@@ -1,0 +1,156 @@
+2025-06-27 15:44:00,239 - INFO - Creating container for pylint-dev__pylint-6903...
+2025-06-27 15:44:00,506 - INFO - Container for pylint-dev__pylint-6903 created: ce4343f11458c58461e6cffcd9f5ba54e66e1a5ced725e0d49f4e6f2bd0a3a07
+2025-06-27 15:44:00,751 - INFO - Container for pylint-dev__pylint-6903 started: ce4343f11458c58461e6cffcd9f5ba54e66e1a5ced725e0d49f4e6f2bd0a3a07
+2025-06-27 15:44:00,751 - INFO - Intermediate patch for pylint-dev__pylint-6903 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/pylint-dev__pylint-6903/patch.diff, now applying to container...
+2025-06-27 15:44:00,901 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:16: trailing whitespace.
+    
+Checking patch pylint/lint/run.py...
+Applied patch pylint/lint/run.py cleanly.
+warning: 1 line adds whitespace errors.
+
+2025-06-27 15:44:01,178 - INFO - Git diff before:
+diff --git a/pylint/lint/run.py b/pylint/lint/run.py
+index a7e5d5574..0ea41d0b5 100644
+--- a/pylint/lint/run.py
++++ b/pylint/lint/run.py
+@@ -31,34 +31,35 @@ except ImportError:
+     multiprocessing = None  # type: ignore[assignment]
+ 
+ 
+-def _query_cpu() -> int | None:
+-    """Try to determine number of CPUs allotted in a docker container.
+-
+-    This is based on discussion and copied from suggestions in
+-    https://bugs.python.org/issue36054.
++def _query_cpu() -> int:
++    """Determine number of CPUs allotted in container environments.
++    
++    Returns:
++        int: Always returns at least 1 CPU to prevent multiprocessing errors.
+     """
+-    cpu_quota, avail_cpu = None, None
+-
+-    if Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").is_file():
+-        with open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", encoding="utf-8") as file:
+-            # Not useful for AWS Batch based jobs as result is -1, but works on local linux systems
+-            cpu_quota = int(file.read().rstrip())
+-
+-    if (
+-        cpu_quota
+-        and cpu_quota != -1
+-        and Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").is_file()
+-    ):
+-        with open("/sys/fs/cgroup/cpu/cpu.cfs_period_us", encoding="utf-8") as file:
+-            cpu_period = int(file.read().rstrip())
+-        # Divide quota by period and you should get num of allotted CPU to the container, rounded down if fractional.
+-        avail_cpu = int(cpu_quota / cpu_period)
+-    elif Path("/sys/fs/cgroup/cpu/cpu.shares").is_file():
+-        with open("/sys/fs/cgroup/cpu/cpu.shares", encoding="utf-8") as file:
+-            cpu_shares = int(file.read().rstrip())
+-        # For AWS, gives correct value * 1024.
+-        avail_cpu = int(cpu_shares / 1024)
+-    return avail_cpu
++    # Try cgroup v1 cpu quota first
++    try:
++        if Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").is_file():
++            with open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", encoding="utf-8") as f:
++                quota = int(f.read())
++            if quota > 0 and Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").is_file():
++                with open("/sys/fs/cgroup/cpu/cpu.cfs_period_us", encoding="utf-8") as f:
++                    period = int(f.read())
++                return max(1, quota // period)
++    except (ValueError, IOError):
++        pass
++
++    # Fall back to cpu shares
++    try:
++        if Path("/sys/fs/cgroup/cpu/cpu.shares").is_file():
++            with open("/sys/fs/cgroup/cpu/cpu.shares", encoding="utf-8") as f:
++                shares = int(f.read())
++            return max(1, shares // 1024)
++    except (ValueError, IOError):
++        pass
++
++    # Final fallback to at least 1 CPU
++    return 1
+ 
+ 
+ def _cpu_count() -> int:
+2025-06-27 15:44:01,179 - INFO - Eval script for pylint-dev__pylint-6903 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/pylint-dev__pylint-6903/eval.sh; copying to container...
+2025-06-27 15:44:13,884 - INFO - Test runtime: 12.62 seconds
+2025-06-27 15:44:13,885 - INFO - Test output for pylint-dev__pylint-6903 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/pylint-dev__pylint-6903/test_output.txt
+2025-06-27 15:44:13,974 - INFO - Git diff after:
+diff --git a/pylint/lint/run.py b/pylint/lint/run.py
+index a7e5d5574..0ea41d0b5 100644
+--- a/pylint/lint/run.py
++++ b/pylint/lint/run.py
+@@ -31,34 +31,35 @@ except ImportError:
+     multiprocessing = None  # type: ignore[assignment]
+ 
+ 
+-def _query_cpu() -> int | None:
+-    """Try to determine number of CPUs allotted in a docker container.
+-
+-    This is based on discussion and copied from suggestions in
+-    https://bugs.python.org/issue36054.
++def _query_cpu() -> int:
++    """Determine number of CPUs allotted in container environments.
++    
++    Returns:
++        int: Always returns at least 1 CPU to prevent multiprocessing errors.
+     """
+-    cpu_quota, avail_cpu = None, None
+-
+-    if Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").is_file():
+-        with open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", encoding="utf-8") as file:
+-            # Not useful for AWS Batch based jobs as result is -1, but works on local linux systems
+-            cpu_quota = int(file.read().rstrip())
+-
+-    if (
+-        cpu_quota
+-        and cpu_quota != -1
+-        and Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").is_file()
+-    ):
+-        with open("/sys/fs/cgroup/cpu/cpu.cfs_period_us", encoding="utf-8") as file:
+-            cpu_period = int(file.read().rstrip())
+-        # Divide quota by period and you should get num of allotted CPU to the container, rounded down if fractional.
+-        avail_cpu = int(cpu_quota / cpu_period)
+-    elif Path("/sys/fs/cgroup/cpu/cpu.shares").is_file():
+-        with open("/sys/fs/cgroup/cpu/cpu.shares", encoding="utf-8") as file:
+-            cpu_shares = int(file.read().rstrip())
+-        # For AWS, gives correct value * 1024.
+-        avail_cpu = int(cpu_shares / 1024)
+-    return avail_cpu
++    # Try cgroup v1 cpu quota first
++    try:
++        if Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").is_file():
++            with open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", encoding="utf-8") as f:
++                quota = int(f.read())
++            if quota > 0 and Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").is_file():
++                with open("/sys/fs/cgroup/cpu/cpu.cfs_period_us", encoding="utf-8") as f:
++                    period = int(f.read())
++                return max(1, quota // period)
++    except (ValueError, IOError):
++        pass
++
++    # Fall back to cpu shares
++    try:
++        if Path("/sys/fs/cgroup/cpu/cpu.shares").is_file():
++            with open("/sys/fs/cgroup/cpu/cpu.shares", encoding="utf-8") as f:
++                shares = int(f.read())
++            return max(1, shares // 1024)
++    except (ValueError, IOError):
++        pass
++
++    # Final fallback to at least 1 CPU
++    return 1
+ 
+ 
+ def _cpu_count() -> int:
+2025-06-27 15:44:13,974 - INFO - Grading answer for pylint-dev__pylint-6903...
+2025-06-27 15:44:13,976 - INFO - report: {'pylint-dev__pylint-6903': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['tests/test_pylint_runners.py::test_pylint_run_jobs_equal_zero_dont_crash_with_cpu_fraction'], 'failure': []}, 'PASS_TO_PASS': {'success': ['tests/test_pylint_runners.py::test_runner[run_epylint]', 'tests/test_pylint_runners.py::test_runner[run_pylint]', 'tests/test_pylint_runners.py::test_runner[run_pyreverse]', 'tests/test_pylint_runners.py::test_runner[run_symilar]', 'tests/test_pylint_runners.py::test_runner_with_arguments[run_epylint]', 'tests/test_pylint_runners.py::test_runner_with_arguments[run_pylint]', 'tests/test_pylint_runners.py::test_runner_with_arguments[run_pyreverse]', 'tests/test_pylint_runners.py::test_runner_with_arguments[run_symilar]'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pylint-dev__pylint-6903: resolved: True
+2025-06-27 15:44:13,976 - INFO - Attempting to stop container sweb.eval.pylint-dev__pylint-6903.20250627_135628...
+2025-06-27 15:44:29,138 - INFO - Attempting to remove container sweb.eval.pylint-dev__pylint-6903.20250627_135628...
+2025-06-27 15:44:29,155 - INFO - Container sweb.eval.pylint-dev__pylint-6903.20250627_135628 removed.

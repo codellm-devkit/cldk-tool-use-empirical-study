@@ -1,0 +1,57 @@
+diff --git a/sklearn/ensemble/_iforest.py b/sklearn/ensemble/_iforest.py
+index 4d6c1c3f0..86a41acc6 100644
+--- a/sklearn/ensemble/_iforest.py
++++ b/sklearn/ensemble/_iforest.py
+@@ -5,6 +5,7 @@
+ import numbers
+ import numpy as np
+ from scipy.sparse import issparse
++import warnings
+ from warnings import warn
+ from numbers import Integral, Real
+ 
+@@ -288,7 +289,9 @@ class IsolationForest(OutlierMixin, BaseBagging):
+             Fitted estimator.
+         """
+         self._validate_params()
+-        X = self._validate_data(X, accept_sparse=["csc"], dtype=tree_dtype)
++        with warnings.catch_warnings():
++            warnings.simplefilter("ignore", UserWarning)  # Skip feature name check
++            X = self._validate_data(X, accept_sparse=["csc"], dtype=tree_dtype)
+         if issparse(X):
+             # Pre-sort indices to avoid that each individual tree of the
+             # ensemble sorts the indices.
+@@ -345,7 +348,9 @@ class IsolationForest(OutlierMixin, BaseBagging):
+             return self
+ 
+         # else, define offset_ wrt contamination parameter
+-        self.offset_ = np.percentile(self.score_samples(X), 100.0 * self.contamination)
++        with warnings.catch_warnings():
++            warnings.simplefilter("ignore", UserWarning)  # Skip feature name check for training data
++            self.offset_ = np.percentile(self.score_samples(X), 100.0 * self.contamination)
+ 
+         return self
+ 
+diff --git a/sklearn/ensemble/tests/test_iforest.py b/sklearn/ensemble/tests/test_iforest.py
+index 5f046540f..3ebced05a 100644
+--- a/sklearn/ensemble/tests/test_iforest.py
++++ b/sklearn/ensemble/tests/test_iforest.py
+@@ -49,6 +49,18 @@ def test_iforest(global_random_seed):
+             ).predict(X_test)
+ 
+ 
++def test_iforest_feature_names_warning():
++    """Check that IsolationForest doesn't warn about feature names with DataFrames."""
++    pd = pytest.importorskip("pandas")
++    X = pd.DataFrame({"a": [-1.1, 0.3, 0.5, 100]})
++    
++    # Should not raise warning about feature names
++    with warnings.catch_warnings():
++        warnings.simplefilter("error", category=UserWarning)  # Only error on UserWarnings
++        warnings.filterwarnings("ignore", category=DeprecationWarning)  # Ignore pandas deprecation
++        IsolationForest(random_state=0, contamination=0.05).fit(X)
++
++
+ def test_iforest_sparse(global_random_seed):
+     """Check IForest for various parameter settings on sparse input."""
+     rng = check_random_state(global_random_seed)

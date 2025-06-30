@@ -1,0 +1,50 @@
+diff --git a/sphinx/domains/cpp.py b/sphinx/domains/cpp.py
+index fe52d881d..5c9c9b4a0 100644
+--- a/sphinx/domains/cpp.py
++++ b/sphinx/domains/cpp.py
+@@ -823,13 +823,18 @@ class ASTBooleanLiteral(ASTLiteral):
+ 
+ 
+ class ASTNumberLiteral(ASTLiteral):
+-    def __init__(self, data: str) -> None:
++    def __init__(self, data: str, suffix: str = None) -> None:
+         self.data = data
++        self.suffix = suffix
+ 
+     def _stringify(self, transform: StringifyTransform) -> str:
++        if self.suffix:
++            return self.data + self.suffix
+         return self.data
+ 
+     def get_id(self, version: int) -> str:
++        if self.suffix:
++            return "L%s%sE" % (self.data, self.suffix)
+         return "L%sE" % self.data
+ 
+     def describe_signature(self, signode: TextElement, mode: str,
+@@ -4658,12 +4663,25 @@ class DefinitionParser(BaseParser):
+             return ASTBooleanLiteral(True)
+         if self.skip_word('false'):
+             return ASTBooleanLiteral(False)
++        # Handle numeric literals with optional UDL suffixes
+         for regex in [float_literal_re, binary_literal_re, hex_literal_re,
+                       integer_literal_re, octal_literal_re]:
+             pos = self.pos
+             if self.match(regex):
++                # Skip standard numeric suffixes (u, l, f etc.)
+                 while self.current_char in 'uUlLfF':
+                     self.pos += 1
++                # Check for UDL suffix (must start with underscore or letter)
++                udl_start = self.pos
++                if self.current_char == '_' or self.current_char.isalpha():
++                    self.pos += 1
++                    while self.current_char.isalnum() or self.current_char == '_':
++                        self.pos += 1
++                    if self.pos > udl_start:
++                        return ASTNumberLiteral(
++                            self.definition[pos:udl_start],
++                            self.definition[udl_start:self.pos]
++                        )
+                 return ASTNumberLiteral(self.definition[pos:self.pos])
+ 
+         string = self._parse_string()

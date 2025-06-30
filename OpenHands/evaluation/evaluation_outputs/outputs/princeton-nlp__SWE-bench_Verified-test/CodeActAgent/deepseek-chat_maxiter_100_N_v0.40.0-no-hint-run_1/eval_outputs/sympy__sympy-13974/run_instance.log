@@ -1,0 +1,139 @@
+2025-06-27 16:15:01,231 - INFO - Creating container for sympy__sympy-13974...
+2025-06-27 16:15:01,686 - INFO - Container for sympy__sympy-13974 created: d5d51e1535d62f05eddf1ad7cad5654417859549554693d095e753e96634ec6d
+2025-06-27 16:15:01,914 - INFO - Container for sympy__sympy-13974 started: d5d51e1535d62f05eddf1ad7cad5654417859549554693d095e753e96634ec6d
+2025-06-27 16:15:01,914 - INFO - Intermediate patch for sympy__sympy-13974 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sympy__sympy-13974/patch.diff, now applying to container...
+2025-06-27 16:15:02,021 - INFO - >>>>> Applied Patch:
+Checking patch sympy/physics/quantum/tensorproduct.py...
+Applied patch sympy/physics/quantum/tensorproduct.py cleanly.
+
+2025-06-27 16:15:02,341 - INFO - Git diff before:
+diff --git a/sympy/physics/quantum/tensorproduct.py b/sympy/physics/quantum/tensorproduct.py
+index 9dd10d219e..61ece9f93f 100644
+--- a/sympy/physics/quantum/tensorproduct.py
++++ b/sympy/physics/quantum/tensorproduct.py
+@@ -257,6 +257,12 @@ def _eval_expand_tensorproduct(self, **hints):
+         else:
+             return self
+ 
++    def _eval_power(self, exp):
++        """Simplify powers of tensor products."""
++        if exp.is_Integer and exp > 0:
++            return TensorProduct(*[arg**exp for arg in self.args])
++        return Pow(self, exp)
++
+     def _eval_trace(self, **kwargs):
+         indices = kwargs.get('indices', None)
+         exp = tensor_product_simp(self)
+@@ -332,8 +338,15 @@ def tensor_product_simp_Mul(e):
+                         'TensorProducts of different lengths: %r and %r' %
+                         (current, next)
+                     )
+-                for i in range(len(new_args)):
+-                    new_args[i] = new_args[i] * next.args[i]
++                # Handle repeated tensor products (powers)
++                if current == next or all(
++                    a.equals(b) for a, b in zip(current.args, next.args)
++                ):
++                    for i in range(len(new_args)):
++                        new_args[i] = new_args[i] ** 2
++                else:
++                    for i in range(len(new_args)):
++                        new_args[i] = new_args[i] * next.args[i]
+             else:
+                 # this won't quite work as we don't want next in the
+                 # TensorProduct
+@@ -382,7 +395,23 @@ def tensor_product_simp(e, **hints):
+     if isinstance(e, Add):
+         return Add(*[tensor_product_simp(arg) for arg in e.args])
+     elif isinstance(e, Pow):
+-        return tensor_product_simp(e.base) ** e.exp
++        base = tensor_product_simp(e.base)
++        if isinstance(base, TensorProduct):
++            # First try direct simplification for simple cases
++            if all(arg.is_Number for arg in base.args):
++                return TensorProduct(*[arg**e.exp for arg in base.args])
++            # Handle integer exponents
++            if e.exp.is_integer and e.exp > 1:
++                # For commutative components, distribute power directly
++                if all(arg.is_commutative for arg in base.args):
++                    return TensorProduct(*[arg**e.exp for arg in base.args])
++                # For non-commutative, multiply repeatedly
++                result = base
++                for _ in range(int(e.exp) - 1):
++                    result = tensor_product_simp(result * base)
++                return result
++            return TensorProduct(*[arg**e.exp for arg in base.args])
++        return base ** e.exp
+     elif isinstance(e, Mul):
+         return tensor_product_simp_Mul(e)
+     elif isinstance(e, Commutator):
+2025-06-27 16:15:02,341 - INFO - Eval script for sympy__sympy-13974 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sympy__sympy-13974/eval.sh; copying to container...
+2025-06-27 16:15:07,594 - INFO - Test runtime: 5.20 seconds
+2025-06-27 16:15:07,595 - INFO - Test output for sympy__sympy-13974 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sympy__sympy-13974/test_output.txt
+2025-06-27 16:15:07,660 - INFO - Git diff after:
+diff --git a/sympy/physics/quantum/tensorproduct.py b/sympy/physics/quantum/tensorproduct.py
+index 9dd10d219e..61ece9f93f 100644
+--- a/sympy/physics/quantum/tensorproduct.py
++++ b/sympy/physics/quantum/tensorproduct.py
+@@ -257,6 +257,12 @@ def _eval_expand_tensorproduct(self, **hints):
+         else:
+             return self
+ 
++    def _eval_power(self, exp):
++        """Simplify powers of tensor products."""
++        if exp.is_Integer and exp > 0:
++            return TensorProduct(*[arg**exp for arg in self.args])
++        return Pow(self, exp)
++
+     def _eval_trace(self, **kwargs):
+         indices = kwargs.get('indices', None)
+         exp = tensor_product_simp(self)
+@@ -332,8 +338,15 @@ def tensor_product_simp_Mul(e):
+                         'TensorProducts of different lengths: %r and %r' %
+                         (current, next)
+                     )
+-                for i in range(len(new_args)):
+-                    new_args[i] = new_args[i] * next.args[i]
++                # Handle repeated tensor products (powers)
++                if current == next or all(
++                    a.equals(b) for a, b in zip(current.args, next.args)
++                ):
++                    for i in range(len(new_args)):
++                        new_args[i] = new_args[i] ** 2
++                else:
++                    for i in range(len(new_args)):
++                        new_args[i] = new_args[i] * next.args[i]
+             else:
+                 # this won't quite work as we don't want next in the
+                 # TensorProduct
+@@ -382,7 +395,23 @@ def tensor_product_simp(e, **hints):
+     if isinstance(e, Add):
+         return Add(*[tensor_product_simp(arg) for arg in e.args])
+     elif isinstance(e, Pow):
+-        return tensor_product_simp(e.base) ** e.exp
++        base = tensor_product_simp(e.base)
++        if isinstance(base, TensorProduct):
++            # First try direct simplification for simple cases
++            if all(arg.is_Number for arg in base.args):
++                return TensorProduct(*[arg**e.exp for arg in base.args])
++            # Handle integer exponents
++            if e.exp.is_integer and e.exp > 1:
++                # For commutative components, distribute power directly
++                if all(arg.is_commutative for arg in base.args):
++                    return TensorProduct(*[arg**e.exp for arg in base.args])
++                # For non-commutative, multiply repeatedly
++                result = base
++                for _ in range(int(e.exp) - 1):
++                    result = tensor_product_simp(result * base)
++                return result
++            return TensorProduct(*[arg**e.exp for arg in base.args])
++        return base ** e.exp
+     elif isinstance(e, Mul):
+         return tensor_product_simp_Mul(e)
+     elif isinstance(e, Commutator):
+2025-06-27 16:15:07,660 - INFO - Grading answer for sympy__sympy-13974...
+2025-06-27 16:15:07,666 - INFO - report: {'sympy__sympy-13974': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_tensor_product_simp']}, 'PASS_TO_PASS': {'success': ['test_tensor_product_abstract', 'test_tensor_product_expand', 'test_tensor_product_commutator', 'test_issue_5923'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-13974: resolved: False
+2025-06-27 16:15:07,666 - INFO - Attempting to stop container sweb.eval.sympy__sympy-13974.20250627_135628...
+2025-06-27 16:15:22,836 - INFO - Attempting to remove container sweb.eval.sympy__sympy-13974.20250627_135628...
+2025-06-27 16:15:22,848 - INFO - Container sweb.eval.sympy__sympy-13974.20250627_135628 removed.

@@ -1,0 +1,45 @@
+diff --git a/django/db/migrations/serializer.py b/django/db/migrations/serializer.py
+index 7d226955d5..1d09c8cbde 100644
+--- a/django/db/migrations/serializer.py
++++ b/django/db/migrations/serializer.py
+@@ -96,7 +96,9 @@ class DeconstructableSerializer(BaseSerializer):
+             name = "models.%s" % name
+         else:
+             imports = {"import %s" % module}
+-            name = path
++            # Only modify the path if it's not a nested class (contains no dots in name)
++            if '.' not in name:
++                name = path
+         return name, imports
+ 
+     def serialize(self):
+diff --git a/tests/migrations/test_writer.py b/tests/migrations/test_writer.py
+index ca924f35ec..c40796883a 100644
+--- a/tests/migrations/test_writer.py
++++ b/tests/migrations/test_writer.py
+@@ -188,6 +188,10 @@ class WriterTests(SimpleTestCase):
+         A = 1
+         B = 2
+ 
++    class Outer:
++        class Inner(models.CharField):
++            pass
++
+     def safe_exec(self, string, value=None):
+         d = {}
+         try:
+@@ -341,6 +345,14 @@ class WriterTests(SimpleTestCase):
+             "default=migrations.test_writer.IntEnum['A'])"
+         )
+ 
++        # Test nested field class
++        field = self.Outer.Inner(max_length=100)
++        string = MigrationWriter.serialize(field)[0]
++        self.assertEqual(
++            string,
++            "migrations.test_writer.WriterTests.Outer.Inner(max_length=100)"
++        )
++
+     def test_serialize_choices(self):
+         class TextChoices(models.TextChoices):
+             A = 'A', 'A value'

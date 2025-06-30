@@ -1,0 +1,170 @@
+diff --git a/django/contrib/admin/options.py b/django/contrib/admin/options.py
+index 5240b07cd6..66ad45a695 100644
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -466,7 +466,10 @@ class BaseModelAdmin(metaclass=forms.MediaDefiningClass):
+             # then the id value would be found already from employee__department_id.
+             if not prev_field or (
+                 prev_field.is_relation
+-                and field not in prev_field.path_infos[-1].target_fields
++                and (
++                    field not in prev_field.path_infos[-1].target_fields
++                    or getattr(field, 'primary_key', False)
++                )
+             ):
+                 relation_parts.append(part)
+             if not getattr(field, "path_infos", None):
+diff --git a/minimal_lookup_test.py b/minimal_lookup_test.py
+new file mode 100644
+index 0000000000..5644738339
+--- /dev/null
++++ b/minimal_lookup_test.py
+@@ -0,0 +1,47 @@
++
++
++import sys
++from django.conf import settings
++from django.apps import apps
++from django.db import connections
++
++# Minimal Django configuration
++if not settings.configured:
++    settings.configure(
++        INSTALLED_APPS=[
++            'django.contrib.admin',
++            'django.contrib.auth',
++            'django.contrib.contenttypes',
++            'tests.modeladmin',
++        ],
++        DATABASES={
++            'default': {
++                'ENGINE': 'django.db.backends.sqlite3',
++                'NAME': ':memory:',
++            }
++        },
++        SECRET_KEY='test-key'
++    )
++    from django import setup
++    setup()
++
++from django.contrib.admin.sites import AdminSite
++from tests.modeladmin.models import Band
++from django.contrib.admin import ModelAdmin
++
++# Test case
++class TestLookupAllowed:
++    def test_fk_as_pk_lookup(self):
++        class TestAdmin(ModelAdmin):
++            list_filter = ['restaurant__place__country']
++            
++        admin = TestAdmin(Band, AdminSite())
++        result = admin.lookup_allowed('restaurant__place__country', 'test_value')
++        assert result is True
++
++if __name__ == '__main__':
++    sys.path.insert(0, '/workspace')
++    test = TestLookupAllowed()
++    test.test_fk_as_pk_lookup()
++    print("Test passed successfully!")
++
+diff --git a/run_modeladmin_tests.py b/run_modeladmin_tests.py
+new file mode 100644
+index 0000000000..513c770ae6
+--- /dev/null
++++ b/run_modeladmin_tests.py
+@@ -0,0 +1,9 @@
++import os
++import django
++os.environ['DJANGO_SETTINGS_MODULE'] = 'test_settings'
++django.setup()
++
++from django.test.runner import DiscoverRunner
++runner = DiscoverRunner(verbosity=2)
++failures = runner.run_tests(['tests.modeladmin'])
++exit(failures)
+diff --git a/test_lookup_allowed.py b/test_lookup_allowed.py
+new file mode 100644
+index 0000000000..cb510b92d5
+--- /dev/null
++++ b/test_lookup_allowed.py
+@@ -0,0 +1,39 @@
++
++import sys
++from django.test import TestCase, override_settings
++from django.contrib.admin.sites import AdminSite
++
++@override_settings(
++    INSTALLED_APPS=[
++        'django.contrib.admin',
++        'django.contrib.auth',
++        'django.contrib.contenttypes',
++        'tests.modeladmin',
++    ],
++    DATABASES={
++        'default': {
++            'ENGINE': 'django.db.backends.sqlite3',
++            'NAME': ':memory:',
++        }
++    },
++    SECRET_KEY='test-key',
++    LOGGING_CONFIG=None,
++    LOGGING={}
++)
++class LookupAllowedTest(TestCase):
++    def test_lookup_allowed_fk_as_pk(self):
++        from tests.modeladmin.models import Band
++        from django.contrib.admin import ModelAdmin
++        
++        class TestAdmin(ModelAdmin):
++            list_filter = ['restaurant__place__country']
++            
++        admin = TestAdmin(Band, AdminSite())
++        result = admin.lookup_allowed('restaurant__place__country', 'test_value')
++        self.assertTrue(result)
++
++if __name__ == '__main__':
++    sys.path.insert(0, '/workspace')
++    from django import setup
++    setup()
++    TestCase.run_tests(LookupAllowedTest)
+diff --git a/test_settings.py b/test_settings.py
+new file mode 100644
+index 0000000000..279646a443
+--- /dev/null
++++ b/test_settings.py
+@@ -0,0 +1,32 @@
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++INSTALLED_APPS = [
++    'django.contrib.admin',
++    'django.contrib.auth',
++    'django.contrib.contenttypes',
++    'django.contrib.sessions',
++    'django.contrib.messages',
++    'tests.modeladmin',
++]
++MIDDLEWARE = [
++    'django.contrib.sessions.middleware.SessionMiddleware',
++    'django.contrib.auth.middleware.AuthenticationMiddleware',
++    'django.contrib.messages.middleware.MessageMiddleware',
++]
++TEMPLATES = [{
++    'BACKEND': 'django.template.backends.django.DjangoTemplates',
++    'APP_DIRS': True,
++    'OPTIONS': {
++        'context_processors': [
++            'django.template.context_processors.request',
++            'django.contrib.auth.context_processors.auth',
++            'django.contrib.messages.context_processors.messages',
++        ],
++    },
++}]
++SECRET_KEY = 'test'
++DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+diff --git a/tests/__init__.py b/tests/__init__.py
+new file mode 100644
+index 0000000000..e69de29bb2

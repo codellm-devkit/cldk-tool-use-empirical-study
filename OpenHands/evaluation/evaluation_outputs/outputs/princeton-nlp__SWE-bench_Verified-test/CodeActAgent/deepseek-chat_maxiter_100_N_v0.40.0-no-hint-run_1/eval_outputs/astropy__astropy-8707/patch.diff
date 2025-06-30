@@ -1,0 +1,91 @@
+diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py
+index 8c1ac5d738..8abdc7129f 100644
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -547,12 +547,20 @@ class Card(_Verify):
+     @classmethod
+     def fromstring(cls, image):
+         """
+-        Construct a `Card` object from a (raw) string. It will pad the string
++        Construct a `Card` object from a (raw) string or bytes. It will pad the string
+         if it is not the length of a card image (80 columns).  If the card
+         image is longer than 80 columns, assume it contains ``CONTINUE``
+         card(s).
++
++        Parameters
++        ----------
++        image : str or bytes
++            The card image as a string or bytes
+         """
+ 
++        if isinstance(image, bytes):
++            image = image.decode('ascii')
++
+         card = cls()
+         card._image = _pad(image)
+         card._verified = False
+diff --git a/astropy/io/fits/header.py b/astropy/io/fits/header.py
+index ad07e6d52d..af5523c5ca 100644
+--- a/astropy/io/fits/header.py
++++ b/astropy/io/fits/header.py
+@@ -58,6 +58,13 @@ class Header:
+ 
+     The header may also be indexed by card number::
+ 
++    @classmethod
++    def _ensure_ascii(cls, input_data):
++        """Ensure input is ASCII string, converting bytes if needed"""
++        if isinstance(input_data, bytes):
++            return input_data.decode('ascii')
++        return str(input_data)
++
+         >>> header[0]  # Return the value of the first card in the header
+         'T'
+ 
+@@ -329,15 +336,15 @@ class Header:
+     @classmethod
+     def fromstring(cls, data, sep=''):
+         """
+-        Creates an HDU header from a byte string containing the entire header
++        Creates an HDU header from a string or bytes containing the entire header
+         data.
+ 
+         Parameters
+         ----------
+-        data : str
+-           String containing the entire header.
++        data : str or bytes
++           String or bytes containing the entire header.
+ 
+-        sep : str, optional
++        sep : str or bytes, optional
+             The string separating cards from each other, such as a newline.  By
+             default there is no card separator (as is the case in a raw FITS
+             file).
+@@ -347,8 +354,26 @@ class Header:
+         header
+             A new `Header` instance.
+         """
++        if isinstance(data, bytes):
++            data = data.decode('ascii')
++        if isinstance(sep, bytes):
++            sep = sep.decode('ascii')
+ 
+         cards = []
++        if sep:
++            data = data.split(sep)
++        else:
++            # If no separator, split into 80-character chunks
++            data = [data[i:i+80] for i in range(0, len(data), 80)]
++
++        for image in data:
++            # Convert to string if needed
++            if isinstance(image, bytes):
++                image = image.decode('ascii')
++            # Clean and normalize to exactly 80 ASCII chars
++            image = str(image).strip()
++            image = image.ljust(80)[:80]
++            cards.append(Card.fromstring(image))
+ 
+         # If the card separator contains characters that may validly appear in
+         # a card, the only way to unambiguously distinguish between cards is to

@@ -1,0 +1,50 @@
+diff --git a/reproduce_issue.py b/reproduce_issue.py
+new file mode 100644
+index 0000000000..5d263c0d22
+--- /dev/null
++++ b/reproduce_issue.py
+@@ -0,0 +1,16 @@
++
++from sympy import *
++from sympy.abc import n,k
++
++# Test symbolic form
++p = Product(n + 1/2**k, (k, 0, n-1))
++print("Symbolic form:", p)
++
++# Test numerical evaluation
++p_num = p.subs(n, 2).doit()
++print("Numerical evaluation for n=2:", p_num)
++print("Expected value for n=2:", (2 + 1/2**0)*(2 + 1/2**1))
++
++# Test that doit() expands correctly for concrete values
++p_concrete = Product(2 + 1/2**k, (k, 0, 1)).doit()
++print("Expanded product:", p_concrete)
+diff --git a/sympy/concrete/products.py b/sympy/concrete/products.py
+index 66aafde2d6..d333199b95 100644
+--- a/sympy/concrete/products.py
++++ b/sympy/concrete/products.py
+@@ -275,14 +275,18 @@ def _eval_product(self, term, limits):
+             return poly.LC()**(n - a + 1) * A * B
+ 
+         elif term.is_Add:
++            # For additive terms, check if term has both k and other symbols
++            k_dep = term.has(k)
++            other_dep = term.free_symbols.difference({k})
++            if k_dep and other_dep:
++                # If term depends on both k and other symbols, don't evaluate
++                # This prevents incorrect evaluation of Product(n + c_k)
++                return None
++            
++            # Default handling for simple cases
+             p, q = term.as_numer_denom()
+             q = self._eval_product(q, (k, a, n))
+             if q.is_Number:
+-
+-                # There is expression, which couldn't change by
+-                # as_numer_denom(). E.g. n**(2/3) + 1 --> (n**(2/3) + 1, 1).
+-                # We have to catch this case.
+-
+                 p = sum([self._eval_product(i, (k, a, n)) for i in p.as_coeff_Add()])
+             else:
+                 p = self._eval_product(p, (k, a, n))

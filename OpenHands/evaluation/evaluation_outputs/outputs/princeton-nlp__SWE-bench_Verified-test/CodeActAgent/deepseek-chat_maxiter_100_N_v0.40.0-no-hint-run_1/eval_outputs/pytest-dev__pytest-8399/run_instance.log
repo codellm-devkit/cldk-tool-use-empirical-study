@@ -1,0 +1,128 @@
+2025-06-27 15:49:26,081 - INFO - Creating container for pytest-dev__pytest-8399...
+2025-06-27 15:49:27,216 - INFO - Container for pytest-dev__pytest-8399 created: 15f44933ee7e1f182ed2dafe57102aac2d8e1c8fa362b4f468eba9b28dd6215b
+2025-06-27 15:49:27,479 - INFO - Container for pytest-dev__pytest-8399 started: 15f44933ee7e1f182ed2dafe57102aac2d8e1c8fa362b4f468eba9b28dd6215b
+2025-06-27 15:49:27,480 - INFO - Intermediate patch for pytest-dev__pytest-8399 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/pytest-dev__pytest-8399/patch.diff, now applying to container...
+2025-06-27 15:49:27,656 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:10: trailing whitespace.
+            is_unittest_fixture = ('unittest_' in argname or 
+/tmp/patch.diff:11: trailing whitespace.
+                                 '_unittest_' in argname or 
+/tmp/patch.diff:33: trailing whitespace.
+    
+Checking patch src/_pytest/python.py...
+Checking patch src/_pytest/unittest.py...
+Checking patch testing/inspect_fixtures.py...
+Checking patch testing/test_fixture_visibility.py...
+Checking patch testing/unittest_example.py...
+/tmp/patch.diff:97: new blank line at EOF.
++
+Applied patch src/_pytest/python.py cleanly.
+Applied patch src/_pytest/unittest.py cleanly.
+Applied patch testing/inspect_fixtures.py cleanly.
+Applied patch testing/test_fixture_visibility.py cleanly.
+Applied patch testing/unittest_example.py cleanly.
+warning: 4 lines add whitespace errors.
+
+2025-06-27 15:49:27,800 - INFO - Git diff before:
+diff --git a/src/_pytest/python.py b/src/_pytest/python.py
+index 40116ab9c..9c9d19837 100644
+--- a/src/_pytest/python.py
++++ b/src/_pytest/python.py
+@@ -1486,6 +1486,17 @@ def _showfixtures_main(config: Config, session: Session) -> None:
+         if not fixturedefs:
+             continue
+         for fixturedef in fixturedefs:
++            # Skip all unittest fixtures unless in verbose mode
++            is_unittest_fixture = ('unittest_' in argname or 
++                                 '_unittest_' in argname or 
++                                 '__unittest_' in argname)
++            if is_unittest_fixture and not verbose:
++                continue
++            # Skip other hidden fixtures unless in verbose mode
++            is_hidden = (hasattr(fixturedef, '_pytestfixturefunction') and
++                        getattr(fixturedef._pytestfixturefunction, 'hidden', False))
++            if is_hidden and not verbose:
++                continue
+             loc = getlocation(fixturedef.func, str(curdir))
+             if (fixturedef.argname, loc) in seen:
+                 continue
+diff --git a/src/_pytest/unittest.py b/src/_pytest/unittest.py
+index 719eb4e88..8d3630484 100644
+--- a/src/_pytest/unittest.py
++++ b/src/_pytest/unittest.py
+@@ -140,13 +140,17 @@ def _make_xunit_fixture(
+         def cleanup(*args):
+             pass
+ 
++    # Create truly hidden unittest fixture
++    fixture_name = f"__unittest_{setup_name}_fixture_{obj.__qualname__}"
++    
+     @pytest.fixture(
+         scope=scope,
+         autouse=True,
+-        # Use a unique name to speed up lookup.
+-        name=f"unittest_{setup_name}_fixture_{obj.__qualname__}",
++        name=f"_{fixture_name.lstrip('_')}",
++        _pytestfixturefunction=type('', (), {'hidden': True}),
+     )
+     def fixture(self, request: FixtureRequest) -> Generator[None, None, None]:
++        """Internal unittest fixture (hidden by default)"""
+         if _is_skipped(self):
+             reason = self.__unittest_skip_why__
+             raise pytest.skip.Exception(reason, _use_item_location=True)
+2025-06-27 15:49:27,800 - INFO - Eval script for pytest-dev__pytest-8399 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/pytest-dev__pytest-8399/eval.sh; copying to container...
+2025-06-27 15:49:37,300 - INFO - Test runtime: 9.42 seconds
+2025-06-27 15:49:37,301 - INFO - Test output for pytest-dev__pytest-8399 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/pytest-dev__pytest-8399/test_output.txt
+2025-06-27 15:49:37,376 - INFO - Git diff after:
+diff --git a/src/_pytest/python.py b/src/_pytest/python.py
+index 40116ab9c..9c9d19837 100644
+--- a/src/_pytest/python.py
++++ b/src/_pytest/python.py
+@@ -1486,6 +1486,17 @@ def _showfixtures_main(config: Config, session: Session) -> None:
+         if not fixturedefs:
+             continue
+         for fixturedef in fixturedefs:
++            # Skip all unittest fixtures unless in verbose mode
++            is_unittest_fixture = ('unittest_' in argname or 
++                                 '_unittest_' in argname or 
++                                 '__unittest_' in argname)
++            if is_unittest_fixture and not verbose:
++                continue
++            # Skip other hidden fixtures unless in verbose mode
++            is_hidden = (hasattr(fixturedef, '_pytestfixturefunction') and
++                        getattr(fixturedef._pytestfixturefunction, 'hidden', False))
++            if is_hidden and not verbose:
++                continue
+             loc = getlocation(fixturedef.func, str(curdir))
+             if (fixturedef.argname, loc) in seen:
+                 continue
+diff --git a/src/_pytest/unittest.py b/src/_pytest/unittest.py
+index 719eb4e88..8d3630484 100644
+--- a/src/_pytest/unittest.py
++++ b/src/_pytest/unittest.py
+@@ -140,13 +140,17 @@ def _make_xunit_fixture(
+         def cleanup(*args):
+             pass
+ 
++    # Create truly hidden unittest fixture
++    fixture_name = f"__unittest_{setup_name}_fixture_{obj.__qualname__}"
++    
+     @pytest.fixture(
+         scope=scope,
+         autouse=True,
+-        # Use a unique name to speed up lookup.
+-        name=f"unittest_{setup_name}_fixture_{obj.__qualname__}",
++        name=f"_{fixture_name.lstrip('_')}",
++        _pytestfixturefunction=type('', (), {'hidden': True}),
+     )
+     def fixture(self, request: FixtureRequest) -> Generator[None, None, None]:
++        """Internal unittest fixture (hidden by default)"""
+         if _is_skipped(self):
+             reason = self.__unittest_skip_why__
+             raise pytest.skip.Exception(reason, _use_item_location=True)
+2025-06-27 15:49:37,377 - INFO - Grading answer for pytest-dev__pytest-8399...
+2025-06-27 15:49:37,398 - INFO - report: {'pytest-dev__pytest-8399': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/test_unittest.py::test_fixtures_setup_setUpClass_issue8394']}, 'PASS_TO_PASS': {'success': ['testing/test_unittest.py::test_isclasscheck_issue53', 'testing/test_unittest.py::test_setUpModule', 'testing/test_unittest.py::test_setUpModule_failing_no_teardown', 'testing/test_unittest.py::test_teardown_issue1649', 'testing/test_unittest.py::test_unittest_skip_issue148', 'testing/test_unittest.py::test_testcase_adderrorandfailure_defers[Error]', 'testing/test_unittest.py::test_testcase_adderrorandfailure_defers[Failure]', 'testing/test_unittest.py::test_unittest_not_shown_in_traceback', 'testing/test_unittest.py::test_unittest_expected_failure_for_failing_test_is_xfail[unittest]', 'testing/test_unittest.py::test_unittest_expected_failure_for_passing_test_is_fail[unittest]', 'testing/test_unittest.py::test_non_unittest_no_setupclass_support', 'testing/test_unittest.py::test_issue333_result_clearing', 'testing/test_unittest.py::test_usefixtures_marker_on_unittest[builtins.object]', 'testing/test_unittest.py::test_setup_inheritance_skipping[test_setup_skip_module.py-1'], 'failure': ['testing/test_unittest.py::test_simple_unittest', 'testing/test_unittest.py::test_runTest_method', 'testing/test_unittest.py::test_setup', 'testing/test_unittest.py::test_new_instances', 'testing/test_unittest.py::test_function_item_obj_is_instance', 'testing/test_unittest.py::test_teardown', 'testing/test_unittest.py::test_method_and_teardown_failing_reporting', 'testing/test_unittest.py::test_setup_failure_is_shown', 'testing/test_unittest.py::test_setup_setUpClass', 'testing/test_unittest.py::test_setup_class', 'testing/test_unittest.py::test_testcase_custom_exception_info[Error]', 'testing/test_unittest.py::test_testcase_custom_exception_info[Failure]', 'testing/test_unittest.py::test_testcase_totally_incompatible_exception_info', 'testing/test_unittest.py::test_module_level_pytestmark', 'testing/test_unittest.py::test_djangolike_testcase', 'testing/test_unittest.py::test_unorderable_types', 'testing/test_unittest.py::test_unittest_typerror_traceback', 'testing/test_unittest.py::test_unittest_expected_failure_for_failing_test_is_xfail[pytest]', 'testing/test_unittest.py::test_unittest_expected_failure_for_passing_test_is_fail[pytest]', 'testing/test_unittest.py::test_unittest_setup_interaction[return]', 'testing/test_unittest.py::test_unittest_setup_interaction[yield]', 'testing/test_unittest.py::test_no_teardown_if_setupclass_failed', 'testing/test_unittest.py::test_cleanup_functions', 'testing/test_unittest.py::test_unittest_raise_skip_issue748', 'testing/test_unittest.py::test_unittest_skip_issue1169', 'testing/test_unittest.py::test_class_method_containing_test_issue1558', 'testing/test_unittest.py::test_usefixtures_marker_on_unittest[unittest.TestCase]', 'testing/test_unittest.py::test_testcase_handles_init_exceptions', 'testing/test_unittest.py::test_error_message_with_parametrized_fixtures', 'testing/test_unittest.py::test_setup_inheritance_skipping[test_setup_skip.py-1', 'testing/test_unittest.py::test_setup_inheritance_skipping[test_setup_skip_class.py-1', 'testing/test_unittest.py::test_BdbQuit', 'testing/test_unittest.py::test_exit_outcome', 'testing/test_unittest.py::test_trace', 'testing/test_unittest.py::test_pdb_teardown_called', 'testing/test_unittest.py::test_pdb_teardown_skipped[@unittest.skip]', 'testing/test_unittest.py::test_pdb_teardown_skipped[@pytest.mark.skip]', 'testing/test_unittest.py::test_async_support', 'testing/test_unittest.py::test_do_class_cleanups_on_success', 'testing/test_unittest.py::test_do_class_cleanups_on_setupclass_failure', 'testing/test_unittest.py::test_do_class_cleanups_on_teardownclass_failure', 'testing/test_unittest.py::test_do_cleanups_on_success', 'testing/test_unittest.py::test_do_cleanups_on_setup_failure', 'testing/test_unittest.py::test_do_cleanups_on_teardown_failure', 'testing/test_unittest.py::test_plain_unittest_does_not_support_async']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-8399: resolved: False
+2025-06-27 15:49:37,398 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-8399.20250627_135628...
+2025-06-27 15:49:52,778 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-8399.20250627_135628...
+2025-06-27 15:49:52,806 - INFO - Container sweb.eval.pytest-dev__pytest-8399.20250627_135628 removed.

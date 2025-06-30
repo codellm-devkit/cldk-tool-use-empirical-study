@@ -1,0 +1,38 @@
+diff --git a/django/contrib/admin/options.py b/django/contrib/admin/options.py
+index 880a2cc17b..68f81ff4f7 100644
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -2122,20 +2122,22 @@ class InlineModelAdmin(BaseModelAdmin):
+ 
+     def has_change_permission(self, request, obj=None):
+         if self.opts.auto_created:
+-            # We're checking the rights to an auto-created intermediate model,
+-            # which doesn't have its own individual permissions. The user needs
+-            # to have the view permission for the related model in order to
+-            # be able to do anything with the intermediate model.
+-            return self.has_view_permission(request, obj)
+-        return super().has_change_permission(request)
++            # For auto-created intermediate models, check change permission
++            # on the parent model since these models don't have their own
++            # individual permissions.
++            parent_model = self.parent_model._meta
++            codename = get_permission_codename('change', parent_model)
++            return request.user.has_perm("%s.%s" % (parent_model.app_label, codename))
++        return super().has_change_permission(request, obj)
+ 
+     def has_delete_permission(self, request, obj=None):
+         if self.opts.auto_created:
+-            # We're checking the rights to an auto-created intermediate model,
+-            # which doesn't have its own individual permissions. The user needs
+-            # to have the view permission for the related model in order to
+-            # be able to do anything with the intermediate model.
+-            return self.has_view_permission(request, obj)
++            # For auto-created intermediate models, check delete permission
++            # on the parent model since these models don't have their own
++            # individual permissions.
++            parent_model = self.parent_model._meta
++            codename = get_permission_codename('delete', parent_model)
++            return request.user.has_perm("%s.%s" % (parent_model.app_label, codename))
+         return super().has_delete_permission(request, obj)
+ 
+     def has_view_permission(self, request, obj=None):

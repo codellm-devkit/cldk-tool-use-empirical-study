@@ -1,0 +1,50 @@
+diff --git a/xarray/core/rolling.py b/xarray/core/rolling.py
+index aef290f6..0fe1da78 100644
+--- a/xarray/core/rolling.py
++++ b/xarray/core/rolling.py
+@@ -268,17 +268,39 @@ class DataArrayRolling(Rolling["DataArray"]):
+         self.window_labels = self.obj[self.dim[0]]
+ 
+     def __iter__(self) -> Iterator[tuple[RollingKey, DataArray]]:
++        """Iterate over rolling windows.
++        
++        Note: When center=True, manual iteration will produce different edge handling
++        compared to direct computation methods (like .mean()). For exact center alignment
++        behavior, use the direct computation methods instead.
++        """
+         if self.ndim > 1:
+             raise ValueError("__iter__ is only supported for 1d-rolling")
+-        stops = np.arange(1, len(self.window_labels) + 1)
+-        starts = stops - int(self.window[0])
+-        starts[: int(self.window[0])] = 0
+-        for (label, start, stop) in zip(self.window_labels, starts, stops):
++        
++        size = len(self.window_labels)
++        window_size = int(self.window[0])
++        
++        if self.center[0]:
++            # Calculate centered window positions
++            pad = window_size // 2
++            starts = np.arange(size) - pad
++            stops = starts + window_size
++            # Only include fully valid windows
++            mask = (starts >= 0) & (stops <= size)
++            starts = starts[mask]
++            stops = stops[mask]
++            labels = self.window_labels[mask]
++        else:
++            # Left-aligned windows
++            stops = np.arange(1, size + 1)
++            starts = stops - window_size
++            starts[starts < 0] = 0
++            labels = self.window_labels
++            
++        for label, start, stop in zip(labels, starts, stops):
+             window = self.obj.isel({self.dim[0]: slice(start, stop)})
+-
+             counts = window.count(dim=self.dim[0])
+             window = window.where(counts >= self.min_periods)
+-
+             yield (label, window)
+ 
+     def construct(

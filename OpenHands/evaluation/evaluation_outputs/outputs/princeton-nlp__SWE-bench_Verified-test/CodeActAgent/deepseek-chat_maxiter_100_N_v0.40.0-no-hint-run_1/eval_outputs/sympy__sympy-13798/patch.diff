@@ -1,0 +1,65 @@
+diff --git a/sympy/printing/latex.py b/sympy/printing/latex.py
+index ad4d7d9613..7cfc6e9a07 100644
+--- a/sympy/printing/latex.py
++++ b/sympy/printing/latex.py
+@@ -136,7 +136,38 @@ class LatexPrinter(Printer):
+     }
+ 
+     def __init__(self, settings=None):
+-        Printer.__init__(self, settings)
++        # Fundamental solution - bypass all table mechanisms
++        processed_settings = settings.copy() if settings else {}
++        symbol = processed_settings.get('mul_symbol')
++        
++        # Define complete symbol handling
++        symbol_handling = {
++            'ldot': (r" \,.\, ", r" \,.\, "),
++            'dot': (r" \cdot ", r" \cdot "),
++            'times': (r" \times ", r" \times "),
++            None: (r" ", r" \cdot ")
++        }
++        
++        # Get or create symbol representations
++        if symbol in symbol_handling:
++            latex, latex_numbers = symbol_handling[symbol]
++        else:
++            latex = latex_numbers = symbol if symbol else r" \cdot "
++        
++        # Completely override symbol handling
++        processed_settings.update({
++            'mul_symbol': None,  # Disable any table lookups
++            'mul_symbol_latex': latex,
++            'mul_symbol_latex_numbers': latex_numbers,
++            '_symbols_handled': True  # Flag to prevent late lookups
++        })
++
++        # Initialize with processed settings
++        Printer.__init__(self, processed_settings)
++        
++        # Ensure no late lookups can occur
++        if hasattr(self, 'mul_symbol_table'):
++            del self.mul_symbol_table
+ 
+         if 'mode' in self._settings:
+             valid_modes = ['inline', 'plain', 'equation',
+@@ -149,18 +180,9 @@ def __init__(self, settings=None):
+                 self._settings['mode'] == 'inline':
+             self._settings['fold_short_frac'] = True
+ 
+-        mul_symbol_table = {
+-            None: r" ",
+-            "ldot": r" \,.\, ",
+-            "dot": r" \cdot ",
+-            "times": r" \times "
+-        }
+-
+-        self._settings['mul_symbol_latex'] = \
+-            mul_symbol_table[self._settings['mul_symbol']]
+-
+-        self._settings['mul_symbol_latex_numbers'] = \
+-            mul_symbol_table[self._settings['mul_symbol'] or 'dot']
++        # Clean up any remaining symbol table references
++        if hasattr(self, 'mul_symbol_table'):
++            del self.mul_symbol_table
+ 
+         self._delim_dict = {'(': ')', '[': ']'}

@@ -1,0 +1,151 @@
+diff --git a/django/db/models/fields/related.py b/django/db/models/fields/related.py
+index 32085daf18..4416e45e9d 100644
+--- a/django/db/models/fields/related.py
++++ b/django/db/models/fields/related.py
+@@ -1449,9 +1449,10 @@ class ManyToManyField(RelatedField):
+ 
+     def _check_relationship_model(self, from_model=None, **kwargs):
+         if hasattr(self.remote_field.through, "_meta"):
++            through_model = self._resolve_through_model()
+             qualified_model_name = "%s.%s" % (
+-                self.remote_field.through._meta.app_label,
+-                self.remote_field.through.__name__,
++                through_model._meta.app_label,
++                through_model.__name__,
+             )
+         else:
+             qualified_model_name = self.remote_field.through
+@@ -1484,13 +1485,14 @@ class ManyToManyField(RelatedField):
+                 to_model_name = to_model
+             else:
+                 to_model_name = to_model._meta.object_name
+-            relationship_model_name = self.remote_field.through._meta.object_name
++            through_model = self._resolve_through_model()
++            relationship_model_name = through_model._meta.object_name
+             self_referential = from_model == to_model
+             # Count foreign keys in intermediate model
+             if self_referential:
+                 seen_self = sum(
+                     from_model == getattr(field.remote_field, "model", None)
+-                    for field in self.remote_field.through._meta.fields
++                    for field in through_model._meta.fields
+                 )
+ 
+                 if seen_self > 2 and not self.remote_field.through_fields:
+@@ -1513,13 +1515,14 @@ class ManyToManyField(RelatedField):
+ 
+             else:
+                 # Count foreign keys in relationship model
++                through_model = self._resolve_through_model()
+                 seen_from = sum(
+                     from_model == getattr(field.remote_field, "model", None)
+-                    for field in self.remote_field.through._meta.fields
++                    for field in through_model._meta.fields
+                 )
+                 seen_to = sum(
+                     to_model == getattr(field.remote_field, "model", None)
+-                    for field in self.remote_field.through._meta.fields
++                    for field in through_model._meta.fields
+                 )
+ 
+                 if seen_from > 1 and not self.remote_field.through_fields:
+@@ -1568,12 +1571,13 @@ class ManyToManyField(RelatedField):
+                     )
+ 
+                 if seen_from == 0 or seen_to == 0:
++                    through_model = self._resolve_through_model()
+                     errors.append(
+                         checks.Error(
+                             "The model is used as an intermediate model by "
+                             "'%s', but it does not have a foreign key to '%s' or '%s'."
+                             % (self, from_model_name, to_model_name),
+-                            obj=self.remote_field.through,
++                            obj=through_model,
+                             id="fields.E336",
+                         )
+                     )
+@@ -1679,15 +1683,15 @@ class ManyToManyField(RelatedField):
+         return errors
+ 
+     def _check_table_uniqueness(self, **kwargs):
+-        if (
+-            isinstance(self.remote_field.through, str)
+-            or not self.remote_field.through._meta.managed
+-        ):
++        if isinstance(self.remote_field.through, str):
++            return []
++        through_model = self._resolve_through_model()
++        if not through_model._meta.managed:
+             return []
+         registered_tables = {
+             model._meta.db_table: model
+             for model in self.opts.apps.get_models(include_auto_created=True)
+-            if model != self.remote_field.through and model._meta.managed
++            if model != through_model and model._meta.managed
+         }
+         m2m_db_table = self.m2m_db_table()
+         model = registered_tables.get(m2m_db_table)
+@@ -1696,7 +1700,7 @@ class ManyToManyField(RelatedField):
+         if (
+             model
+             and model._meta.concrete_model
+-            != self.remote_field.through._meta.concrete_model
++            != through_model._meta.concrete_model
+         ):
+             if model._meta.auto_created:
+ 
+@@ -1749,8 +1753,10 @@ class ManyToManyField(RelatedField):
+         if getattr(self.remote_field, "through", None) is not None:
+             if isinstance(self.remote_field.through, str):
+                 kwargs["through"] = self.remote_field.through
+-            elif not self.remote_field.through._meta.auto_created:
+-                kwargs["through"] = self.remote_field.through._meta.label
++            else:
++                through_model = self._resolve_through_model()
++                if not through_model._meta.auto_created:
++                    kwargs["through"] = through_model._meta.label
+         # If swappable is True, then see if we're actually pointing to the target
+         # of a swap.
+         swappable_setting = self.swappable_setting
+@@ -1815,13 +1821,20 @@ class ManyToManyField(RelatedField):
+     def reverse_path_infos(self):
+         return self.get_reverse_path_info()
+ 
++    def _resolve_through_model(self):
++        """Helper method to resolve string references to through models."""
++        through = self.remote_field.through
++        if isinstance(through, str):
++            through = apps.get_model(through)
++        return through
++
+     def _get_m2m_db_table(self, opts):
+         """
+         Function that can be curried to provide the m2m table name for this
+         relation.
+         """
+         if self.remote_field.through is not None:
+-            return self.remote_field.through._meta.db_table
++            return self._resolve_through_model()._meta.db_table
+         elif self.db_table:
+             return self.db_table
+         else:
+@@ -1840,7 +1853,8 @@ class ManyToManyField(RelatedField):
+             link_field_name = self.remote_field.through_fields[0]
+         else:
+             link_field_name = None
+-        for f in self.remote_field.through._meta.fields:
++        through_model = self._resolve_through_model()
++        for f in through_model._meta.fields:
+             if (
+                 f.is_relation
+                 and f.remote_field.model == related.related_model
+@@ -1862,7 +1876,8 @@ class ManyToManyField(RelatedField):
+             link_field_name = self.remote_field.through_fields[1]
+         else:
+             link_field_name = None
+-        for f in self.remote_field.through._meta.fields:
++        through_model = self._resolve_through_model()
++        for f in through_model._meta.fields:
+             if f.is_relation and f.remote_field.model == related.model:
+                 if link_field_name is None and related.related_model == related.model:
+                     # If this is an m2m-intermediate to self,

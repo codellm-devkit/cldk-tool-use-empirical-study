@@ -1,0 +1,99 @@
+diff --git a/mathml_test.py b/mathml_test.py
+new file mode 100644
+index 0000000000..e8558622a0
+--- /dev/null
++++ b/mathml_test.py
+@@ -0,0 +1,14 @@
++
++from sympy import symbols
++from sympy.printing.mathml import mathml
++
++x1, x2 = symbols('x1 x2')
++expr = x1 + x2
++
++# Print using presentation printer (which shows the bug)
++print("Presentation MathML:")
++print(mathml(expr, printer='presentation'))
++
++# Print using content printer for comparison
++print("\nContent MathML:")
++print(mathml(expr, printer='content'))
+diff --git a/sympy/printing/mathml.py b/sympy/printing/mathml.py
+index 3f8b8d49e0..78999aa417 100644
+--- a/sympy/printing/mathml.py
++++ b/sympy/printing/mathml.py
+@@ -359,33 +359,37 @@ def translate(s):
+             else:
+                 return s
+ 
+-        name, supers, subs = split_super_sub(sym.name)
+-        name = translate(name)
+-        supers = [translate(sup) for sup in supers]
+-        subs = [translate(sub) for sub in subs]
+-
+-        mname = self.dom.createElement('mml:mi')
+-        mname.appendChild(self.dom.createTextNode(name))
+-        if len(supers) == 0:
+-            if len(subs) == 0:
+-                ci.appendChild(self.dom.createTextNode(name))
+-            else:
+-                msub = self.dom.createElement('mml:msub')
+-                msub.appendChild(mname)
+-                msub.appendChild(join(subs))
+-                ci.appendChild(msub)
++        # Handle symbols ending with numbers as single identifiers
++        if sym.name[-1].isdigit():
++            ci.appendChild(self.dom.createTextNode(sym.name))
+         else:
+-            if len(subs) == 0:
+-                msup = self.dom.createElement('mml:msup')
+-                msup.appendChild(mname)
+-                msup.appendChild(join(supers))
+-                ci.appendChild(msup)
++            name, supers, subs = split_super_sub(sym.name)
++            name = translate(name)
++            supers = [translate(sup) for sup in supers]
++            subs = [translate(sub) for sub in subs]
++
++            mname = self.dom.createElement('mml:mi')
++            mname.appendChild(self.dom.createTextNode(name))
++            if len(supers) == 0:
++                if len(subs) == 0:
++                    ci.appendChild(self.dom.createTextNode(name))
++                else:
++                    msub = self.dom.createElement('mml:msub')
++                    msub.appendChild(mname)
++                    msub.appendChild(join(subs))
++                    ci.appendChild(msub)
+             else:
+-                msubsup = self.dom.createElement('mml:msubsup')
+-                msubsup.appendChild(mname)
+-                msubsup.appendChild(join(subs))
+-                msubsup.appendChild(join(supers))
+-                ci.appendChild(msubsup)
++                if len(subs) == 0:
++                    msup = self.dom.createElement('mml:msup')
++                    msup.appendChild(mname)
++                    msup.appendChild(join(supers))
++                    ci.appendChild(msup)
++                else:
++                    msubsup = self.dom.createElement('mml:msubsup')
++                    msubsup.appendChild(mname)
++                    msubsup.appendChild(join(subs))
++                    msubsup.appendChild(join(supers))
++                    ci.appendChild(msubsup)
+         return ci
+ 
+     _print_MatrixSymbol = _print_Symbol
+@@ -772,6 +776,11 @@ def translate(s):
+             else:
+                 return s
+ 
++        # Handle symbols ending with numbers as single identifiers
++        if sym.name[-1].isdigit():
++            x.appendChild(self.dom.createTextNode(sym.name))
++            return x
++            
+         name, supers, subs = split_super_sub(sym.name)
+         name = translate(name)
+         supers = [translate(sup) for sup in supers]

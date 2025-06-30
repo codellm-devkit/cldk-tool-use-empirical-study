@@ -1,0 +1,60 @@
+diff --git a/sympy/physics/quantum/tensorproduct.py b/sympy/physics/quantum/tensorproduct.py
+index 9dd10d219e..61ece9f93f 100644
+--- a/sympy/physics/quantum/tensorproduct.py
++++ b/sympy/physics/quantum/tensorproduct.py
+@@ -257,6 +257,12 @@ def _eval_expand_tensorproduct(self, **hints):
+         else:
+             return self
+ 
++    def _eval_power(self, exp):
++        """Simplify powers of tensor products."""
++        if exp.is_Integer and exp > 0:
++            return TensorProduct(*[arg**exp for arg in self.args])
++        return Pow(self, exp)
++
+     def _eval_trace(self, **kwargs):
+         indices = kwargs.get('indices', None)
+         exp = tensor_product_simp(self)
+@@ -332,8 +338,15 @@ def tensor_product_simp_Mul(e):
+                         'TensorProducts of different lengths: %r and %r' %
+                         (current, next)
+                     )
+-                for i in range(len(new_args)):
+-                    new_args[i] = new_args[i] * next.args[i]
++                # Handle repeated tensor products (powers)
++                if current == next or all(
++                    a.equals(b) for a, b in zip(current.args, next.args)
++                ):
++                    for i in range(len(new_args)):
++                        new_args[i] = new_args[i] ** 2
++                else:
++                    for i in range(len(new_args)):
++                        new_args[i] = new_args[i] * next.args[i]
+             else:
+                 # this won't quite work as we don't want next in the
+                 # TensorProduct
+@@ -382,7 +395,23 @@ def tensor_product_simp(e, **hints):
+     if isinstance(e, Add):
+         return Add(*[tensor_product_simp(arg) for arg in e.args])
+     elif isinstance(e, Pow):
+-        return tensor_product_simp(e.base) ** e.exp
++        base = tensor_product_simp(e.base)
++        if isinstance(base, TensorProduct):
++            # First try direct simplification for simple cases
++            if all(arg.is_Number for arg in base.args):
++                return TensorProduct(*[arg**e.exp for arg in base.args])
++            # Handle integer exponents
++            if e.exp.is_integer and e.exp > 1:
++                # For commutative components, distribute power directly
++                if all(arg.is_commutative for arg in base.args):
++                    return TensorProduct(*[arg**e.exp for arg in base.args])
++                # For non-commutative, multiply repeatedly
++                result = base
++                for _ in range(int(e.exp) - 1):
++                    result = tensor_product_simp(result * base)
++                return result
++            return TensorProduct(*[arg**e.exp for arg in base.args])
++        return base ** e.exp
+     elif isinstance(e, Mul):
+         return tensor_product_simp_Mul(e)
+     elif isinstance(e, Commutator):

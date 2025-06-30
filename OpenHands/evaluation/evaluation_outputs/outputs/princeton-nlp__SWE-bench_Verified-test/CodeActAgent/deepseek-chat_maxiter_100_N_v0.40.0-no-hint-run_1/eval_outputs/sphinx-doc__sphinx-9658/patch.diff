@@ -1,0 +1,40 @@
+diff --git a/sphinx/util/typing.py b/sphinx/util/typing.py
+index 87707d48f..8b935c45c 100644
+--- a/sphinx/util/typing.py
++++ b/sphinx/util/typing.py
+@@ -119,8 +119,6 @@ def restify(cls: Optional[Type]) -> str:
+             return ':py:class:`%s`' % INVALID_BUILTIN_CLASSES[cls]
+         elif inspect.isNewType(cls):
+             if sys.version_info > (3, 10):
+-                # newtypes have correct module info since Python 3.10+
+-                print(cls, type(cls), dir(cls))
+                 return ':py:class:`%s.%s`' % (cls.__module__, cls.__name__)
+             else:
+                 return ':py:class:`%s`' % cls.__name__
+@@ -139,10 +137,24 @@ def restify(cls: Optional[Type]) -> str:
+             else:
+                 return ':py:class:`%s`' % cls.__name__
+         else:
+-            if sys.version_info >= (3, 7):  # py37+
+-                return _restify_py37(cls)
++            # Handle mocked classes
++            if hasattr(cls, '_mock_original_class'):
++                cls = cls._mock_original_class
++            elif hasattr(cls, '__wrapped__'):
++                cls = cls.__wrapped__
++            elif hasattr(cls, '__origin__'):
++                cls = cls.__origin__
++
++            # Get module and qualname
++            module = getattr(cls, '__module__', None)
++            qualname = getattr(cls, '__qualname__', 
++                          getattr(cls, '_name', 
++                                getattr(cls, '__name__', str(cls))))
++            
++            if module and module != 'builtins':
++                return ':py:class:`%s.%s`' % (module, qualname.split('.')[-1])
+             else:
+-                return _restify_py36(cls)
++                return ':py:class:`%s`' % qualname.split('.')[-1]
+     except (AttributeError, TypeError):
+         return repr(cls)

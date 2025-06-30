@@ -1,0 +1,52 @@
+diff --git a/sphinx/domains/python.py b/sphinx/domains/python.py
+index 9875a9f4b..dc26c604f 100644
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -145,11 +145,29 @@ def _parse_annotation(annotation: str, env: BuildEnvironment = None) -> List[Nod
+         elif isinstance(node, ast.Name):
+             return [nodes.Text(node.id)]
+         elif isinstance(node, ast.Subscript):
+-            result = unparse(node.value)
+-            result.append(addnodes.desc_sig_punctuation('', '['))
+-            result.extend(unparse(node.slice))
+-            result.append(addnodes.desc_sig_punctuation('', ']'))
+-            return result
++            # Check for Literal type annotation
++            if isinstance(node.value, ast.Name) and node.value.id == 'Literal':
++                # Keep Literal values as text nodes, don't convert to xrefs
++                result = [nodes.Text('Literal[')]
++                args = []
++                if isinstance(node.slice, ast.Index):
++                    slice_val = node.slice.value
++                    if isinstance(slice_val, ast.Tuple):
++                        for i, elem in enumerate(slice_val.elts):
++                            args.extend(unparse(elem))
++                            if i < len(slice_val.elts) - 1:
++                                args.append(nodes.Text(', '))
++                    else:
++                        args.extend(unparse(slice_val))
++                result.extend(args)
++                result.append(nodes.Text(']'))
++                return result
++            else:
++                result = unparse(node.value)
++                result.append(addnodes.desc_sig_punctuation('', '['))
++                result.extend(unparse(node.slice))
++                result.append(addnodes.desc_sig_punctuation('', ']'))
++                return result
+         elif isinstance(node, ast.Tuple):
+             if node.elts:
+                 result = []
+@@ -180,7 +198,11 @@ def _parse_annotation(annotation: str, env: BuildEnvironment = None) -> List[Nod
+         result = unparse(tree)
+         for i, node in enumerate(result):
+             if isinstance(node, nodes.Text) and node.strip():
+-                result[i] = type_to_xref(str(node), env)
++                # Skip creating xrefs for Literal values
++                if not (len(result) > i+2 and 
++                       isinstance(result[i+1], nodes.Text) and 
++                       result[i+1] == 'Literal['):
++                    result[i] = type_to_xref(str(node), env)
+         return result
+     except SyntaxError:
+         return [type_to_xref(annotation, env)]

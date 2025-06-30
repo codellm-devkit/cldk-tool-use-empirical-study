@@ -1,0 +1,30 @@
+diff --git a/django/db/models/deletion.py b/django/db/models/deletion.py
+index 3a462f1c4c..533609426a 100644
+--- a/django/db/models/deletion.py
++++ b/django/db/models/deletion.py
+@@ -173,6 +173,7 @@ class Collector:
+         parent instances.  'objs' must be a homogeneous iterable collection of
+         model instances (e.g. a QuerySet).  If 'collect_related' is True,
+         related objects will be handled by their respective on_delete handler.
++        Only fields required for deletion (PKs and FKs) will be fetched.
+ 
+         If the call is the result of a cascade, 'source' should be the model
+         that caused it and 'nullable' should be set to True, if the relation
+@@ -231,10 +232,15 @@ class Collector:
+     def related_objects(self, related, objs):
+         """
+         Get a QuerySet of objects related to `objs` via the relation `related`.
++        Only fetches primary key and foreign key fields needed for deletion.
+         """
+-        return related.related_model._base_manager.using(self.using).filter(
++        model = related.related_model
++        fields = [model._meta.pk.name]
++        if hasattr(related.field, 'column'):
++            fields.append(related.field.column)
++        return model._base_manager.using(self.using).filter(
+             **{"%s__in" % related.field.name: objs}
+-        )
++        ).only(*fields)
+ 
+     def instances_with_model(self):
+         for model, instances in self.data.items():

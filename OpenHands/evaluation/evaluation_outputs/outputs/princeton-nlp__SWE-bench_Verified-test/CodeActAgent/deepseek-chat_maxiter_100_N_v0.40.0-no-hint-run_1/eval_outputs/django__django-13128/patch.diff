@@ -1,0 +1,113 @@
+diff --git a/django/db/models/expressions.py b/django/db/models/expressions.py
+index d913658291..e0536acf32 100644
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -451,15 +451,21 @@ class CombinedExpression(SQLiteNumericMixin, Expression):
+             rhs_type = self.rhs.output_field.get_internal_type()
+         except FieldError:
+             rhs_type = None
+-        if (
+-            not connection.features.has_native_duration_field and
+-            'DurationField' in {lhs_type, rhs_type} and
+-            lhs_type != rhs_type
+-        ):
+-            return DurationExpression(self.lhs, self.connector, self.rhs).as_sql(compiler, connection)
++        if 'DurationField' in {lhs_type, rhs_type}:
++            if lhs_type != rhs_type:
++                if not connection.features.has_native_duration_field:
++                    return DurationExpression(self.lhs, self.connector, self.rhs).as_sql(compiler, connection)
++                # For databases with native duration support, set output_field
++                self.output_field = fields.DurationField()
++            elif self.connector in (self.ADD, self.SUB):
++                self.output_field = fields.DurationField()
+         datetime_fields = {'DateField', 'DateTimeField', 'TimeField'}
+-        if self.connector == self.SUB and lhs_type in datetime_fields and lhs_type == rhs_type:
+-            return TemporalSubtraction(self.lhs, self.rhs).as_sql(compiler, connection)
++        if self.connector == self.SUB and lhs_type in datetime_fields:
++            if rhs_type in datetime_fields or rhs_type == 'DurationField':
++                return TemporalSubtraction(self.lhs, self.rhs).as_sql(compiler, connection)
++            elif isinstance(self.rhs, Value) and isinstance(self.rhs.value, datetime.timedelta):
++                self.output_field = fields.DurationField()
++                return super().as_sql(compiler, connection)
+         expressions = []
+         expression_params = []
+         sql, params = compiler.compile(self.lhs)
+diff --git a/tests/temporal_ops/__init__.py b/tests/temporal_ops/__init__.py
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/temporal_ops/migrations/__init__.py b/tests/temporal_ops/migrations/__init__.py
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/temporal_ops/models.py b/tests/temporal_ops/models.py
+new file mode 100644
+index 0000000000..6ea018a11e
+--- /dev/null
++++ b/tests/temporal_ops/models.py
+@@ -0,0 +1,12 @@
++
++
++import datetime
++from django.db import models
++
++class Experiment(models.Model):
++    start = models.DateTimeField()
++    end = models.DateTimeField()
++
++    class Meta:
++        app_label = 'temporal_ops'
++
+diff --git a/tests/temporal_ops_test.py b/tests/temporal_ops_test.py
+new file mode 100644
+index 0000000000..02344c735e
+--- /dev/null
++++ b/tests/temporal_ops_test.py
+@@ -0,0 +1,30 @@
++
++import datetime
++from django.test import TestCase
++from django.db.models import F, Value
++from django.db.models.expressions import CombinedExpression
++from django.db.models.fields import DurationField
++
++class TemporalOperationsTest(TestCase):
++    def test_temporal_subtraction_expression(self):
++        expr = CombinedExpression(F('end'), '-', F('start'))
++        expr.output_field = DurationField()
++        self.assertEqual(expr.output_field.__class__, DurationField)
++
++    def test_temporal_subtraction_with_timedelta(self):
++        expr = CombinedExpression(
++            CombinedExpression(F('end'), '-', F('start')),
++            '+',
++            Value(datetime.timedelta())
++        )
++        expr.output_field = DurationField()
++        self.assertEqual(expr.output_field.__class__, DurationField)
++
++    def test_temporal_addition_expression(self):
++        expr = CombinedExpression(
++            CombinedExpression(F('end'), '-', F('start')),
++            '+',
++            Value(datetime.timedelta(days=1))
++        )
++        expr.output_field = DurationField()
++        self.assertEqual(expr.output_field.__class__, DurationField)
+diff --git a/tests/test_settings.py b/tests/test_settings.py
+new file mode 100644
+index 0000000000..091d8951cc
+--- /dev/null
++++ b/tests/test_settings.py
+@@ -0,0 +1,13 @@
++
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++INSTALLED_APPS = [
++    'django.contrib.contenttypes',
++    'django.contrib.auth',
++    'tests.temporal_ops',
++]
++SECRET_KEY = 'test'

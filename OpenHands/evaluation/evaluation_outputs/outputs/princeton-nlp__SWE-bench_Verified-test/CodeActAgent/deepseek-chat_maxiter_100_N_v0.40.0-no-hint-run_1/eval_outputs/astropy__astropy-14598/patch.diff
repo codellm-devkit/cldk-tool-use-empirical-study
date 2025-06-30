@@ -1,0 +1,27 @@
+diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py
+index 1b3285ddce..db04381458 100644
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -64,7 +64,7 @@ class Card(_Verify):
+ 
+     # Used in cards using the CONTINUE convention which expect a string
+     # followed by an optional comment
+-    _strg = r"\'(?P<strg>([ -~]+?|\'\'|) *?)\'(?=$|/| )"
++    _strg = r"\'(?P<strg>(?:[^']|''|'{2})*)\'(?=$|/| )"
+     _comm_field = r"(?P<comm_field>(?P<sepr>/ *)(?P<comm>(.|\n)*))"
+     _strg_comment_RE = re.compile(f"({_strg})? *{_comm_field}?")
+ 
+@@ -918,6 +918,13 @@ class Card(_Verify):
+                 self.value = valuecomment
+             self._valuestring = self._value
+             return
++        elif m.group("strg") is not None:
++            # Preserve exact string content including quote pairs
++            value = m.group("strg")
++            # Ensure double quotes are preserved by reconstructing the string
++            if "''" in value:
++                value = value.replace("''", "'")  # Normalize first
++                value = f"'{value}'"  # Then properly quote
+         elif m.group("numr") is not None:
+             numr = self._number_NFSC_RE.match(m.group("numr"))
+             value = translate(numr.group("digt"), FIX_FP_TABLE, " ")

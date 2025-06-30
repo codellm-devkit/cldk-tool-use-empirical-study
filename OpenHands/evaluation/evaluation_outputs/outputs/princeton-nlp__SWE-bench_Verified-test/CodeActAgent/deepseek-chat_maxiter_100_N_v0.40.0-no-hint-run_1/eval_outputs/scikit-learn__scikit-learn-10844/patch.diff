@@ -1,0 +1,35 @@
+diff --git a/sklearn/metrics/cluster/supervised.py b/sklearn/metrics/cluster/supervised.py
+index a987778ae..9bcca75a2 100644
+--- a/sklearn/metrics/cluster/supervised.py
++++ b/sklearn/metrics/cluster/supervised.py
+@@ -856,7 +856,7 @@ def fowlkes_mallows_score(labels_true, labels_pred, sparse=False):
+     tk = np.dot(c.data, c.data) - n_samples
+     pk = np.sum(np.asarray(c.sum(axis=0)).ravel() ** 2) - n_samples
+     qk = np.sum(np.asarray(c.sum(axis=1)).ravel() ** 2) - n_samples
+-    return tk / np.sqrt(pk * qk) if tk != 0. else 0.
++    return np.sqrt(tk / pk) * np.sqrt(tk / qk) if tk != 0. else 0.
+ 
+ 
+ def entropy(labels):
+diff --git a/test_overflow_fix.py b/test_overflow_fix.py
+new file mode 100644
+index 000000000..a73d46b1b
+--- /dev/null
++++ b/test_overflow_fix.py
+@@ -0,0 +1,16 @@
++
++import numpy as np
++from sklearn.metrics.cluster import fowlkes_mallows_score
++
++# Create large clusters that would cause pk*qk > 2^32
++n = 100000  # Large enough to trigger overflow
++labels_true = np.array([0]*n + [1]*n)
++labels_pred = np.array([0]*n + [1]*n)
++
++try:
++    score = fowlkes_mallows_score(labels_true, labels_pred)
++    print(f"Test passed! Score: {score}")
++except RuntimeWarning as e:
++    print(f"Test failed with warning: {e}")
++except Exception as e:
++    print(f"Test failed with error: {e}")

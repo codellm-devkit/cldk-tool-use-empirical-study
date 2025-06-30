@@ -1,0 +1,68 @@
+diff --git a/django/db/models/fields/json.py b/django/db/models/fields/json.py
+index fdca700c9d..52cf4e7cad 100644
+--- a/django/db/models/fields/json.py
++++ b/django/db/models/fields/json.py
+@@ -227,9 +227,41 @@ class HasKeyLookup(PostgresOperatorLookup):
+         return super().as_postgresql(compiler, connection)
+ 
+     def as_sqlite(self, compiler, connection):
+-        return self.as_sql(
+-            compiler, connection, template="JSON_TYPE(%s, %%s) IS NOT NULL"
+-        )
++        if isinstance(self.lhs, KeyTransform):
++            lhs, lhs_params, lhs_key_transforms = self.lhs.preprocess_lhs(compiler, connection)
++            path = compile_json_path(lhs_key_transforms)
++        else:
++            lhs, lhs_params = self.process_lhs(compiler, connection)
++            path = "$"
++
++        def prepare_path(key):
++            """Helper to safely prepare JSON paths"""
++            if hasattr(key, '__class__') and key.__class__.__name__ == 'F':
++                *_, transforms = key.preprocess_lhs(compiler, connection)
++                return compile_json_path(transforms, include_root=False)
++            return compile_json_path([str(key)], include_root=False)
++
++        # Handle multiple keys for has_keys/has_any_keys
++        if isinstance(self.rhs, (list, tuple)):
++            conditions = []
++            params = []
++            for key in self.rhs:
++                p = prepare_path(key)
++                conditions.append("JSON_TYPE(%s, %s) IS NOT NULL")
++                params.extend([lhs, path + p])
++            
++            if self.lookup_name == 'has_keys':
++                return " AND ".join(conditions), params
++            return " OR ".join(conditions), params
++        
++        # Single key case
++        rhs_path = prepare_path(self.rhs)
++        full_path = path + rhs_path
++        
++        # Handle null values explicitly
++        if self.rhs is None:
++            return "JSON_TYPE(%s, %s) IS NULL", [lhs, full_path]
++        return "JSON_TYPE(%s, %s) IS NOT NULL", [lhs, full_path]
+ 
+ 
+ class HasKey(HasKeyLookup):
+diff --git a/test_sqlite.py b/test_sqlite.py
+new file mode 100644
+index 0000000000..24e423e27e
+--- /dev/null
++++ b/test_sqlite.py
+@@ -0,0 +1,13 @@
++
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++SECRET_KEY = 'test'
++INSTALLED_APPS = [
++    'django.contrib.contenttypes',
++    'django.contrib.auth',
++    'tests.model_fields',
++]

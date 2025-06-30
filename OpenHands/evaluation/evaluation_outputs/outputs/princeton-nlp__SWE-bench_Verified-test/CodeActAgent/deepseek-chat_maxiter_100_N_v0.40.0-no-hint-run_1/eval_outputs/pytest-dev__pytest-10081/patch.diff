@@ -1,0 +1,78 @@
+diff --git a/src/_pytest/unittest.py b/src/_pytest/unittest.py
+index 851e4943b..a36cbe7e3 100644
+--- a/src/_pytest/unittest.py
++++ b/src/_pytest/unittest.py
+@@ -70,9 +70,15 @@ class UnitTestCase(Class):
+             return
+ 
+         skipped = _is_skipped(cls)
+-        if not skipped:
+-            self._inject_setup_teardown_fixtures(cls)
+-            self._inject_setup_class_fixture()
++        if skipped:
++            # Mark the class as skipped and store the reason
++            cls.__pytest_skip__ = True
++            cls.__pytest_skip_why__ = cls.__unittest_skip_why__
++            # Still return no items to prevent collection
++            return
++
++        self._inject_setup_teardown_fixtures(cls)
++        self._inject_setup_class_fixture()
+ 
+         self.session._fixturemanager.parsefactories(self, unittest=True)
+         loader = TestLoader()
+@@ -198,6 +204,14 @@ class TestCaseFunction(Function):
+         # A bound method to be called during teardown() if set (see 'runtest()').
+         self._explicit_tearDown: Optional[Callable[[], None]] = None
+         assert self.parent is not None
++        
++        # Skip test case instantiation for skipped tests
++        if getattr(self.parent.obj, "__pytest_skip__", False):
++            raise pytest.skip.Exception(
++                getattr(self.parent.obj, "__pytest_skip_why__", "Skipped"),
++                _use_item_location=True
++            )
++            
+         self._testcase = self.parent.obj(self.name)  # type: ignore[attr-defined]
+         self._obj = getattr(self._testcase, self.name)
+         if hasattr(self, "_request"):
+@@ -303,6 +317,13 @@ class TestCaseFunction(Function):
+ 
+         assert self._testcase is not None
+ 
++        # Skip entire test execution for skipped tests (including --pdb cases)
++        if _is_skipped(self.obj) or getattr(self.parent.obj, "__pytest_skip__", False):
++            raise pytest.skip.Exception(
++                getattr(self.parent.obj, "__pytest_skip_why__", self.obj.__unittest_skip_why__),
++                _use_item_location=True
++            )
++
+         maybe_wrap_pytest_function_for_tracing(self)
+ 
+         # Let the unittest framework handle async functions.
+@@ -313,10 +334,7 @@ class TestCaseFunction(Function):
+             # When --pdb is given, we want to postpone calling tearDown() otherwise
+             # when entering the pdb prompt, tearDown() would have probably cleaned up
+             # instance variables, which makes it difficult to debug.
+-            # Arguably we could always postpone tearDown(), but this changes the moment where the
+-            # TestCase instance interacts with the results object, so better to only do it
+-            # when absolutely needed.
+-            if self.config.getoption("usepdb") and not _is_skipped(self.obj):
++            if self.config.getoption("usepdb"):
+                 self._explicit_tearDown = self._testcase.tearDown
+                 setattr(self._testcase, "tearDown", lambda *args: None)
+ 
+@@ -371,6 +389,13 @@ def pytest_runtest_makereport(item: Item, call: CallInfo[None]) -> None:
+ 
+ @hookimpl(hookwrapper=True)
+ def pytest_runtest_protocol(item: Item) -> Generator[None, None, None]:
++    # Handle skipped unittest cases before any execution
++    if isinstance(item, TestCaseFunction):
++        if _is_skipped(item.parent.obj):  # type: ignore[attr-defined]
++            item.addSkip(item.parent.obj.__unittest_skip_why__)  # type: ignore[attr-defined]
++            yield
++            return
++
+     if isinstance(item, TestCaseFunction) and "twisted.trial.unittest" in sys.modules:
+         ut: Any = sys.modules["twisted.python.failure"]
+         Failure__init__ = ut.Failure.__init__

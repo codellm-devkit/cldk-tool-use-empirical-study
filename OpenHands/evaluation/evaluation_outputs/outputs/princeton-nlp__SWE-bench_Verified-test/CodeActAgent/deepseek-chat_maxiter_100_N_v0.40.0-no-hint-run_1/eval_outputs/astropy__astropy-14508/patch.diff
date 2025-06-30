@@ -1,0 +1,55 @@
+diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py
+index 118bfced89..154b767eff 100644
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -1285,7 +1285,9 @@ def _format_value(value):
+         return f"{value:>20d}"
+ 
+     elif isinstance(value, (float, np.floating)):
+-        return f"{_format_float(value):>20}"
++        formatted = _format_float(value)
++        # Use minimum space needed, up to 20 chars
++        return f"{formatted:>{min(20, len(formatted))}}"
+ 
+     elif isinstance(value, (complex, np.complexfloating)):
+         val_str = f"({_format_float(value.real)}, {_format_float(value.imag)})"
+@@ -1298,16 +1300,33 @@ def _format_value(value):
+ 
+ 
+ def _format_float(value):
+-    """Format a floating number to make sure it gets the decimal point."""
+-    value_str = f"{value:.16G}"
++    """Format a floating number to make sure it gets the decimal point.
++    
++    Note: Due to floating-point representation limitations, some decimal values
++    may display with extended precision (e.g. 0.009125 as 0.009124999999999999).
++    For exact decimal representations, consider passing values as strings or
++    using decimal.Decimal when creating cards.
++    """
++    # First check for simple decimal representations
++    for digits in range(1, 7):
++        test_str = f"{value:.{digits}f}"
++        if float(test_str) == value:
++            value_str = test_str.rstrip('0').rstrip('.') if '.' in test_str else test_str
++            break
++    else:
++        # Fall back to standard formatting
++        value_str = f"{value:.16G}"
++    
++    # Ensure proper formatting
+     if "." not in value_str and "E" not in value_str:
+         value_str += ".0"
+     elif "E" in value_str:
+-        # On some Windows builds of Python (and possibly other platforms?) the
+-        # exponent is zero-padded out to, it seems, three digits.  Normalize
+-        # the format to pad only to two digits.
++        # Normalize scientific notation
+         significand, exponent = value_str.split("E")
+-        if exponent[0] in ("+", "-"):
++        exponent = exponent.lstrip("+0") or "0"
++        value_str = f"{significand}E{exponent}"
++    
++    return value_str
+             sign = exponent[0]
+             exponent = exponent[1:]
+         else:

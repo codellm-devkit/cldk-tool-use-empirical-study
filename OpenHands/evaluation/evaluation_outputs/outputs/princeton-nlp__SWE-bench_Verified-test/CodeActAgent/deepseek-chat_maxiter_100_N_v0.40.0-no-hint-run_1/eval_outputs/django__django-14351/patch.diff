@@ -1,0 +1,21 @@
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index 7264929da8..0c346b7efc 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -694,6 +694,16 @@ class SQLCompiler:
+         # be used by local fields.
+         seen_models = {None: start_alias}
+ 
++        # For Q object __in lookups, only select the primary key if alias is U0
++        if hasattr(self.query, 'subq_aliases') and 'U0' in self.query.subq_aliases:
++            pk_field = opts.pk
++            model = pk_field.model._meta.concrete_model
++            if model == opts.model:
++                model = None
++            alias = self.query.join_parent_model(opts, model, start_alias, seen_models)
++            column = pk_field.get_col(alias)
++            return [column]
++
+         for field in opts.concrete_fields:
+             model = field.model._meta.concrete_model
+             # A proxy model will have a different model and concrete_model. We

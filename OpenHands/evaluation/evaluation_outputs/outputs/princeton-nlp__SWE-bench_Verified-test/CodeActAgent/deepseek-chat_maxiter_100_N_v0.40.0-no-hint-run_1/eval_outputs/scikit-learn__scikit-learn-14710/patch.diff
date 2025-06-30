@@ -1,0 +1,51 @@
+diff --git a/sklearn/ensemble/_hist_gradient_boosting/gradient_boosting.py b/sklearn/ensemble/_hist_gradient_boosting/gradient_boosting.py
+index ad6a5a8ca..779511cc9 100644
+--- a/sklearn/ensemble/_hist_gradient_boosting/gradient_boosting.py
++++ b/sklearn/ensemble/_hist_gradient_boosting/gradient_boosting.py
+@@ -426,18 +426,38 @@ class BaseHistGradientBoosting(BaseEstimator, ABC):
+ 
+         Scores are computed on validation data or on training data.
+         """
+-        self.train_score_.append(
+-            self.scorer_(self, X_binned_small_train, y_small_train)
+-        )
++        if hasattr(self, 'classes_'):
++            # For string targets, use encoded predictions and targets
++            y_small_train_encoded = np.searchsorted(self.classes_, y_small_train)
++            pred_train = self.predict(X_binned_small_train)
++            pred_train_encoded = np.searchsorted(self.classes_, pred_train)
++            train_score = accuracy_score(y_small_train_encoded, pred_train_encoded)
++            self.train_score_.append(train_score)
+ 
+-        if self._use_validation_data:
+-            self.validation_score_.append(
+-                self.scorer_(self, X_binned_val, y_val)
+-            )
+-            return self._should_stop(self.validation_score_)
++            if self._use_validation_data:
++                y_val_encoded = np.searchsorted(self.classes_, y_val)
++                pred_val = self.predict(X_binned_val)
++                pred_val_encoded = np.searchsorted(self.classes_, pred_val)
++                val_score = accuracy_score(y_val_encoded, pred_val_encoded)
++                self.validation_score_.append(val_score)
++                return self._should_stop(self.validation_score_)
++            return self._should_stop(self.train_score_)
+         else:
++            # Original numeric target handling
++            self.train_score_.append(
++                self.scorer_(self, X_binned_small_train, y_small_train))
++            if self._use_validation_data:
++                self.validation_score_.append(
++                    self.scorer_(self, X_binned_val, y_val))
++                return self._should_stop(self.validation_score_)
+             return self._should_stop(self.train_score_)
+ 
++    def _encode_y(self, y):
++        """Encode string targets to integers using the fitted label encoder."""
++        if hasattr(self, 'classes_'):
++            return np.searchsorted(self.classes_, y)
++        return y
++
+     def _check_early_stopping_loss(self,
+                                    raw_predictions,
+                                    y_train,

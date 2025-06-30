@@ -1,0 +1,153 @@
+diff --git a/sympy/polys/constructor.py b/sympy/polys/constructor.py
+index 12d9de96e9..eb81c39039 100644
+--- a/sympy/polys/constructor.py
++++ b/sympy/polys/constructor.py
+@@ -16,6 +16,13 @@ def _construct_simple(coeffs, opt):
+ 
+     if opt.extension is True:
+         is_algebraic = lambda coeff: coeff.is_number and coeff.is_algebraic
++    elif opt.extension:
++        # Handle explicit extensions including complex numbers
++        if not isinstance(opt.extension, (list, tuple)):
++            opt.extension = [opt.extension]
++        if any(ext.has(I) for ext in opt.extension) and I not in opt.extension:
++            opt.extension = list(opt.extension) + [I]
++        is_algebraic = lambda coeff: coeff.is_number and coeff.is_algebraic
+     else:
+         is_algebraic = lambda coeff: False
+ 
+diff --git a/sympy/polys/factortools.py b/sympy/polys/factortools.py
+index c6a5f9f063..1b9cca9b00 100644
+--- a/sympy/polys/factortools.py
++++ b/sympy/polys/factortools.py
+@@ -291,7 +291,9 @@ def dup_zz_zassenhaus(f, K):
+         if not gf_sqf_p(F, px, K):
+             continue
+         fsqfx = gf_factor_sqf(F, px, K)[1]
+-        a.append((px, fsqfx))
++        # For extension fields, ensure we keep all factors
++        if K.is_Extension or len(fsqfx) == len(f_list) if hasattr(f, 'extension') else True:
++            a.append((px, fsqfx))
+         if len(fsqfx) < 15 or len(a) > 4:
+             break
+     p, fsqf = min(a, key=lambda x: len(x[1]))
+@@ -348,7 +350,8 @@ def dup_zz_zassenhaus(f, K):
+             G_norm = dup_l1_norm(G, K)
+             H_norm = dup_l1_norm(H, K)
+ 
+-            if G_norm*H_norm <= B:
++            # For extension fields, accept the combination if norms are reasonable
++            if (K.is_Extension and G_norm*H_norm <= 2*B) or G_norm*H_norm <= B:
+                 T = T_S
+                 sorted_T = [i for i in sorted_T if i not in S]
+ 
+@@ -362,6 +365,14 @@ def dup_zz_zassenhaus(f, K):
+         else:
+             s += 1
+ 
++    # Final validation for extension fields
++    if hasattr(K, 'ext') and K.ext:
++        expected_degree = sum(dup_degree(factor) for factor in factors) + dup_degree(f)
++        if expected_degree != dup_degree(original_f):
++            from sympy.polys.factortools import dup_factor_list
++            factors = dup_factor_list(original_f, K)[1]
++            f = [K.one]
++    
+     return factors + [f]
+ 
+ 
+@@ -545,11 +556,27 @@ def dup_zz_factor_sqf(f, K):
+ 
+     factors = None
+ 
+-    if query('USE_CYCLOTOMIC_FACTOR'):
+-        factors = dup_zz_cyclotomic_factor(g, K)
++    # Special handling for extension fields
++    if hasattr(K, 'ext') and K.ext:
++        from sympy.polys.numberfields import minimal_polynomial
++        try:
++            factors = dup_zz_zassenhaus(g, K)
++            # For complex extensions, ensure we get all factors
++            if any(ext.has(I) for ext in K.ext) and len(factors) < len(g.coeffs())-1:
++                # Try with higher precision or alternative method
++                from sympy.polys.factortools import dup_factor_list
++                factors = dup_factor_list(g, K)[1]
++            elif len(factors) < len(g.coeffs())-1:
++                factors = None
++        except:
++            factors = None
+ 
+     if factors is None:
+-        factors = dup_zz_zassenhaus(g, K)
++        if query('USE_CYCLOTOMIC_FACTOR'):
++            factors = dup_zz_cyclotomic_factor(g, K)
++
++        if factors is None:
++            factors = dup_zz_zassenhaus(g, K)
+ 
+     return cont, _sort_factors(factors, multiple=False)
+ 
+@@ -1364,3 +1391,22 @@ def dmp_irreducible_p(f, u, K):
+     else:
+         _, k = factors[0]
+         return k == 1
++
++
++def dup_zz_zassenhaus_ext(f, K):
++    """Enhanced factorization for extension fields that preserves all factors."""
++    if hasattr(K, 'ext') and K.ext:
++        # For extension fields, use complete factorization
++        from sympy.polys.factortools import dup_factor_list
++        factors = dup_factor_list(f, K)[1]
++        
++        # Verify we have all factors
++        expected_degree = sum(dup_degree(factor) for factor in factors)
++        if expected_degree != dup_degree(f):
++            factors = dup_factor_list(f, K)[1]  # Fallback if degree mismatch
++            
++        return factors
++    
++    # Default to original algorithm for non-extension fields
++    from sympy.polys.factortools import dup_zz_zassenhaus
++    return dup_zz_zassenhaus(f, K)
+diff --git a/sympy/polys/polytools.py b/sympy/polys/polytools.py
+index 68b69d1a24..f4266f015d 100644
+--- a/sympy/polys/polytools.py
++++ b/sympy/polys/polytools.py
+@@ -5918,6 +5918,11 @@ def _symbolic_factor_list(expr, opt, method):
+             base, exp = arg, S.One
+ 
+         try:
++            # Ensure complex extension is included if needed
++            if hasattr(opt, 'extension') and opt.extension:
++                if any(ext.has(I) for ext in opt.extension) and I not in opt.extension:
++                    opt = opt.clone()
++                    opt.extension = list(opt.extension) + [I]
+             poly, _ = _poly_from_expr(base, opt)
+         except PolificationFailed as exc:
+             factors.append((exc.expr, exp))
+@@ -6779,6 +6784,24 @@ def groebner(F, *gens, **args):
+     return GroebnerBasis(F, *gens, **args)
+ 
+ 
++@public
++def factor_with_extension(f, *gens, **args):
++    """Factor polynomials with proper handling of extension fields."""
++    from sympy.polys.domains import QQ, AlgebraicExtension
++    from sympy.polys.factortools import dup_zz_zassenhaus_ext
++    
++    extension = args.get('extension')
++    gaussian = args.get('gaussian', False)
++    
++    if gaussian:
++        return _symbolic_factor(f, gens, args, GaussianExtension(QQ))
++    elif extension is not None:
++        K = AlgebraicExtension(QQ, *extension)
++        return _symbolic_factor(f, gens, args, K, factormethod=dup_zz_zassenhaus_ext)
++    else:
++        return _symbolic_factor(f, gens, args)
++
++
+ @public
+ def is_zero_dimensional(F, *gens, **args):
+     """

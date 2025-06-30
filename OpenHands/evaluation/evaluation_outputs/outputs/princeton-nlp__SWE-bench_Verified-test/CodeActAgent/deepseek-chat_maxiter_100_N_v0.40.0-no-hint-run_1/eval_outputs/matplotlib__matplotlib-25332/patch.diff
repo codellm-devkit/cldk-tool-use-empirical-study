@@ -1,0 +1,30 @@
+diff --git a/lib/matplotlib/cbook.py b/lib/matplotlib/cbook.py
+index c9699b2e21..3422bbc807 100644
+--- a/lib/matplotlib/cbook.py
++++ b/lib/matplotlib/cbook.py
+@@ -788,6 +788,26 @@ class Grouper:
+     def __init__(self, init=()):
+         self._mapping = {weakref.ref(x): [weakref.ref(x)] for x in init}
+ 
++    def __getstate__(self):
++        """Convert weak references to strong references for pickling."""
++        self.clean()
++        state = {}
++        # Convert groups to tuples first to make them hashable
++        unique_groups = {tuple(group) for group in self._mapping.values()}
++        for group in unique_groups:
++            strong_group = tuple(ref() for ref in group if ref() is not None)
++            if strong_group:  # Only store non-empty groups
++                state[id(group)] = strong_group
++        return state
++
++    def __setstate__(self, state):
++        """Restore weak references from pickled state."""
++        self._mapping = {}
++        for group in state.values():
++            weak_group = [weakref.ref(x) for x in group]
++            for ref in weak_group:
++                self._mapping[ref] = weak_group
++
+     def __contains__(self, item):
+         return weakref.ref(item) in self._mapping

@@ -1,0 +1,36 @@
+diff --git a/xarray/core/variable.py b/xarray/core/variable.py
+index 45553eb9..1508564e 100644
+--- a/xarray/core/variable.py
++++ b/xarray/core/variable.py
+@@ -217,8 +217,9 @@ def as_compatible_data(data, fastpath=False):
+     if isinstance(data, timedelta):
+         data = np.timedelta64(getattr(data, "value", data), "ns")
+ 
+-    # we don't want nested self-described arrays
+-    data = getattr(data, "values", data)
++    # Only extract .values for known array-like types
++    if isinstance(data, (np.ndarray, pd.Series, Variable)) or hasattr(data, "__array__"):
++        data = getattr(data, "values", data)
+ 
+     if isinstance(data, np.ma.MaskedArray):
+         mask = np.ma.getmaskarray(data)
+diff --git a/xarray/tests/test_object_values.py b/xarray/tests/test_object_values.py
+new file mode 100644
+index 00000000..b7a40261
+--- /dev/null
++++ b/xarray/tests/test_object_values.py
+@@ -0,0 +1,14 @@
++
++import xarray as xr
++
++def test_object_with_values_property():
++    """Test that objects with .values property are preserved."""
++    class HasValues:
++        values = 5
++        
++    arr = xr.DataArray([None])
++    arr.loc[{'dim_0': 0}] = HasValues()
++    
++    # Should preserve the original object, not coerce to .values
++    assert isinstance(arr.values[0], HasValues)
++    assert not isinstance(arr.values[0], (int, float))

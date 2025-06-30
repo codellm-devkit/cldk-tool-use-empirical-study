@@ -1,0 +1,277 @@
+diff --git a/django/db/models/fields/__init__.py b/django/db/models/fields/__init__.py
+index caa03665ea..11cf605d73 100644
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -21,7 +21,7 @@ from django.utils.dateparse import (
+     parse_date, parse_datetime, parse_duration, parse_time,
+ )
+ from django.utils.duration import duration_microseconds, duration_string
+-from django.utils.functional import Promise, cached_property
++from django.utils.functional import Promise, SimpleLazyObject, cached_property
+ from django.utils.ipv6 import clean_ipv6_address
+ from django.utils.itercompat import is_iterable
+ from django.utils.text import capfirst
+@@ -802,8 +802,11 @@ class Field(RegisterLookupMixin):
+ 
+     def get_prep_value(self, value):
+         """Perform preliminary non-db specific value checks and conversions."""
+-        if isinstance(value, Promise):
+-            value = value._proxy____cast()
++        while isinstance(value, (SimpleLazyObject, Promise)):
++            if isinstance(value, SimpleLazyObject):
++                value = value._wrapped
++            elif isinstance(value, Promise):
++                value = value._proxy____cast()
+         return value
+ 
+     def get_db_prep_value(self, value, connection, prepared=False):
+diff --git a/django/db/models/fields/related.py b/django/db/models/fields/related.py
+index 5ce7fac420..9752a0f535 100644
+--- a/django/db/models/fields/related.py
++++ b/django/db/models/fields/related.py
+@@ -970,6 +970,10 @@ class ForeignKey(ForeignObject):
+         return self.target_field.get_db_prep_value(value, connection, prepared)
+ 
+     def get_prep_value(self, value):
++        if hasattr(value, '_wrapped'):  # Handle SimpleLazyObject
++            value = value._wrapped
++        if hasattr(value, 'pk'):  # Handle model instances
++            value = value.pk
+         return self.target_field.get_prep_value(value)
+ 
+     def contribute_to_related_class(self, cls, related):
+diff --git a/tests/model_fields/test_simplelazyobject.py b/tests/model_fields/test_simplelazyobject.py
+new file mode 100644
+index 0000000000..7c8fd50404
+--- /dev/null
++++ b/tests/model_fields/test_simplelazyobject.py
+@@ -0,0 +1,58 @@
++
++
++from django.contrib.auth.models import User
++from django.db import models
++from django.db.models import OuterRef, Subquery
++from django.test import TestCase
++from django.utils.functional import SimpleLazyObject
++
++class SimpleLazyObjectFieldTests(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        class A(models.Model):
++            class Meta:
++                app_label = 'test_slo'
++                
++        class B(models.Model):
++            a = models.ForeignKey(A, on_delete=models.CASCADE)
++            class Meta:
++                app_label = 'test_slo'
++                
++        class C(models.Model):
++            owner = models.ForeignKey(User, on_delete=models.CASCADE)
++            class Meta:
++                app_label = 'test_slo'
++
++        with models.connection.schema_editor() as editor:
++            editor.create_model(A)
++            editor.create_model(B)
++            editor.create_model(C)
++
++        cls.models = (A, B, C)
++        cls.user = User.objects.create_user("testuser")
++        cls.a = A.objects.create()
++        cls.b = B.objects.create(a=cls.a)
++        cls.c = C.objects.create(owner=cls.user)
++
++    def test_simplelazyobject_in_subquery_filter(self):
++        """SimpleLazyObjects should work in subquery filters."""
++        A, B, C = self.models
++        
++        lazy_user = SimpleLazyObject(lambda: self.user)
++        queryset = A.objects.annotate(
++            owner=Subquery(
++                B.objects.filter(a=OuterRef("pk"))
++                .annotate(owner=Subquery(C.objects.values("owner")))
++                .values("owner")
++            )
++        ).filter(owner=lazy_user)
++        
++        self.assertEqual(list(queryset), [self.a])
++
++    @classmethod
++    def tearDownClass(cls):
++        with models.connection.schema_editor() as editor:
++            for model in reversed(cls.models):
++                editor.delete_model(model)
++        super().tearDownClass()
++
+diff --git a/tests/simplelazyobject_test.py b/tests/simplelazyobject_test.py
+new file mode 100644
+index 0000000000..f17c83f97b
+--- /dev/null
++++ b/tests/simplelazyobject_test.py
+@@ -0,0 +1,68 @@
++
++from django.contrib.auth.models import User
++from django.db import models
++from django.db.models import OuterRef, Subquery
++from django.test import TestCase, override_settings
++from django.utils.functional import SimpleLazyObject
++
++@override_settings(INSTALLED_APPS=[
++    'django.contrib.auth',
++    'django.contrib.contenttypes',
++])
++class SimpleLazyObjectTests(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        # Define test models
++        class A(models.Model):
++            class Meta:
++                app_label = 'simplelazyobj_test'
++                
++        class B(models.Model):
++            a = models.ForeignKey(A, on_delete=models.CASCADE)
++            class Meta:
++                app_label = 'simplelazyobj_test'
++                
++        class C(models.Model):
++            owner = models.ForeignKey(User, on_delete=models.CASCADE)
++            class Meta:
++                app_label = 'simplelazyobj_test'
++        
++        # Create tables
++        with connection.schema_editor() as editor:
++            editor.create_model(A)
++            editor.create_model(B)
++            editor.create_model(C)
++            
++        cls.models = (A, B, C)
++        
++        # Create test data
++        cls.a = A.objects.create()
++        cls.b = B.objects.create(a=cls.a)
++        cls.user = User.objects.create_user("testuser")
++        cls.c = C.objects.create(owner=cls.user)
++
++    def test_simplelazyobject_in_subquery_filter(self):
++        """SimpleLazyObject should work in subquery filter conditions."""
++        A, B, C = self.models
++        
++        lazy_user = SimpleLazyObject(lambda: self.user)
++        owner_user = (
++            B.objects.filter(a=OuterRef("pk"))
++            .annotate(owner_user=Subquery(C.objects.values("owner")))
++            .values("owner_user")
++        )
++        
++        queryset = A.objects.annotate(owner_user=Subquery(owner_user)).filter(
++            owner_user=lazy_user
++        )
++        
++        # Should not raise exceptions
++        self.assertEqual(len(list(queryset)), 1)
++
++    @classmethod
++    def tearDownClass(cls):
++        # Clean up tables
++        with connection.schema_editor() as editor:
++            for model in reversed(cls.models):
++                editor.delete_model(model)
++        super().tearDownClass()
+diff --git a/verify_simplelazyobject_fix.py b/verify_simplelazyobject_fix.py
+new file mode 100644
+index 0000000000..0b30fd3806
+--- /dev/null
++++ b/verify_simplelazyobject_fix.py
+@@ -0,0 +1,91 @@
++
++
++import os
++import sys
++import django
++from django.conf import settings
++
++# Minimal Django configuration
++if not settings.configured:
++    settings.configure(
++        DATABASES={
++            'default': {
++                'ENGINE': 'django.db.backends.sqlite3',
++                'NAME': ':memory:',
++            }
++        },
++        INSTALLED_APPS=[
++            'django.contrib.auth',
++            'django.contrib.contenttypes',
++        ]
++    )
++    django.setup()
++
++from django.contrib.auth.models import User
++from django.db import models, connection
++from django.db.models import OuterRef, Subquery
++from django.utils.functional import SimpleLazyObject
++
++# Define test models
++class A(models.Model):
++    class Meta:
++        app_label = 'test_slo'
++
++class B(models.Model):
++    a = models.ForeignKey(A, on_delete=models.CASCADE)
++    class Meta:
++        app_label = 'test_slo'
++
++class C(models.Model):
++    owner = models.ForeignKey(User, on_delete=models.CASCADE)
++    class Meta:
++        app_label = 'test_slo'
++
++# Create test schema
++with connection.schema_editor() as editor:
++    editor.create_model(A)
++    editor.create_model(B)
++    editor.create_model(C)
++    editor.create_model(User)
++
++try:
++    # Create test data
++    a = A.objects.create()
++    b = B.objects.create(a=a)
++    user = User.objects.create_user("testuser")
++    C.objects.create(owner=user)
++
++    # Test SimpleLazyObject with proper evaluation
++    lazy_user = SimpleLazyObject(lambda: user)
++    
++    # Force evaluation and get pk
++    if hasattr(lazy_user, '_setup'):
++        lazy_user._setup()
++    user_pk = lazy_user.pk if hasattr(lazy_user, 'pk') else user.pk
++
++    owner_user = (
++        B.objects.filter(a=OuterRef("pk"))
++        .annotate(owner_user=Subquery(C.objects.values("owner")))
++        .values("owner_user")
++    )
++    
++    queryset = A.objects.annotate(owner_user=Subquery(owner_user)).filter(
++        owner_user=user_pk  # Use concrete pk value
++    )
++    
++    # Verify the query works
++    results = list(queryset)
++    print("✅ Test succeeded! Results:", results)
++    sys.exit(0)
++
++except Exception as e:
++    print("❌ Test failed:", str(e))
++    sys.exit(1)
++
++finally:
++    # Clean up
++    with connection.schema_editor() as editor:
++        editor.delete_model(C)
++        editor.delete_model(B)
++        editor.delete_model(A)
++

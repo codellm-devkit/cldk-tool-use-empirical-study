@@ -1,0 +1,46 @@
+diff --git a/lib/matplotlib/axes/_base.py b/lib/matplotlib/axes/_base.py
+index 5203e3232c..77296ef794 100644
+--- a/lib/matplotlib/axes/_base.py
++++ b/lib/matplotlib/axes/_base.py
+@@ -2291,7 +2291,13 @@ class _AxesBase(martist.Artist):
+         if line.get_clip_path() is None:
+             line.set_clip_path(self.patch)
+ 
+-        self._update_line_limits(line)
++        # Protect dataLim when adding lines to twin axes
++        if hasattr(self, '_twinned_axes') and self in self._twinned_axes:
++            original_limits = self.dataLim.frozen()
++            self._update_line_limits(line)
++            self.dataLim.set(original_limits.get_points())
++        else:
++            self._update_line_limits(line)
+         if not line.get_label():
+             line.set_label(f'_child{len(self._children)}')
+         self._children.append(line)
+@@ -4410,7 +4416,12 @@ class _AxesBase(martist.Artist):
+                     [0, 0, 1, 1], self.transAxes))
+         self.set_adjustable('datalim')
+         twin.set_adjustable('datalim')
++        # Protect dataLim during twin creation
++        original_limits = (self.dataLim.intervalx, self.dataLim.intervaly)
++        twin.dataLim = self.dataLim.frozen()
+         self._twinned_axes.join(self, twin)
++        self.dataLim.set_intervalx(original_limits[0])
++        self.dataLim.set_intervaly(original_limits[1])
+         return twin
+ 
+     def twinx(self):
+diff --git a/lib/matplotlib/stackplot.py b/lib/matplotlib/stackplot.py
+index c97a21e029..7464911a25 100644
+--- a/lib/matplotlib/stackplot.py
++++ b/lib/matplotlib/stackplot.py
+@@ -115,7 +115,8 @@ def stackplot(axes, x, *args,
+     coll = axes.fill_between(x, first_line, stack[0, :],
+                              facecolor=next(colors), label=next(labels, None),
+                              **kwargs)
+-    coll.sticky_edges.y[:] = [0]
++    # Clear sticky edges and use natural data limits
++    coll.sticky_edges.y[:] = []
+     r = [coll]
+ 
+     # Color between array i-1 and array i

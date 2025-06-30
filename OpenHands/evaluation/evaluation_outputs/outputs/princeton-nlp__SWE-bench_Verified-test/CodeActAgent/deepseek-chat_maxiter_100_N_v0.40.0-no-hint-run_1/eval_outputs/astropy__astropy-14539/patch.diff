@@ -1,0 +1,56 @@
+diff --git a/astropy/io/fits/diff.py b/astropy/io/fits/diff.py
+index 100cdf1b8c..5ae7642584 100644
+--- a/astropy/io/fits/diff.py
++++ b/astropy/io/fits/diff.py
+@@ -1449,18 +1449,41 @@ class TableDataDiff(_BaseDiff):
+                 arrb.dtype, np.floating
+             ):
+                 diffs = where_not_allclose(arra, arrb, rtol=self.rtol, atol=self.atol)
+-            elif "P" in col.format:
+-                diffs = (
+-                    [
+-                        idx
+-                        for idx in range(len(arra))
+-                        if not np.allclose(
+-                            arra[idx], arrb[idx], rtol=self.rtol, atol=self.atol
+-                        )
+-                    ],
+-                )
++            # Robust array comparison handling all cases
++            if len(arra) != len(arrb):
++                diffs = (list(range(max(len(arra), len(arrb)))),)
+             else:
+-                diffs = np.where(arra != arrb)
++                diffs = ([],)
++                for idx in range(len(arra)):
++                    # Handle None/empty cases first
++                    if arra[idx] is None or arrb[idx] is None:
++                        if arra[idx] != arrb[idx]:
++                            diffs[0].append(idx)
++                        continue
++                    
++                    try:
++                        # Convert to arrays if not already
++                        a = np.asarray(arra[idx]) if not isinstance(arra[idx], np.ndarray) else arra[idx]
++                        b = np.asarray(arrb[idx]) if not isinstance(arrb[idx], np.ndarray) else arrb[idx]
++                        
++                        # Handle floating-point comparisons
++                        if (np.issubdtype(a.dtype, np.floating) and 
++                            np.issubdtype(b.dtype, np.floating)):
++                            if not np.allclose(a, b, rtol=self.rtol, atol=self.atol):
++                                diffs[0].append(idx)
++                        # Handle other array comparisons
++                        elif isinstance(a, np.ndarray) and isinstance(b, np.ndarray):
++                            try:
++                                if a.shape != b.shape or not np.array_equal(a, b, equal_nan=True):
++                                    diffs[0].append(idx)
++                            except Exception:
++                                diffs[0].append(idx)
++                        elif a != b:
++                            diffs[0].append(idx)
++                    except (TypeError, ValueError):
++                        # Fallback for non-array comparisons
++                        if arra[idx] != arrb[idx]:
++                            diffs[0].append(idx)
+ 
+             self.diff_total += len(set(diffs[0]))

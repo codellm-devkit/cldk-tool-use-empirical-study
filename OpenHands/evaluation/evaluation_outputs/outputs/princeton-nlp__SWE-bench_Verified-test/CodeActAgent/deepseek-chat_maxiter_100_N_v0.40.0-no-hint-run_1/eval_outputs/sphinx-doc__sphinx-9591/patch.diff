@@ -1,0 +1,107 @@
+diff --git a/sphinx/ext/autodoc/__init__.py b/sphinx/ext/autodoc/__init__.py
+index 938f976cd..6db542bbb 100644
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -2723,19 +2723,33 @@ class PropertyDocumenter(DocstringStripSignatureMixin, ClassLevelDocumenter):  #
+         else:
+             func = None
+ 
+-        if func and self.config.autodoc_typehints != 'none':
++        if self.config.autodoc_typehints != 'none':
++            # First try to get type from class annotations
+             try:
+-                signature = inspect.signature(func,
+-                                              type_aliases=self.config.autodoc_type_aliases)
+-                if signature.return_annotation is not Parameter.empty:
+-                    objrepr = stringify_typehint(signature.return_annotation)
++                annotations = get_type_hints(self.parent, None,
++                                             self.config.autodoc_type_aliases)
++                if self.objpath[-1] in annotations:
++                    annotation = annotations[self.objpath[-1]]
++                    objrepr = restify(annotation)
+                     self.add_line('   :type: ' + objrepr, sourcename)
+-            except TypeError as exc:
+-                logger.warning(__("Failed to get a function signature for %s: %s"),
+-                               self.fullname, exc)
+-                return None
+-            except ValueError:
+-                return None
++                    return
++            except (TypeError, NameError) as exc:
++                logger.debug(f"Failed to get type hints: {exc}")
++                pass
++            
++            # Fall back to signature inspection for properties
++            if func:
++                try:
++                    signature = inspect.signature(func,
++                                                type_aliases=self.config.autodoc_type_aliases)
++                    if signature.return_annotation is not Parameter.empty:
++                        objrepr = restify(signature.return_annotation)
++                        self.add_line('   :type: ' + objrepr, sourcename)
++                except TypeError as exc:
++                    logger.warning(__("Failed to get a function signature for %s: %s"),
++                                   self.fullname, exc)
++                except ValueError:
++                    pass
+ 
+ 
+ class NewTypeAttributeDocumenter(AttributeDocumenter):
+diff --git a/tests/test_ext_autodoc_property_typehints.py b/tests/test_ext_autodoc_property_typehints.py
+new file mode 100644
+index 000000000..ec87f3592
+--- /dev/null
++++ b/tests/test_ext_autodoc_property_typehints.py
+@@ -0,0 +1,52 @@
++
++import pytest
++from sphinx.testing.util import SphinxTestApp
++from textwrap import dedent
++
++@pytest.mark.sphinx('html', testroot='ext-autodoc')
++def test_property_typehints(app: SphinxTestApp, status, warning):
++    """Test that property type annotations are properly cross-referenced."""
++    # Create test source files
++    with open(app.srcdir / 'module.py', 'w') as f:
++        f.write(dedent('''
++            from typing import Optional
++
++            class Point:
++                """A class representing a point."""
++                x: int
++                y: int
++
++            class Square:
++                """A class representing a square."""
++                @property
++                def end(self) -> Point:
++                    """Square's end position."""
++                    return Point()
++        '''))
++
++    with open(app.srcdir / 'index.rst', 'w') as f:
++        f.write(dedent('''
++            .. automodule:: module
++                :members:
++        '''))
++
++    app.build()
++    content = (app.outdir / 'index.html').read_text()
++    
++    # Debug output
++    print("\n=== Generated Documentation ===\n")
++    print(content)
++    print("\n=============================\n")
++    
++    # Verify property documentation structure
++    assert '<dl class="py property">' in content, "Property documentation not found"
++    assert 'id="module.Square.end"' in content, "Property documentation not found"
++    assert ':class:`module.Point`' in content, "Point type reference not found"
++    # Check for docstring with either straight or curly quotes
++    assert ('Square\'s end position' in content or 
++            'Square’s end position' in content), "Property docstring missing"
++    
++    # Debug output
++    print("\n=== Property Documentation ===")
++    print(content.split('id="module.Square.end"')[1].split('</dl>')[0])
++    print("=============================")

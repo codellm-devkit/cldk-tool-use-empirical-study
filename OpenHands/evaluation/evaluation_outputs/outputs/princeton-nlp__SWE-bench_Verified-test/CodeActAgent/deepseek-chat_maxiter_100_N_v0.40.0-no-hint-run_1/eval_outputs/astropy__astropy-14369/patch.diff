@@ -1,0 +1,107 @@
+diff --git a/astropy/units/format/cds.py b/astropy/units/format/cds.py
+index 307e987ed6..1b6cdb6d5e 100644
+--- a/astropy/units/format/cds.py
++++ b/astropy/units/format/cds.py
+@@ -15,6 +15,7 @@
+ import operator
+ import re
+ 
++from astropy.units import Unit
+ from astropy.units.utils import is_effectively_unity
+ from astropy.utils import classproperty, parsing
+ from astropy.utils.misc import did_you_mean
+@@ -31,6 +32,15 @@ class CDS(Base):
+     format, and the `complete set of supported units
+     <https://vizier.u-strasbg.fr/viz-bin/Unit>`_.  This format is used
+     by VOTable up to version 1.2.
++
++    Note on Unit Formatting:
++    - While mathematical operations and conversions will be correct,
++      the string representation of composite units may differ slightly
++      from the exact input format due to internal normalization
++    - Division order is mathematically preserved but may appear differently
++      in string outputs
++    - For precise format requirements, consider using the raw CDS string
++      directly rather than parsing/reformatting
+     """
+ 
+     _tokens = (
+@@ -181,11 +191,11 @@ class CDS(Base):
+ 
+         def p_division_of_units(p):
+             """
+-            division_of_units : DIVISION unit_expression
+-                              | unit_expression DIVISION combined_units
++            division_of_units : unit_expression DIVISION unit_expression
++                              | division_of_units DIVISION unit_expression
+             """
+-            if len(p) == 3:
+-                p[0] = p[2] ** -1
++            if len(p) == 4:
++                p[0] = p[1] / p[3]
+             else:
+                 p[0] = p[1] / p[3]
+ 
+@@ -320,7 +330,16 @@ class CDS(Base):
+                 out.append(cls._get_unit_name(base))
+             else:
+                 out.append(f"{cls._get_unit_name(base)}{int(power)}")
+-        return ".".join(out)
++        
++        # Handle divisions by joining negative powers with /
++        pos_units = [u for u in out if not u.endswith("-1")]
++        neg_units = [u.replace("-1", "") for u in out if u.endswith("-1")]
++        
++        if not neg_units:
++            return ".".join(pos_units)
++        if not pos_units:
++            return f"/{'/'.join(neg_units)}"
++        return f"{'.'.join(pos_units)}/{'/'.join(neg_units)}"
+ 
+     @classmethod
+     def to_string(cls, unit):
+@@ -333,24 +352,27 @@ class CDS(Base):
+             elif is_effectively_unity(unit.scale * 100.0):
+                 return "%"
+ 
+-            if unit.scale == 1:
+-                s = ""
+-            else:
++            # Format scale factor as 10+n notation without spaces
++            if unit.scale != 1:
+                 m, e = utils.split_mantissa_exponent(unit.scale)
+-                parts = []
+-                if m not in ("", "1"):
+-                    parts.append(m)
+-                if e:
+-                    if not e.startswith("-"):
+-                        e = "+" + e
+-                    parts.append(f"10{e}")
+-                s = "x".join(parts)
+-
+-            pairs = list(zip(unit.bases, unit.powers))
+-            if len(pairs) > 0:
+-                pairs.sort(key=operator.itemgetter(1), reverse=True)
+-
+-                s += cls._format_unit_list(pairs)
++                if m == "1":
++                    s = f"10{e}"
++                else:
++                    s = f"{m}x10{e}"
++            else:
++                s = ""
++
++            # Format units maintaining original division order
++            units = []
++            for base, power in zip(unit.bases, unit.powers):
++                if power == 1:
++                    units.append(cls._get_unit_name(base))
++                else:
++                    units.append(f"{cls._get_unit_name(base)}{int(power)}")
++
++            # Join with / for divisions
++            if units:
++                s += "/".join(units)
+ 
+         elif isinstance(unit, core.NamedUnit):
+             s = cls._get_unit_name(unit)

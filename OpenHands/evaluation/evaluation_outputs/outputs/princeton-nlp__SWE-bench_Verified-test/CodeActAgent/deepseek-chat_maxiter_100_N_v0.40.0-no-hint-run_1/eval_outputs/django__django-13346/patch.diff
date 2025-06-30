@@ -1,0 +1,48 @@
+diff --git a/django/db/models/fields/json.py b/django/db/models/fields/json.py
+index fafc1beee8..96c6ddce55 100644
+--- a/django/db/models/fields/json.py
++++ b/django/db/models/fields/json.py
+@@ -267,6 +267,7 @@ JSONField.register_lookup(HasKey)
+ JSONField.register_lookup(HasKeys)
+ JSONField.register_lookup(HasAnyKeys)
+ JSONField.register_lookup(JSONExact)
++JSONField.register_lookup(KeyTransformIn)
+ 
+ 
+ class KeyTransform(Transform):
+@@ -455,6 +456,35 @@ class KeyTransformIRegex(CaseInsensitiveMixin, KeyTransformTextLookupMixin, look
+     pass
+ 
+ 
++class KeyTransformIn(lookups.In):
++    def process_lhs(self, compiler, connection):
++        lhs, lhs_params = super().process_lhs(compiler, connection)
++        if connection.vendor in ('oracle', 'sqlite'):
++            lhs, _ = self.lhs.preprocess_lhs(compiler, connection, lhs_only=True)
++            lhs = 'JSON_EXTRACT(%s, %%s)' % lhs
++        return lhs, lhs_params
++
++    def process_rhs(self, compiler, connection):
++        if isinstance(self.rhs, KeyTransform):
++            return super(lookups.In, self).process_rhs(compiler, connection)
++        rhs, rhs_params = super().process_rhs(compiler, connection)
++        if connection.vendor == 'oracle':
++            func = []
++            for value in rhs_params:
++                value = json.loads(value)
++                function = 'JSON_QUERY' if isinstance(value, (list, dict)) else 'JSON_VALUE'
++                func.append("%s('%s', '$.value')" % (
++                    function,
++                    json.dumps({'value': value}),
++                ))
++            rhs = rhs % tuple(func)
++            rhs_params = []
++        elif connection.vendor == 'sqlite':
++            func = ["JSON_EXTRACT(%s, '$')" if value != 'null' else '%s' for value in rhs_params]
++            rhs = rhs % tuple(func)
++        return rhs, rhs_params
++
++
+ class KeyTransformNumericLookupMixin:
+     def process_rhs(self, compiler, connection):
+         rhs, rhs_params = super().process_rhs(compiler, connection)

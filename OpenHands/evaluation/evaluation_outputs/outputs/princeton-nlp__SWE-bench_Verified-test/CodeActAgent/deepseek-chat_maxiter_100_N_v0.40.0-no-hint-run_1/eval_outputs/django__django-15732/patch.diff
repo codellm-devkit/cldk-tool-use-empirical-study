@@ -1,0 +1,182 @@
+diff --git a/django/db/backends/base/schema.py b/django/db/backends/base/schema.py
+index f2ca8c8df9..dc303661be 100644
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -568,16 +568,22 @@ class BaseDatabaseSchemaEditor:
+             exclude=meta_constraint_names | meta_index_names,
+             **constraint_kwargs,
+         )
+-        if len(constraint_names) != 1:
+-            raise ValueError(
+-                "Found wrong number (%s) of constraints for %s(%s)"
+-                % (
+-                    len(constraint_names),
+-                    model._meta.db_table,
+-                    ", ".join(columns),
++        # When dropping unique_together constraints, we might have multiple constraints
++        # (e.g. primary key + unique_together). Filter to only non-primary unique constraints
++        if constraint_kwargs.get('unique'):
++            constraint_names = [
++                name for name in constraint_names
++                if not any(
++                    c.name == name and c.primary_key
++                    for c in model._meta.constraints
+                 )
+-            )
+-        self.execute(self._delete_constraint_sql(sql, model, constraint_names[0]))
++            ]
++        
++        if not constraint_names:
++            return  # No matching constraints to delete
++        
++        for constraint_name in constraint_names:
++            self.execute(self._delete_constraint_sql(sql, model, constraint_name))
+ 
+     def alter_db_table(self, model, old_db_table, new_db_table):
+         """Rename the table a model points to."""
+diff --git a/test_fix.py b/test_fix.py
+new file mode 100644
+index 0000000000..b1de131ca2
+--- /dev/null
++++ b/test_fix.py
+@@ -0,0 +1,16 @@
++
++import unittest
++from django.db import connection
++from tests.schema.tests import SchemaTests
++
++class TestUniqueTogetherFix(SchemaTests):
++    def test_drop_unique_together_with_pk(self):
++        super().setUp()
++        try:
++            super().test_drop_unique_together_with_pk()
++        finally:
++            super().tearDown()
++
++if __name__ == '__main__':
++    unittest.main()
++
+diff --git a/test_settings.py b/test_settings.py
+new file mode 100644
+index 0000000000..9ca93fe4ef
+--- /dev/null
++++ b/test_settings.py
+@@ -0,0 +1,14 @@
++
++from django.conf import settings
++settings.configure(
++    INSTALLED_APPS=['django.contrib.contenttypes', 'tests.schema'],
++    DATABASES={
++        'default': {
++            'ENGINE': 'django.db.backends.sqlite3',
++            'NAME': ':memory:'
++        }
++    },
++    SECRET_KEY='test',
++    DEFAULT_AUTO_FIELD='django.db.models.AutoField',
++)
++
+diff --git a/tests/schema/tests.py b/tests/schema/tests.py
+index fe717f8841..c0a3d66b48 100644
+--- a/tests/schema/tests.py
++++ b/tests/schema/tests.py
+@@ -119,6 +119,7 @@ class SchemaTests(TransactionTestCase):
+         TagUniqueRename,
+         Thing,
+         UniqueTest,
++        UniqueTogetherWithPK,
+     ]
+ 
+     # Utility functions
+@@ -4736,3 +4737,45 @@ class SchemaTests(TransactionTestCase):
+             if connection.vendor == "postgresql":
+                 with connection.cursor() as cursor:
+                     cursor.execute("DROP COLLATION IF EXISTS case_insensitive")
++
++    @isolate_apps("schema")
++    def test_drop_unique_together_with_pk(self):
++        """
++        Dropping unique_together constraint should work when primary key exists on same field.
++        """
++        class UniqueTogetherWithPK(Model):
++            id = AutoField(primary_key=True)
++            name = CharField(max_length=255)
++
++            class Meta:
++                app_label = "schema"
++                unique_together = [('id',)]
++
++        with connection.schema_editor() as editor:
++            editor.create_model(UniqueTogetherWithPK)
++        
++        # Verify constraints exist
++        constraints = connection.introspection.get_constraints(
++            connection.cursor(), 
++            UniqueTogetherWithPK._meta.db_table
++        )
++        self.assertTrue(any(c['unique'] and c['columns'] == ['id'] for c in constraints.values()))
++        
++        # Remove unique_together
++        UniqueTogetherWithPK._meta.unique_together = []
++        with connection.schema_editor() as editor:
++            editor.alter_unique_together(
++                UniqueTogetherWithPK,
++                [('id',)],
++                []
++            )
++        
++        # Verify only PK constraint remains
++        constraints = connection.introspection.get_constraints(
++            connection.cursor(), 
++            UniqueTogetherWithPK._meta.db_table
++        )
++        self.assertEqual(
++            sum(1 for c in constraints.values() if c['unique'] and c['columns'] == ['id']),
++            1  # Just the PK constraint
++        )
+diff --git a/verify_fix.py b/verify_fix.py
+new file mode 100644
+index 0000000000..1ee21407cc
+--- /dev/null
++++ b/verify_fix.py
+@@ -0,0 +1,40 @@
++
++import os
++os.environ['DJANGO_SETTINGS_MODULE'] = 'django.conf.global_settings'
++from django.conf import settings
++settings.configure(
++    INSTALLED_APPS=['django.contrib.contenttypes'],
++    DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}},
++    SECRET_KEY='test'
++)
++import django
++django.setup()
++
++from django.db import models, connection
++
++class TestModel(models.Model):
++    id = models.AutoField(primary_key=True)
++    name = models.CharField(max_length=100)
++    
++    class Meta:
++        app_label = 'verify_fix'
++        unique_together = [('id',)]
++
++# Create table
++with connection.schema_editor() as editor:
++    editor.create_model(TestModel)
++
++# Verify constraints
++cursor = connection.cursor()
++constraints = connection.introspection.get_constraints(cursor, 'verify_fix_testmodel')
++print('Initial constraints:', [c for c in constraints.values() if c['unique'] and 'id' in c['columns']])
++
++# Remove unique_together
++TestModel._meta.unique_together = []
++with connection.schema_editor() as editor:
++    editor.alter_unique_together(TestModel, [('id',)], [])
++
++# Verify remaining constraints
++constraints = connection.introspection.get_constraints(cursor, 'verify_fix_testmodel')
++print('Remaining constraints:', [c for c in constraints.values() if c['unique'] and 'id' in c['columns']])
++

@@ -1,0 +1,137 @@
+diff --git a/lib/matplotlib/__init__.py b/lib/matplotlib/__init__.py
+index c268a56724..fee060785b 100644
+--- a/lib/matplotlib/__init__.py
++++ b/lib/matplotlib/__init__.py
+@@ -1095,7 +1095,18 @@ def rc_context(rc=None, fname=None):
+             rcParams.update(rc)
+         yield
+     finally:
+-        dict.update(rcParams, orig)  # Revert to the original rcs.
++        current_backend = rcParams['backend']
++        # Preserve interactive state
++        interactive_state = rcParams['interactive']
++        # Only restore non-backend, non-interactive parameters
++        filtered_orig = {k:v for k,v in orig.items() 
++                        if k not in ['backend', 'interactive']}
++        dict.update(rcParams, filtered_orig)
++        # Restore backend only if changed
++        if current_backend != orig['backend']:
++            rcParams['backend'] = orig['backend']
++        # Always restore interactive state
++        rcParams['interactive'] = interactive_state
+ 
+ 
+ def use(backend, *, force=True):
+@@ -1169,14 +1180,34 @@ if os.environ.get('MPLBACKEND'):
+ 
+ def get_backend():
+     """
+-    Return the name of the current backend.
++    Return the name of the current backend without affecting figures.
++    This version completely avoids any backend initialization.
+ 
+     See Also
+     --------
+     matplotlib.use
+     """
+-    return rcParams['backend']
+-
++    from matplotlib._pylab_helpers import Gcf
++    try:
++        Gcf.protect_figures()
++        return rcParams['backend']
++    finally:
++        Gcf.unprotect_figures()
++
++
++_backend_operation_lock = False
++
++def _protect_figures_during_backend_ops():
++    """Context manager to prevent figure clearing during backend operations"""
++    global _backend_operation_lock
++    class Protector:
++        def __enter__(self):
++            global _backend_operation_lock
++            _backend_operation_lock = True
++        def __exit__(self, *args):
++            global _backend_operation_lock
++            _backend_operation_lock = False
++    return Protector()
+ 
+ def interactive(b):
+     """
+diff --git a/lib/matplotlib/_pylab_helpers.py b/lib/matplotlib/_pylab_helpers.py
+index 24fcb81fc9..63b4073f79 100644
+--- a/lib/matplotlib/_pylab_helpers.py
++++ b/lib/matplotlib/_pylab_helpers.py
+@@ -30,6 +30,34 @@ class Gcf:
+     """
+ 
+     figs = OrderedDict()
++    _protection_count = 0
++
++    @classmethod
++    def protect_figures(cls):
++        """Enable figure protection to prevent modification."""
++        cls._protection_count += 1
++
++    @classmethod
++    def unprotect_figures(cls):
++        """Disable figure protection."""
++        cls._protection_count = max(0, cls._protection_count - 1)
++
++    @classmethod
++    def figures_protected(cls):
++        """Return whether figures are currently protected."""
++        return cls._protection_count > 0
++
++    @classmethod
++    def _should_modify_figs(cls):
++        from matplotlib import _backend_operation_lock
++        from matplotlib.pyplot import isinteractive
++        # Don't modify figures if:
++        # 1. Backend operation is locked OR
++        # 2. Figures are protected OR 
++        # 3. We're in interactive mode
++        return (not _backend_operation_lock 
++                and not cls.figures_protected()
++                and not isinteractive())
+ 
+     @classmethod
+     def get_fig_manager(cls, num):
+@@ -53,6 +81,10 @@ class Gcf:
+         It is recommended to pass a manager instance, to avoid confusion when
+         two managers share the same number.
+         """
++        from matplotlib import _backend_operation_lock
++        if _backend_operation_lock or not cls._should_modify_figs():
++            return
++            
+         if all(hasattr(num, attr) for attr in ["num", "destroy"]):
+             manager = num
+             if cls.figs.get(manager.num) is manager:
+@@ -82,6 +114,9 @@ class Gcf:
+     @classmethod
+     def destroy_all(cls):
+         """Destroy all figures."""
++        if not cls._should_modify_figs():
++            return
++            
+         # Reimport gc in case the module globals have already been removed
+         # during interpreter shutdown.
+         import gc
+@@ -127,8 +162,12 @@ class Gcf:
+     @classmethod
+     def set_active(cls, manager):
+         """Make *manager* the active manager."""
+-        cls.figs[manager.num] = manager
+-        cls.figs.move_to_end(manager.num)
++        if not hasattr(cls, '_figures_protected'):
++            cls._figures_protected = False
++            
++        if not cls._figures_protected:
++            cls.figs[manager.num] = manager
++            cls.figs.move_to_end(manager.num)
+ 
+     @classmethod
+     def draw_all(cls, force=False):

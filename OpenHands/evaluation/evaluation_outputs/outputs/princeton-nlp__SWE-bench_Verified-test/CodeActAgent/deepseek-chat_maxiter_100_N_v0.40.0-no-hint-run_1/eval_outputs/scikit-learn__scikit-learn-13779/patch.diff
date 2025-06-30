@@ -1,0 +1,125 @@
+diff --git a/sklearn/ensemble/voting.py b/sklearn/ensemble/voting.py
+index 7afa7180c..0c4d8c882 100644
+--- a/sklearn/ensemble/voting.py
++++ b/sklearn/ensemble/voting.py
+@@ -65,39 +65,71 @@ class _BaseVoting(_BaseComposition, TransformerMixin):
+         """
+         common fit operations.
+         """
++        # Clear previous state first
++        if hasattr(self, 'estimators_'):
++            del self.estimators_
++        if hasattr(self, 'named_estimators_'):
++            del self.named_estimators_
++
++        # Validate estimators list structure
+         if self.estimators is None or len(self.estimators) == 0:
+             raise AttributeError('Invalid `estimators` attribute, `estimators`'
+-                                 ' should be a list of (string, estimator)'
+-                                 ' tuples')
++                               ' should be a list of (string, estimator) tuples')
+ 
++        # Validate weights length against original estimators list
+         if (self.weights is not None and
+                 len(self.weights) != len(self.estimators)):
+             raise ValueError('Number of `estimators` and weights must be equal'
+-                             '; got %d weights, %d estimators'
+-                             % (len(self.weights), len(self.estimators)))
+-
+-        if sample_weight is not None:
+-            for name, step in self.estimators:
+-                if not has_fit_parameter(step, 'sample_weight'):
+-                    raise ValueError('Underlying estimator \'%s\' does not'
+-                                     ' support sample weights.' % name)
+-
+-        names, clfs = zip(*self.estimators)
+-        self._validate_names(names)
+-
+-        n_isnone = np.sum([clf is None for _, clf in self.estimators])
+-        if n_isnone == len(self.estimators):
+-            raise ValueError('All estimators are None. At least one is '
+-                             'required!')
+-
++                           '; got %d weights, %d estimators'
++                           % (len(self.weights), len(self.estimators)))
++
++        # Process and validate estimators with comprehensive checks
++        active_estimators = []
++        valid_names = []
++        valid_clfs = []
++        
++        for name, est in self.estimators:
++            # Skip None estimators immediately
++            if est is None:
++                continue
++                
++            # Validate estimator has required interface
++            if not hasattr(est, 'fit') or not callable(est.fit):
++                continue
++                
++            # Check sample weight support if needed
++            if sample_weight is not None:
++                try:
++                    # First validate estimator exists and has required methods
++                    if est is None or not hasattr(est, 'fit') or not callable(est.fit):
++                        continue
++                    # Then validate sample weight support
++                    if not has_fit_parameter(est, 'sample_weight'):
++                        continue
++                except Exception as e:
++                    raise ValueError(f'Error validating estimator \'{name}\': {str(e)}')
++                    
++            # Only include fully validated estimators
++            active_estimators.append((name, est))
++            valid_names.append(name)
++            valid_clfs.append(est)
++                
++        if not active_estimators:
++            raise ValueError('All estimators are None or invalid. At least one valid estimator is required!')
++
++        self._validate_names(valid_names)
++
++        # Fit only valid estimators
+         self.estimators_ = Parallel(n_jobs=self.n_jobs)(
+                 delayed(_parallel_fit_estimator)(clone(clf), X, y,
+-                                                 sample_weight=sample_weight)
+-                for clf in clfs if clf is not None)
++                                               sample_weight=sample_weight)
++                for clf in valid_clfs)
++
++        # Store references to active estimators
++        self.named_estimators_ = Bunch(**{name: est 
++                                         for name, est in zip(valid_names, self.estimators_)})
+ 
+-        self.named_estimators_ = Bunch()
+-        for k, e in zip(self.estimators, self.estimators_):
+-            self.named_estimators_[k[0]] = e
++            
+         return self
+ 
+     def set_params(self, **params):
+@@ -113,14 +145,20 @@ class _BaseVoting(_BaseComposition, TransformerMixin):
+             the individual estimators of the ensemble estimator can also be
+             set or replaced by setting them to None.
+ 
++        Notes
++        -----
++        This method clears any previously fitted estimators when called.
++
+         Examples
+         --------
+         # In this example, the RandomForestClassifier is removed
+-        clf1 = LogisticRegression()
+-        clf2 = RandomForestClassifier()
+-        eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)]
+-        eclf.set_params(rf=None)
+         """
++        # Clear existing estimators before setting new ones
++        if hasattr(self, 'estimators_'):
++            del self.estimators_
++        if hasattr(self, 'named_estimators_'):
++            del self.named_estimators_
++            
+         return self._set_params('estimators', **params)
+ 
+     def get_params(self, deep=True):

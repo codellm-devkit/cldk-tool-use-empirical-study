@@ -1,0 +1,23 @@
+diff --git a/django/urls/base.py b/django/urls/base.py
+index 0e1c3d909c..10602fe0b0 100644
+--- a/django/urls/base.py
++++ b/django/urls/base.py
+@@ -172,7 +172,17 @@ def translate_url(url, lang_code):
+         to_be_reversed = "%s:%s" % (match.namespace, match.url_name) if match.namespace else match.url_name
+         with override(lang_code):
+             try:
+-                url = reverse(to_be_reversed, args=match.args, kwargs=match.kwargs)
++                # Only pass kwargs that exist in the target URL's parameters
++                resolver = get_resolver()
++                try:
++                    target_kwargs = {}
++                    if match.kwargs:
++                        target_params = resolver.resolve_match(to_be_reversed).kwargs.keys()
++                        target_kwargs = {k: v for k, v in match.kwargs.items() if k in target_params}
++                    url = reverse(to_be_reversed, args=match.args, kwargs=target_kwargs)
++                except (NoReverseMatch, Resolver404):
++                    # Fallback to original behavior if we can't inspect target params
++                    url = reverse(to_be_reversed, args=match.args, kwargs=match.kwargs)
+             except NoReverseMatch:
+                 pass
+             else:

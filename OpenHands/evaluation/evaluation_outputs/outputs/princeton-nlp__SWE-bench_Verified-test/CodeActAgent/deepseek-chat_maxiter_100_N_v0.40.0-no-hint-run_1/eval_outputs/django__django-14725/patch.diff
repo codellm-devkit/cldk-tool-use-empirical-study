@@ -1,0 +1,36 @@
+diff --git a/django/forms/models.py b/django/forms/models.py
+index 7effb202e3..90bdea40a5 100644
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -573,9 +573,10 @@ class BaseModelFormSet(BaseFormSet):
+     unique_fields = set()
+ 
+     def __init__(self, data=None, files=None, auto_id='id_%s', prefix=None,
+-                 queryset=None, *, initial=None, **kwargs):
++                 queryset=None, *, initial=None, can_add_new=True, **kwargs):
+         self.queryset = queryset
+         self.initial_extra = initial
++        self.can_add_new = can_add_new
+         super().__init__(**{'data': data, 'files': files, 'auto_id': auto_id, 'prefix': prefix, **kwargs})
+ 
+     def initial_form_count(self):
+@@ -681,6 +682,10 @@ class BaseModelFormSet(BaseFormSet):
+     save.alters_data = True
+ 
+     def clean(self):
++        if not self.can_add_new:
++            for form in self.forms:
++                if form.instance.pk is None and form not in self.deleted_forms:
++                    raise ValidationError("New object creation is not allowed")
+         self.validate_unique()
+ 
+     def validate_unique(self):
+@@ -812,6 +817,8 @@ class BaseModelFormSet(BaseFormSet):
+         return saved_instances
+ 
+     def save_new_objects(self, commit=True):
++        if not self.can_add_new:
++            return []
+         self.new_objects = []
+         for form in self.extra_forms:
+             if not form.has_changed():

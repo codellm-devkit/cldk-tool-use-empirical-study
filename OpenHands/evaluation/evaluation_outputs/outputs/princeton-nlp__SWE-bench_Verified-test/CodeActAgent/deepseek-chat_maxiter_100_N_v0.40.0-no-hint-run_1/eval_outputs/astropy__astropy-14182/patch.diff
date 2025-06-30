@@ -1,0 +1,103 @@
+diff --git a/astropy/io/ascii/connect.py b/astropy/io/ascii/connect.py
+index 1501e45035..c53303f1f7 100644
+--- a/astropy/io/ascii/connect.py
++++ b/astropy/io/ascii/connect.py
+@@ -21,10 +21,18 @@ def io_read(format, filename, **kwargs):
+ 
+ def io_write(format, table, filename, **kwargs):
+     from .ui import write
++    from .rst import RST
+ 
+     if format != "ascii":
+         format = re.sub(r"^ascii\.", "", format)
+         kwargs["format"] = format
++    
++    # Special handling for RST header_rows
++    if format == "rst" and "header_rows" in kwargs:
++        writer = RST()
++        writer.header.header_rows = kwargs.pop("header_rows")
++        kwargs["Writer"] = writer
++        
+     return write(table, filename, **kwargs)
+ 
+ 
+diff --git a/astropy/io/ascii/core.py b/astropy/io/ascii/core.py
+index 381b5b13db..ce4528a1d1 100644
+--- a/astropy/io/ascii/core.py
++++ b/astropy/io/ascii/core.py
+@@ -1811,6 +1811,9 @@ def _get_writer(Writer, fast_writer, **kwargs):
+         kwargs["fast_writer"] = fast_writer
+         return FAST_CLASSES[f"fast_{Writer._format_name}"](**kwargs)
+ 
++    # Special handling for RST header_rows
++    if Writer._format_name == 'rst' and 'header_rows' in kwargs:
++        extra_writer_pars = extra_writer_pars - {'header_rows'}
+     writer_kwargs = {k: v for k, v in kwargs.items() if k not in extra_writer_pars}
+     writer = Writer(**writer_kwargs)
+ 
+diff --git a/astropy/io/ascii/fixedwidth.py b/astropy/io/ascii/fixedwidth.py
+index fdadbbc050..b32b7e1a8c 100644
+--- a/astropy/io/ascii/fixedwidth.py
++++ b/astropy/io/ascii/fixedwidth.py
+@@ -72,6 +72,11 @@ class FixedWidthHeader(basic.BasicHeader):
+     position_line = None  # secondary header line position
+     """ row index of line that specifies position (default = 1) """
+     set_of_position_line_characters = set(r'`~!#$%^&*-_+=\|":' + "'")
++    header_rows = ["name"]  # Default header rows configuration
++
++    def __init__(self, **kwargs):
++        self.header_rows = kwargs.pop('header_rows', ["name"])
++        super().__init__(**kwargs)
+ 
+     def get_line(self, lines, index):
+         for i, line in enumerate(self.process_lines(lines)):
+diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
+index abdeba8efb..c9d148d255 100644
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -18,13 +18,24 @@ class SimpleRSTHeader(FixedWidthHeader):
+     start_line = 1
+     splitter_class = DefaultSplitter
+     position_char = "="
+-
++    
+     def get_fixedwidth_params(self, line):
+         vals, starts, ends = super().get_fixedwidth_params(line)
+         # The right hand column can be unbounded
+         ends[-1] = None
+         return vals, starts, ends
+ 
++    def process_lines(self, lines):
++        if len(self.header_rows) > 1:
++            # Handle multiple header rows
++            header_lines = [lines[0]] + [self._format_header_line(lines[0])]
++            return header_lines + lines[1:]
++        return super().process_lines(lines)
++
++    def _format_header_line(self, line):
++        """Format additional header lines (e.g. units)"""
++        return " ".join([f"{'='*len(col)}" for col in line.split()])
++
+ 
+ class SimpleRSTData(FixedWidthData):
+     start_line = 3
+@@ -57,10 +68,16 @@ class RST(FixedWidth):
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+ 
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, **kwargs):
++        self._header_rows = kwargs.pop('header_rows', None)
++        super().__init__(delimiter_pad=None, bookend=False, **kwargs)
++        if self._header_rows is not None:
++            self.header.header_rows = self._header_rows
+ 
+     def write(self, lines):
+         lines = super().write(lines)
+-        lines = [lines[1]] + lines + [lines[1]]
++        # For RST format, we want to duplicate the separator line
++        # at both top and bottom of the table
++        separator_idx = len(self.header.header_rows)  # Index of separator line
++        lines = [lines[separator_idx]] + lines + [lines[separator_idx]]
+         return lines

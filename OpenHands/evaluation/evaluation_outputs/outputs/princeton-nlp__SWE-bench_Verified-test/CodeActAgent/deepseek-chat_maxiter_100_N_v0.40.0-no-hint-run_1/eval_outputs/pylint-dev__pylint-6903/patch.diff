@@ -1,0 +1,67 @@
+diff --git a/pylint/lint/run.py b/pylint/lint/run.py
+index a7e5d5574..0ea41d0b5 100644
+--- a/pylint/lint/run.py
++++ b/pylint/lint/run.py
+@@ -31,34 +31,35 @@ except ImportError:
+     multiprocessing = None  # type: ignore[assignment]
+ 
+ 
+-def _query_cpu() -> int | None:
+-    """Try to determine number of CPUs allotted in a docker container.
+-
+-    This is based on discussion and copied from suggestions in
+-    https://bugs.python.org/issue36054.
++def _query_cpu() -> int:
++    """Determine number of CPUs allotted in container environments.
++    
++    Returns:
++        int: Always returns at least 1 CPU to prevent multiprocessing errors.
+     """
+-    cpu_quota, avail_cpu = None, None
+-
+-    if Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").is_file():
+-        with open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", encoding="utf-8") as file:
+-            # Not useful for AWS Batch based jobs as result is -1, but works on local linux systems
+-            cpu_quota = int(file.read().rstrip())
+-
+-    if (
+-        cpu_quota
+-        and cpu_quota != -1
+-        and Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").is_file()
+-    ):
+-        with open("/sys/fs/cgroup/cpu/cpu.cfs_period_us", encoding="utf-8") as file:
+-            cpu_period = int(file.read().rstrip())
+-        # Divide quota by period and you should get num of allotted CPU to the container, rounded down if fractional.
+-        avail_cpu = int(cpu_quota / cpu_period)
+-    elif Path("/sys/fs/cgroup/cpu/cpu.shares").is_file():
+-        with open("/sys/fs/cgroup/cpu/cpu.shares", encoding="utf-8") as file:
+-            cpu_shares = int(file.read().rstrip())
+-        # For AWS, gives correct value * 1024.
+-        avail_cpu = int(cpu_shares / 1024)
+-    return avail_cpu
++    # Try cgroup v1 cpu quota first
++    try:
++        if Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").is_file():
++            with open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", encoding="utf-8") as f:
++                quota = int(f.read())
++            if quota > 0 and Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").is_file():
++                with open("/sys/fs/cgroup/cpu/cpu.cfs_period_us", encoding="utf-8") as f:
++                    period = int(f.read())
++                return max(1, quota // period)
++    except (ValueError, IOError):
++        pass
++
++    # Fall back to cpu shares
++    try:
++        if Path("/sys/fs/cgroup/cpu/cpu.shares").is_file():
++            with open("/sys/fs/cgroup/cpu/cpu.shares", encoding="utf-8") as f:
++                shares = int(f.read())
++            return max(1, shares // 1024)
++    except (ValueError, IOError):
++        pass
++
++    # Final fallback to at least 1 CPU
++    return 1
+ 
+ 
+ def _cpu_count() -> int:

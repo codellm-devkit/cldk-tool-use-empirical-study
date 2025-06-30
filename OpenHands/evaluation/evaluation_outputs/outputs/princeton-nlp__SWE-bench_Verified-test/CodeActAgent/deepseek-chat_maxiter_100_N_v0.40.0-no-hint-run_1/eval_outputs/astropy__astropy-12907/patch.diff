@@ -1,0 +1,45 @@
+diff --git a/astropy/modeling/separable.py b/astropy/modeling/separable.py
+index a308e27297..388515b3d0 100644
+--- a/astropy/modeling/separable.py
++++ b/astropy/modeling/separable.py
+@@ -233,16 +233,16 @@ def _cstack(left, right):
+     """
+     noutp = _compute_n_outputs(left, right)
+ 
+-    if isinstance(left, Model):
++    if isinstance(left, Model) and not isinstance(left, np.ndarray):
+         cleft = _coord_matrix(left, 'left', noutp)
+     else:
+         cleft = np.zeros((noutp, left.shape[1]))
+         cleft[: left.shape[0], : left.shape[1]] = left
+-    if isinstance(right, Model):
++    if isinstance(right, Model) and not isinstance(right, np.ndarray):
+         cright = _coord_matrix(right, 'right', noutp)
+     else:
+         cright = np.zeros((noutp, right.shape[1]))
+-        cright[-right.shape[0]:, -right.shape[1]:] = 1
++        cright[-right.shape[0]:, -right.shape[1]:] = right
+ 
+     return np.hstack([cleft, cright])
+ 
+diff --git a/test_separability.py b/test_separability.py
+new file mode 100644
+index 0000000000..bfa611de01
+--- /dev/null
++++ b/test_separability.py
+@@ -0,0 +1,15 @@
++from astropy.modeling import models as m
++from astropy.modeling.separable import separability_matrix
++
++# Simple case - works correctly
++cm = m.Linear1D(10) & m.Linear1D(5)
++print("Simple case:")
++print(separability_matrix(cm))
++
++# Complex case - works correctly
++print("\nComplex case:")
++print(separability_matrix(m.Pix2Sky_TAN() & m.Linear1D(10) & m.Linear1D(5)))
++
++# Nested case - shows the issue
++print("\nNested case:")
++print(separability_matrix(m.Pix2Sky_TAN() & cm))

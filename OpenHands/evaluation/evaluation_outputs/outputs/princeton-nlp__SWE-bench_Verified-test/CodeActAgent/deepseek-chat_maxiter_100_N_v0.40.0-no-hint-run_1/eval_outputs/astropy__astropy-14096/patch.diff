@@ -1,0 +1,61 @@
+diff --git a/astropy/coordinates/sky_coordinate.py b/astropy/coordinates/sky_coordinate.py
+index ab475f7d0d..cbb6bd3e0b 100644
+--- a/astropy/coordinates/sky_coordinate.py
++++ b/astropy/coordinates/sky_coordinate.py
+@@ -34,6 +34,23 @@ from .sky_coordinate_parsers import (
+ __all__ = ["SkyCoord", "SkyCoordInfo"]
+ 
+ 
++def skycoord_property(fget):
++    """Custom property decorator that improves attribute error messages.
++    
++    Wraps properties to properly report when they fail due to missing attributes
++    rather than reporting the property itself as missing.
++    """
++    def wrapper(self):
++        try:
++            return fget(self)
++        except AttributeError as e:
++            raise AttributeError(
++                f"'{self.__class__.__name__}' object property '{fget.__name__}' "
++                f"tried to access non-existent attribute: {str(e)}"
++            ) from None
++    return property(wrapper)
++
++
+ class SkyCoordInfo(MixinInfo):
+     """
+     Container for meta information like name, description, format.  This is
+@@ -866,11 +883,32 @@ class SkyCoord(ShapedLikeNDArray):
+             isinstance(self.frame.name, list) and string in self.frame.name
+         )
+ 
++    def __getattribute__(self, attr):
++        try:
++            return object.__getattribute__(self, attr)
++        except AttributeError as e:
++            # Check if this is a property access that failed
++            cls = type(self)
++            if attr in cls.__dict__ and isinstance(cls.__dict__[attr], property):
++                raise AttributeError(
++                    f"'{cls.__name__}' object property '{attr}' "
++                    f"tried to access non-existent attribute: {str(e)}"
++                ) from None
++            raise
++
+     def __getattr__(self, attr):
+         """
+         Overrides getattr to return coordinates that this can be transformed
+         to, based on the alias attr in the primary transform graph.
+         """
++        # First check if this is a property access that failed
++        cls = type(self)
++        if attr in cls.__dict__ and isinstance(cls.__dict__[attr], property):
++            raise AttributeError(
++                f"'{cls.__name__}' object property '{attr}' "
++                f"tried to access non-existent attribute"
++            )
++
+         if "_sky_coord_frame" in self.__dict__:
+             if self._is_name(attr):
+                 return self  # Should this be a deepcopy of self?

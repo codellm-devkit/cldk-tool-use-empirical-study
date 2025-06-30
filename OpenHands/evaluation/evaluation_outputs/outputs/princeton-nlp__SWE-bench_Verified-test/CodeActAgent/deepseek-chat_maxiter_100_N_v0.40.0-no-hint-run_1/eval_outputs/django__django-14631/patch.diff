@@ -1,0 +1,156 @@
+diff --git a/django/forms/boundfield.py b/django/forms/boundfield.py
+index 88adadb37d..60b7ba5810 100644
+--- a/django/forms/boundfield.py
++++ b/django/forms/boundfield.py
+@@ -33,6 +33,63 @@ class BoundField:
+             return self.as_widget() + self.as_hidden(only_initial=True)
+         return self.as_widget()
+ 
++    def _did_change(self):
++        """Return True if data differs from initial."""
++        data_value = self.form._field_data_value(self.field, self.html_name)
++        
++        # Handle empty permitted case
++        if data_value is None and not self.field.required:
++            return False
++            
++        if not self.field.show_hidden_initial:
++            initial_value = self.initial
++            if callable(initial_value):
++                initial_value = initial_value()
++            
++            # Handle empty values
++            if data_value in self.field.empty_values and initial_value in self.field.empty_values:
++                return False
++                
++            # Special handling for datetime fields - preserve microseconds
++            if hasattr(initial_value, 'microsecond'):
++                try:
++                    data_value = self.field.to_python(data_value)
++                    if hasattr(data_value, 'microsecond'):
++                        # Return True only if values differ (preserving microseconds)
++                        return initial_value != data_value
++                    return True
++                except ValidationError:
++                    return True
++            
++            # Special handling for multivalue fields
++            if hasattr(self.field, 'fields'):
++                try:
++                    return any(
++                        f.has_changed(f.widget.value_from_datadict(
++                            self.form.data, self.form.files, self.html_name + '_%s' % i
++                        ), initial_value[i] if i < len(initial_value) else None)
++                        for i, f in enumerate(self.field.fields)
++                    )
++                except (ValidationError, IndexError):
++                    return True
++                    
++            # Only return True if data actually changed
++            try:
++                return not self.field.has_changed(initial_value, data_value)
++            except ValidationError:
++                return True
++        else:
++            hidden_widget = self.field.hidden_widget()
++            try:
++                initial_value = self.field.to_python(
++                    hidden_widget.value_from_datadict(
++                        self.form.data, self.form.files, self.html_initial_name
++                    )
++                )
++                return not self.field.has_changed(initial_value, data_value)
++            except ValidationError:
++                return True
++
+     @cached_property
+     def subwidgets(self):
+         """
+diff --git a/django/forms/forms.py b/django/forms/forms.py
+index d14037bfe9..319acb3f9d 100644
+--- a/django/forms/forms.py
++++ b/django/forms/forms.py
+@@ -147,6 +147,11 @@ class BaseForm:
+         for name in self.fields:
+             yield self[name]
+ 
++    def _bound_items(self):
++        """Yield (name, BoundField) pairs for all fields."""
++        for name in self.fields:
++            yield name, self[name]
++
+     def __getitem__(self, name):
+         """Return a BoundField with the given name."""
+         try:
+@@ -387,15 +392,15 @@ class BaseForm:
+         self._post_clean()
+ 
+     def _clean_fields(self):
+-        for name, field in self.fields.items():
++        for name, bf in self._bound_items():
++            field = bf.field
+             if field.disabled:
+-                value = self.get_initial_for_field(field, name)
++                value = bf.initial
+             else:
+-                value = self._field_data_value(field, self.add_prefix(name))
++                value = bf.data
+             try:
+                 if isinstance(field, FileField):
+-                    initial = self.get_initial_for_field(field, name)
+-                    value = field.clean(value, initial)
++                    value = field.clean(value, bf.initial)
+                 else:
+                     value = field.clean(value)
+                 self.cleaned_data[name] = value
+@@ -404,6 +409,11 @@ class BaseForm:
+                     self.cleaned_data[name] = value
+             except ValidationError as e:
+                 self.add_error(name, e)
++            except Exception as e:
++                # Preserve microseconds and other field-specific attributes
++                if hasattr(value, 'microsecond'):
++                    self.cleaned_data[name] = value
++                raise e
+ 
+     def _clean_form(self):
+         try:
+@@ -434,29 +444,16 @@ class BaseForm:
+         """Return True if data differs from initial."""
+         return bool(self.changed_data)
+ 
+-    @cached_property
++    @cached_property 
+     def changed_data(self):
+-        data = []
+-        for name, field in self.fields.items():
+-            data_value = self._field_data_value(field, self.add_prefix(name))
+-            if not field.show_hidden_initial:
+-                # Use the BoundField's initial as this is the value passed to
+-                # the widget.
+-                initial_value = self[name].initial
+-            else:
+-                initial_prefixed_name = self.add_initial_prefix(name)
+-                hidden_widget = field.hidden_widget()
+-                try:
+-                    initial_value = field.to_python(
+-                        self._widget_data_value(hidden_widget, initial_prefixed_name)
+-                    )
+-                except ValidationError:
+-                    # Always assume data has changed if validation fails.
+-                    data.append(name)
+-                    continue
+-            if field.has_changed(initial_value, data_value):
+-                data.append(name)
+-        return data
++        changed = []
++        for name, bf in self._bound_items():
++            try:
++                if bf._did_change():
++                    changed.append(name)
++            except ValidationError:
++                changed.append(name)
++        return changed
+ 
+     @property
+     def media(self):

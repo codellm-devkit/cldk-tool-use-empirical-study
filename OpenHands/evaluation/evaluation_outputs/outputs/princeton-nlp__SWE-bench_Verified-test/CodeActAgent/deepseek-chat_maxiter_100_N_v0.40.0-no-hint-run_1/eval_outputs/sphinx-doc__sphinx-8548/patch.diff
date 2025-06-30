@@ -1,0 +1,40 @@
+diff --git a/sphinx/ext/autodoc/__init__.py b/sphinx/ext/autodoc/__init__.py
+index ddfd2b365..6fad29b73 100644
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -548,8 +548,17 @@ class Documenter:
+             warnings.warn("The 'ignore' argument to autodoc.%s.get_doc() is deprecated."
+                           % self.__class__.__name__,
+                           RemovedInSphinx50Warning, stacklevel=2)
++
++        # First try direct docstring
+         docstring = getdoc(self.object, self.get_attr, self.config.autodoc_inherit_docstrings,
+                            self.parent, self.object_name)
++
++        # For attributes, check inherited docstrings if not found locally
++        if not docstring and isinstance(self, AttributeDocumenter):
++            inherited_doc = self.get_inherited_docstring(self.object_name)
++            if inherited_doc:
++                docstring = inherited_doc
++
+         if docstring:
+             tab_width = self.directive.state.document.settings.tab_width
+             return [prepare_docstring(docstring, ignore, tab_width)]
+@@ -2255,6 +2264,17 @@ class AttributeDocumenter(GenericAliasMixin, NewTypeMixin, SlotsMixin,  # type:
+     def is_function_or_method(obj: Any) -> bool:
+         return inspect.isfunction(obj) or inspect.isbuiltin(obj) or inspect.ismethod(obj)
+ 
++    def get_inherited_docstring(self, name: str) -> Optional[str]:
++        """Get docstring from parent classes if attribute is inherited."""
++        if not self.options.inherited_members or not inspect.isclass(self.parent):
++            return None
++            
++        for base in inspect.getmro(self.parent)[1:]:  # Skip self
++            if name in base.__dict__:
++                return getdoc(base.__dict__[name], self.get_attr,
++                             self.config.autodoc_inherit_docstrings)
++        return None
++
+     @classmethod
+     def can_document_member(cls, member: Any, membername: str, isattr: bool, parent: Any
+                             ) -> bool:

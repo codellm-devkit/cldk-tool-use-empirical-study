@@ -1,0 +1,117 @@
+diff --git a/django/db/models/query.py b/django/db/models/query.py
+index fb6639793a..cf9c32ddbf 100644
+--- a/django/db/models/query.py
++++ b/django/db/models/query.py
+@@ -1889,14 +1889,25 @@ def prefetch_one_level(instances, prefetcher, lookup, level):
+     # The 'values to be matched' must be hashable as they will be used
+     # in a dictionary.
+ 
++    current_qs = lookup.get_current_queryset(level)
++    if current_qs is not None:
++        # Preserve original defer/only states and don't inherit parent's deferred fields
++        current_qs = current_qs._chain()
++        if hasattr(current_qs, '_deferred_filter'):
++            current_qs._deferred_filter = None
++        if hasattr(current_qs, '_fields'):
++            current_qs._fields = None
++        if level > 0 and hasattr(current_qs, '_original_only_fields'):
++            current_qs._original_only_fields = None
+     rel_qs, rel_obj_attr, instance_attr, single, cache_name, is_descriptor = (
+-        prefetcher.get_prefetch_queryset(instances, lookup.get_current_queryset(level)))
++        prefetcher.get_prefetch_queryset(instances, current_qs))
++    # Ensure prefetched queryset maintains its own deferred states
++    if hasattr(rel_qs, '_fields') and rel_qs._fields is not None:
++        rel_qs._fields = rel_qs._fields.copy()
+     # We have to handle the possibility that the QuerySet we just got back
+     # contains some prefetch_related lookups. We don't want to trigger the
+     # prefetch_related functionality by evaluating the query. Rather, we need
+-    # to merge in the prefetch_related lookups.
+-    # Copy the lookups in case it is a Prefetch object which could be reused
+-    # later (happens in nested prefetch_related).
++    # to merge in the prefetch_related lookups while preserving defer/only states
+     additional_lookups = [
+         copy.copy(additional_lookup) for additional_lookup
+         in getattr(rel_qs, '_prefetch_related_lookups', ())
+diff --git a/tests/prefetch_related/test_deferred.py b/tests/prefetch_related/test_deferred.py
+new file mode 100644
+index 0000000000..bf76827a1a
+--- /dev/null
++++ b/tests/prefetch_related/test_deferred.py
+@@ -0,0 +1,58 @@
++
++from django.db import models
++from django.test import TestCase
++from django.db.models import Prefetch
++
++class User(models.Model):
++    email = models.EmailField()
++    kind = models.CharField(
++        max_length=10, 
++        choices=[("ADMIN", "Admin"), ("REGULAR", "Regular")]
++    )
++
++class Profile(models.Model):
++    full_name = models.CharField(max_length=255)
++    user = models.OneToOneField(User, on_delete=models.CASCADE)
++
++class DeferredPrefetchTests(TestCase):
++    def test_only_related_queryset(self):
++        user = User.objects.create(
++            email="test@example.com",
++            kind="ADMIN",
++        )
++        Profile.objects.create(user=user, full_name="Test Tester")
++        
++        # Debugging setup
++        from django.db import connection
++        connection.queries_log.clear()
++        
++        queryset = User.objects.only("email").prefetch_related(
++            Prefetch(
++                "profile",
++                queryset=Profile.objects.prefetch_related(
++                    Prefetch("user", queryset=User.objects.only("kind"))
++                ),
++            )
++        )
++        
++        # First fetch - should make 3 queries
++        with self.assertNumQueries(3):
++            user = queryset.first()
++            print("Initial queries:")
++            for q in connection.queries[-3:]:
++                print(q['sql'])
++        
++        # Debug deferred fields
++        print(f"Deferred fields on user: {user.get_deferred_fields()}")
++        print(f"Deferred fields on profile.user: {user.profile.user.get_deferred_fields()}")
++        
++        # Access check - should make 0 queries
++        with self.assertNumQueries(0):
++            kind = user.profile.user.kind
++            self.assertEqual(kind, "ADMIN")
++        
++        # Print any additional queries
++        if len(connection.queries) > 3:
++            print("Unexpected queries:")
++            for q in connection.queries[3:]:
++                print(q['sql'])
+diff --git a/tests/test_settings.py b/tests/test_settings.py
+new file mode 100644
+index 0000000000..2434f6a39b
+--- /dev/null
++++ b/tests/test_settings.py
+@@ -0,0 +1,13 @@
++
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++SECRET_KEY = 'test'
++INSTALLED_APPS = [
++    'django.contrib.contenttypes',
++    'django.contrib.auth',
++    'tests.prefetch_related',
++]

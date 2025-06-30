@@ -1,0 +1,94 @@
+diff --git a/sklearn/linear_model/logistic.py b/sklearn/linear_model/logistic.py
+index 1999f1dae..ca1040355 100644
+--- a/sklearn/linear_model/logistic.py
++++ b/sklearn/linear_model/logistic.py
+@@ -2083,15 +2083,26 @@ class LogisticRegressionCV(LogisticRegression, BaseEstimator,
+         #  (1, n_folds, n_Cs . n_l1_ratios)
+         coefs_paths, Cs, scores, n_iter_ = zip(*fold_coefs_)
+         self.Cs_ = Cs[0]
++        
++        # Debug output to check initial shapes
++        print(f"Initial coefs_paths shape: {np.array(coefs_paths).shape}")
++        print(f"refit: {self.refit}, multi_class: {multi_class}")
++        
+         if multi_class == 'multinomial':
+-            coefs_paths = np.reshape(
+-                coefs_paths,
+-                (len(folds),  len(l1_ratios_) * len(self.Cs_), n_classes, -1)
+-            )
+-            # equiv to coefs_paths = np.moveaxis(coefs_paths, (0, 1, 2, 3),
+-            #                                                 (1, 2, 0, 3))
+-            coefs_paths = np.swapaxes(coefs_paths, 0, 1)
+-            coefs_paths = np.swapaxes(coefs_paths, 0, 2)
++            if self.refit:
++                coefs_paths = np.reshape(
++                    coefs_paths,
++                    (len(folds), len(l1_ratios_) * len(self.Cs_), n_classes, -1)
++                )
++                # equiv to coefs_paths = np.moveaxis(coefs_paths, (0, 1, 2, 3),
++                #                                                 (1, 2, 0, 3))
++                coefs_paths = np.swapaxes(coefs_paths, 0, 1)
++                coefs_paths = np.swapaxes(coefs_paths, 0, 2)
++            else:
++                coefs_paths = np.reshape(
++                    coefs_paths,
++                    (len(folds), len(l1_ratios_) * len(self.Cs_), -1)
++                )
+             self.n_iter_ = np.reshape(
+                 n_iter_,
+                 (1, len(folds), len(self.Cs_) * len(l1_ratios_))
+@@ -2145,9 +2156,11 @@ class LogisticRegressionCV(LogisticRegression, BaseEstimator,
+                 self.l1_ratio_.append(l1_ratio_)
+ 
+                 if multi_class == 'multinomial':
++                        print(f"coefs_paths shape: {coefs_paths.shape}, dims: {coefs_paths.ndim}")
+                     coef_init = np.mean(coefs_paths[:, :, best_index, :],
+                                         axis=1)
+                 else:
++                        print(f"coefs_paths shape: {coefs_paths.shape}, dims: {coefs_paths.ndim}")
+                     coef_init = np.mean(coefs_paths[:, best_index, :], axis=0)
+ 
+                 # Note that y is label encoded and hence pos_class must be
+@@ -2167,15 +2180,38 @@ class LogisticRegressionCV(LogisticRegression, BaseEstimator,
+                 w = w[0]
+ 
+             else:
++                # Debug output at start of block
++                print(f"DEBUG - coefs_paths shape: {coefs_paths.shape}")
++                print(f"DEBUG - refit: {self.refit}, multi_class: {self.multi_class}")
++                print(f"DEBUG - scores shape: {scores.shape}")
++                
+                 # Take the best scores across every fold and the average of
+                 # all coefficients corresponding to the best scores.
+                 best_indices = np.argmax(scores, axis=1)
+-                if self.multi_class == 'ovr':
++                # Debug output
++                print(f"coefs_paths shape: {coefs_paths.shape}")  # Debug
++                print(f"refit: {self.refit}, multi_class: {self.multi_class}")  # Debug
++                
++                # Handle both refit=True/False and multi_class cases
++                if coefs_paths.ndim == 3:  # refit=False case
+                     w = np.mean([coefs_paths[i, best_indices[i], :]
+                                  for i in range(len(folds))], axis=0)
+-                else:
+-                    w = np.mean([coefs_paths[:, i, best_indices[i], :]
+-                                 for i in range(len(folds))], axis=0)
++                else:  # refit=True case
++                    if self.multi_class == 'ovr':
++                        w = np.mean([coefs_paths[i, best_indices[i], :]
++                                     for i in range(len(folds))], axis=0)
++                    else:
++                        try:
++                            if coefs_paths.ndim == 4:
++                        print(f"coefs_paths shape: {coefs_paths.shape}, dims: {coefs_paths.ndim}")
++                                w = np.mean([coefs_paths[:, i, best_indices[i], :]
++                                             for i in range(len(folds))], axis=0)
++                            else:
++                                w = np.mean([coefs_paths[i, best_indices[i], :]
++                                             for i in range(len(folds))], axis=0)
++                        except IndexError:
++                            w = np.mean([coefs_paths[i, best_indices[i], :]
++                                         for i in range(len(folds))], axis=0)
+ 
+                 best_indices_C = best_indices % len(self.Cs_)
+                 self.C_.append(np.mean(self.Cs_[best_indices_C]))

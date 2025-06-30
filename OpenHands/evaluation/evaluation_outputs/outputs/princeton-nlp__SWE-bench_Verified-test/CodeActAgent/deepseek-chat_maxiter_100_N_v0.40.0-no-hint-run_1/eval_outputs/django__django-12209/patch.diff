@@ -1,0 +1,29 @@
+diff --git a/django/db/models/base.py b/django/db/models/base.py
+index e3b14a41a0..1b6556aefc 100644
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -569,6 +569,7 @@ class Model(metaclass=ModelBase):
+         return getattr(self, meta.pk.attname)
+ 
+     def _set_pk_val(self, value):
++        self._pk_set = True  # Mark that pk was explicitly set
+         return setattr(self, self._meta.pk.attname, value)
+ 
+     pk = property(_get_pk_val, _set_pk_val)
+@@ -847,8 +848,14 @@ class Model(metaclass=ModelBase):
+         if not pk_set and (force_update or update_fields):
+             raise ValueError("Cannot force an update in save() with no primary key.")
+         updated = False
+-        # Skip an UPDATE when adding an instance and primary key has a default.
+-        if (
++        # Unified PK existence check
++        if pk_set:
++            exists = cls._base_manager.using(using).filter(pk=pk_val).exists()
++            self._state.adding = not exists
++            if not force_insert:
++                force_insert = not exists
++        # Default PK case remains unchanged
++        elif (
+             not force_insert and
+             self._state.adding and
+             self._meta.pk.default and

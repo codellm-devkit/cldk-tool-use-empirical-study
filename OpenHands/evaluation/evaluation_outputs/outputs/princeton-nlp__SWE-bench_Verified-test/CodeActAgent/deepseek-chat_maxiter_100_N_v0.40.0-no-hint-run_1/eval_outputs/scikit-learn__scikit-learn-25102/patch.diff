@@ -1,0 +1,193 @@
+diff --git a/sklearn/feature_selection/_base.py b/sklearn/feature_selection/_base.py
+index da2185eac..326d04292 100644
+--- a/sklearn/feature_selection/_base.py
++++ b/sklearn/feature_selection/_base.py
+@@ -78,6 +78,9 @@ class SelectorMixin(TransformerMixin, metaclass=ABCMeta):
+         X_r : array of shape [n_samples, n_selected_features]
+             The input samples with only the selected features.
+         """
++        # Get dtypes before validation if X is pandas
++        self._input_dtypes = getattr(X, 'dtypes', None)
++        
+         # note: we use _safe_tags instead of _get_tags because this is a
+         # public Mixin.
+         X = self._validate_data(
+@@ -101,7 +104,37 @@ class SelectorMixin(TransformerMixin, metaclass=ABCMeta):
+             return np.empty(0, dtype=X.dtype).reshape((X.shape[0], 0))
+         if len(mask) != X.shape[1]:
+             raise ValueError("X has a different shape than during fitting.")
+-        return X[:, safe_mask(X, mask)]
++            
++        X_transformed = X[:, safe_mask(X, mask)]
++        
++        # If input was pandas and output config is pandas, preserve dtypes
++        if hasattr(self, '_input_dtypes') and self._input_dtypes is not None and \
++           hasattr(self, '_sklearn_output_config') and \
++           self._sklearn_output_config.get('transform') == 'pandas':
++            from ..utils import check_pandas_support
++            pd = check_pandas_support("Setting output container to 'pandas'")
++            
++            # Get feature names and dtypes
++            selected_features = self.get_feature_names_out()
++            if hasattr(self, '_selected_indices') and hasattr(self, '_original_dtypes'):
++                if len(self._original_dtypes) > max(self._selected_indices):
++                    # Use stored indices to get original dtypes in correct order
++                    selected_dtypes = {selected_features[i]: self._original_dtypes.iloc[self._selected_indices[i]]
++                                     for i in range(len(selected_features))}
++                else:
++                    # Fallback to name matching
++                    selected_dtypes = {col: self._original_dtypes[col] for col in selected_features
++                                     if col in self._original_dtypes}
++            else:
++                selected_dtypes = {}
++            
++            if selected_dtypes:
++                X_transformed = pd.DataFrame(X_transformed)
++                for col, dtype in selected_dtypes.items():
++                    if col in X_transformed.columns:
++                        X_transformed[col] = X_transformed[col].astype(dtype)
++        
++        return X_transformed
+ 
+     def inverse_transform(self, X):
+         """Reverse the transformation operation.
+diff --git a/sklearn/feature_selection/_univariate_selection.py b/sklearn/feature_selection/_univariate_selection.py
+index a2a53b6c1..d604ec696 100644
+--- a/sklearn/feature_selection/_univariate_selection.py
++++ b/sklearn/feature_selection/_univariate_selection.py
+@@ -212,7 +212,10 @@ def chi2(X, y):
+     # numerical stability.
+     # Converting X to float allows getting better performance for the
+     # safe_sparse_dot call made below.
+-    X = check_array(X, accept_sparse="csr", dtype=(np.float64, np.float32))
++    dtype = [np.float64, np.float32]
++    if hasattr(X, 'dtypes') and any(dtype == np.float16 for dtype in X.dtypes):
++        dtype.append(np.float16)
++    X = check_array(X, accept_sparse="csr", dtype=dtype)
+     if np.any((X.data if issparse(X) else X) < 0):
+         raise ValueError("Input X must be non-negative.")
+ 
+@@ -464,10 +467,19 @@ class _BaseFilter(SelectorMixin, BaseEstimator):
+         """
+         self._validate_params()
+ 
++        # Store original dtypes if input is pandas
++        if hasattr(X, 'dtypes'):
++            self._original_dtypes = X.dtypes.to_dict()
++
+         X, y = self._validate_data(
+             X, y, accept_sparse=["csr", "csc"], multi_output=True
+         )
+ 
++
++        if hasattr(self, '_original_dtypes'):
++            X = X.astype(self._original_dtypes)
++
++
+         self._check_params(X, y)
+         score_func_ret = self.score_func(X, y)
+         if isinstance(score_func_ret, (list, tuple)):
+@@ -688,6 +700,9 @@ class SelectKBest(_BaseFilter):
+             # Request a stable sort. Mergesort takes more memory (~40MB per
+             # megafeature on x86-64).
+             mask[np.argsort(scores, kind="mergesort")[-self.k :]] = 1
++            
++            # Store selected feature indices for dtype preservation
++            self._selected_indices = np.where(mask)[0]
+             return mask
+ 
+ 
+diff --git a/sklearn/utils/_set_output.py b/sklearn/utils/_set_output.py
+index 335773c6a..6b422c86f 100644
+--- a/sklearn/utils/_set_output.py
++++ b/sklearn/utils/_set_output.py
+@@ -12,6 +12,7 @@ def _wrap_in_pandas_container(
+     *,
+     columns,
+     index=None,
++    dtypes=None,
+ ):
+     """Create a Pandas DataFrame.
+ 
+@@ -36,6 +37,11 @@ def _wrap_in_pandas_container(
+     index : array-like, default=None
+         Index for data.
+ 
++    dtypes : dict, default=None
++        If not None, specifies the dtypes for columns. Keys are column names,
++        values are dtypes. Only used when creating new DataFrames or when
++        modifying existing DataFrame columns.
++
+     Returns
+     -------
+     dataframe : DataFrame
+@@ -54,12 +60,54 @@ def _wrap_in_pandas_container(
+ 
+     if isinstance(data_to_wrap, pd.DataFrame):
+         if columns is not None:
+-            data_to_wrap.columns = columns
++            # Preserve dtypes when modifying columns
++            if dtypes is not None:
++                current_dtypes = data_to_wrap.dtypes.to_dict()
++                data_to_wrap.columns = columns
++                # Only update dtypes for columns that exist in both
++                common_cols = set(columns) & set(dtypes.keys())
++                for col in common_cols:
++                    data_to_wrap[col] = data_to_wrap[col].astype(dtypes[col])
++                # Preserve original dtypes for other columns
++                for col in set(columns) - common_cols:
++                    if col in current_dtypes:
++                        data_to_wrap[col] = data_to_wrap[col].astype(current_dtypes[col])
++            else:
++                data_to_wrap.columns = columns
+         if index is not None:
+             data_to_wrap.index = index
+         return data_to_wrap
+ 
+-    return pd.DataFrame(data_to_wrap, index=index, columns=columns)
++    # Create new DataFrame with specified dtypes if available
++    if dtypes is not None and columns is not None:
++        # Preserve dtypes for selected columns
++        selected_dtypes = {col: dtypes[col] for col in columns if col in dtypes}
++        df = pd.DataFrame(data_to_wrap, index=index, columns=columns)
++        for col, dtype in selected_dtypes.items():
++            df[col] = df[col].astype(dtype)
++        return df
++    df = pd.DataFrame(data_to_wrap, index=index, columns=columns)
++    if hasattr(self, '_original_dtypes'):
++        for col in df.columns:
++            if col in self._original_dtypes:
++                df[col] = df[col].astype(self._original_dtypes[col])
++
++
++                # Special handling for categorical columns
++                if str(self._original_dtypes[col]) == 'category':
++                    df[col] = pd.Categorical(df[col])
++
++
++
++
++
++                # Special handling for categorical columns
++                if str(self._original_dtypes[col]) == 'category':
++                    df[col] = pd.Categorical(df[col])
++
++
++
++    return df
+ 
+ 
+ def _get_output_config(method, estimator=None):
+@@ -127,10 +175,14 @@ def _wrap_data_with_container(method, data_to_wrap, original_input, estimator):
+         return data_to_wrap
+ 
+     # dense_config == "pandas"
++    dtypes = None
++    if hasattr(original_input, "dtypes"):
++        dtypes = original_input.dtypes.to_dict()
+     return _wrap_in_pandas_container(
+         data_to_wrap=data_to_wrap,
+         index=getattr(original_input, "index", None),
+         columns=estimator.get_feature_names_out,
++        dtypes=dtypes,
+     )

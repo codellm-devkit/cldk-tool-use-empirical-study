@@ -1,0 +1,76 @@
+diff --git a/django/db/migrations/operations/utils.py b/django/db/migrations/operations/utils.py
+index 6e2bacd549..fc42db1d8a 100644
+--- a/django/db/migrations/operations/utils.py
++++ b/django/db/migrations/operations/utils.py
+@@ -8,7 +8,8 @@ def resolve_relation(model, app_label=None, model_name=None):
+     Turn a model class or model reference string and return a model tuple.
+ 
+     app_label and model_name are used to resolve the scope of recursive and
+-    unscoped model relationship.
++    unscoped model relationship. App labels are normalized to lowercase while
++    model names preserve their original case.
+     """
+     if isinstance(model, str):
+         if model == RECURSIVE_RELATIONSHIP_CONSTANT:
+@@ -19,13 +20,14 @@ def resolve_relation(model, app_label=None, model_name=None):
+                 )
+             return app_label, model_name
+         if '.' in model:
+-            return tuple(model.lower().split('.', 1))
++            app_label, model_name = model.split('.', 1)
++            return app_label.lower(), model_name
+         if app_label is None:
+             raise TypeError(
+                 'app_label must be provided to resolve unscoped model '
+                 'relationships.'
+             )
+-        return app_label, model.lower()
++        return app_label.lower(), model.lower()
+     return model._meta.app_label, model._meta.model_name
+ 
+ 
+diff --git a/tests/migrations/test_app_label_case.py b/tests/migrations/test_app_label_case.py
+new file mode 100644
+index 0000000000..42e8f0e86a
+--- /dev/null
++++ b/tests/migrations/test_app_label_case.py
+@@ -0,0 +1,39 @@
++
++from django.db.migrations.operations.utils import resolve_relation
++from unittest import TestCase
++
++class AppLabelCaseTests(TestCase):
++    def test_mixed_case_app_label(self):
++        # Test that mixed case app labels are resolved case-insensitively
++        self.assertEqual(
++            resolve_relation('DJ_RegLogin.Category'),
++            ('dj_reglogin', 'Category')
++        )
++        
++    def test_uppercase_app_label_with_model(self):
++        # Test with explicitly provided uppercase app label
++        self.assertEqual(
++            resolve_relation('Category', app_label='DJ_RegLogin'),
++            ('dj_reglogin', 'category')
++        )
++        
++    def test_lowercase_app_label_with_model(self):
++        # Test with lowercase app label for consistency
++        self.assertEqual(
++            resolve_relation('Category', app_label='dj_reglogin'),
++            ('dj_reglogin', 'category')
++        )
++        
++    def test_model_case_preserved(self):
++        # Verify model name case is preserved
++        self.assertEqual(
++            resolve_relation('DJ_RegLogin.MixedCaseModel'),
++            ('dj_reglogin', 'MixedCaseModel')
++        )
++        
++    def test_non_ascii_app_label(self):
++        # Test with non-ASCII app label
++        self.assertEqual(
++            resolve_relation('MýApp.ModelName'),
++            ('mýapp', 'ModelName')
++        )

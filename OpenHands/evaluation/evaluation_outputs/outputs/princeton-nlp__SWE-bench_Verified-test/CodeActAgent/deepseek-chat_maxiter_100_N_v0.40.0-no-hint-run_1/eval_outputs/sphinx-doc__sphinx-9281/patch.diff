@@ -1,0 +1,118 @@
+diff --git a/sphinx/ext/autodoc/__init__.py b/sphinx/ext/autodoc/__init__.py
+index ec1472e20..8de6b6d4a 100644
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -1291,6 +1291,15 @@ class FunctionDocumenter(DocstringSignatureMixin, ModuleLevelDocumenter):  # typ
+         try:
+             self.env.app.emit('autodoc-before-process-signature', self.object, False)
+             sig = inspect.signature(self.object, type_aliases=self.config.autodoc_type_aliases)
++            
++            # Handle enum default values
++            new_params = []
++            for name, param in sig.parameters.items():
++                if param.default is not param.empty and hasattr(param.default, '__class__') and isinstance(param.default.__class__, enum.EnumMeta):
++                    param = param.replace(default=f"{param.default.__class__.__name__}.{param.default.name}")
++                new_params.append(param)
++            sig = sig.replace(parameters=new_params)
++            
+             args = stringify_signature(sig, **kwargs)
+         except TypeError as exc:
+             logger.warning(__("Failed to get a function signature for %s: %s"),
+diff --git a/sphinx/ext/autodoc/preserve_defaults.py b/sphinx/ext/autodoc/preserve_defaults.py
+index 3d859fe8e..277610cac 100644
+--- a/sphinx/ext/autodoc/preserve_defaults.py
++++ b/sphinx/ext/autodoc/preserve_defaults.py
+@@ -27,6 +27,12 @@ class DefaultValue:
+         self.name = name
+ 
+     def __repr__(self) -> str:
++        try:
++            obj = eval(self.name)
++            if isinstance(obj, enum.Enum):
++                return f"{obj.__class__.__name__}.{obj.name}"
++        except (NameError, AttributeError):
++            pass
+         return self.name
+ 
+ 
+@@ -63,12 +69,14 @@ def update_defvalue(app: Sphinx, obj: Any, bound_method: bool) -> None:
+             parameters = list(sig.parameters.values())
+             for i, param in enumerate(parameters):
+                 if param.default is not param.empty:
+-                    if param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD):
+-                        value = DefaultValue(ast_unparse(defaults.pop(0)))  # type: ignore
+-                        parameters[i] = param.replace(default=value)
+-                    else:
+-                        value = DefaultValue(ast_unparse(kw_defaults.pop(0)))  # type: ignore
+-                        parameters[i] = param.replace(default=value)
++                    default_expr = ast_unparse(defaults.pop(0) if param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD) else kw_defaults.pop(0))  # type: ignore
++                    try:
++                        default_obj = eval(default_expr)
++                        if isinstance(default_obj, enum.Enum):
++                            default_expr = f"{default_obj.__class__.__name__}.{default_obj.name}"
++                    except (NameError, AttributeError):
++                        pass
++                    parameters[i] = param.replace(default=DefaultValue(default_expr))
+             sig = sig.replace(parameters=parameters)
+             obj.__signature__ = sig
+     except (AttributeError, TypeError):
+diff --git a/sphinx/util/inspect.py b/sphinx/util/inspect.py
+index a415a7074..a2c077a80 100644
+--- a/sphinx/util/inspect.py
++++ b/sphinx/util/inspect.py
+@@ -432,6 +432,18 @@ def safe_getattr(obj: Any, name: str, *defargs: Any) -> Any:
+ 
+ def object_description(object: Any) -> str:
+     """A repr() implementation that returns text safe to use in reST context."""
++    if isinstance(object, enum.Enum):
++        return f"{object.__class__.__name__}.{object.name}"
++    try:
++        # Handle both direct enum values and DefaultValue-wrapped enums
++        if hasattr(object, '__class__') and isinstance(object.__class__, enum.EnumMeta):
++            return f"{object.__class__.__name__}.{object.name}"
++        elif hasattr(object, 'name') and '.' in object.name:  # DefaultValue case
++            obj = eval(object.name)
++            if isinstance(obj, enum.Enum):
++                return f"{obj.__class__.__name__}.{obj.name}"
++    except (NameError, AttributeError):
++        pass
+     if isinstance(object, dict):
+         try:
+             sorted_keys = sorted(object)
+@@ -740,7 +752,14 @@ def stringify_signature(sig: inspect.Signature, show_annotation: bool = True,
+                 arg.write(' = ')
+             else:
+                 arg.write('=')
+-            arg.write(object_description(param.default))
++            default = param.default
++            try:
++                if isinstance(default, enum.Enum) or (hasattr(default, '__class__') and isinstance(default.__class__, enum.EnumMeta)):
++                    arg.write(f"{default.__class__.__name__}.{default.name}")
++                else:
++                    arg.write(object_description(default))
++            except Exception:
++                arg.write(object_description(default))
+ 
+         args.append(arg.getvalue())
+         last_kind = param.kind
+diff --git a/sphinx/util/typing.py b/sphinx/util/typing.py
+index af6edcae0..9bd260e60 100644
+--- a/sphinx/util/typing.py
++++ b/sphinx/util/typing.py
+@@ -8,6 +8,7 @@
+     :license: BSD, see LICENSE for details.
+ """
+ 
++import enum
+ import sys
+ import typing
+ from struct import Struct
+@@ -285,6 +286,8 @@ def stringify(annotation: Any) -> str:
+     """Stringify type annotation object."""
+     from sphinx.util import inspect  # lazy loading
+ 
++    if isinstance(annotation, enum.Enum):
++        return f"{annotation.__class__.__name__}.{annotation.name}"
+     if isinstance(annotation, str):
+         if annotation.startswith("'") and annotation.endswith("'"):
+             # might be a double Forward-ref'ed type.  Go unquoting.

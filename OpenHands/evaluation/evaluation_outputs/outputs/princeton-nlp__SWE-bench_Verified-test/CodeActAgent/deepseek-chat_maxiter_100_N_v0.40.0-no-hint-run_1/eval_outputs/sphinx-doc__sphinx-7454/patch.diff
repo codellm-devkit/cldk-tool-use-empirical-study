@@ -1,0 +1,55 @@
+diff --git a/sphinx/util/typing.py b/sphinx/util/typing.py
+index eb38d232c..ee8e511da 100644
+--- a/sphinx/util/typing.py
++++ b/sphinx/util/typing.py
+@@ -48,6 +48,13 @@ def stringify(annotation: Any) -> str:
+     elif not annotation:
+         return repr(annotation)
+     elif annotation is NoneType:  # type: ignore
++        from sphinx.application import Sphinx
++        if hasattr(Sphinx, '_current_app') and Sphinx._current_app:
++            if (Sphinx._current_app.config.autodoc_typehints == 'signature' and 
++                'python' in Sphinx._current_app.config.intersphinx_mapping):
++                return ':py:obj:`None <None>`'
++            elif 'python' in Sphinx._current_app.config.intersphinx_mapping:
++                return ':py:obj:`None`'
+         return 'None'
+     elif (getattr(annotation, '__module__', None) == 'builtins' and
+           hasattr(annotation, '__qualname__')):
+diff --git a/tests/roots/test-ext-autodoc/index.rst b/tests/roots/test-ext-autodoc/index.rst
+index 1a60fc281..8477907fe 100644
+--- a/tests/roots/test-ext-autodoc/index.rst
++++ b/tests/roots/test-ext-autodoc/index.rst
+@@ -9,3 +9,7 @@
+    :members:
+ 
+ .. autofunction:: target.typehints.incr
++.. autoclass:: target.typehints.Math
++   :members:
++.. autofunction:: target.typehints.complex_func
++.. autofunction:: target.typehints.missing_attr
+diff --git a/tests/test_ext_autodoc.py b/tests/test_ext_autodoc.py
+index 69846d3ae..61b86914f 100644
+--- a/tests/test_ext_autodoc.py
++++ b/tests/test_ext_autodoc.py
+@@ -31,3 +31,20 @@ my_name
+ 
+ alias of bug2437.autodoc_dummy_foo.Foo"""
+     assert warning.getvalue() == ''
++
++@pytest.mark.sphinx('html', testroot='ext-autodoc')
++def test_autodoc_typehints_none(app, status, warning):
++    app.config.autodoc_typehints = 'signature'
++    app.builder.build_all()
++    
++    # Verify None is linked in signature mode
++    content = app.env.get_doctree('index')
++    none_nodes = list(content.findall(condition=lambda n: n.astext() == 'None'))
++    assert len(none_nodes) > 0
++    assert any('refuri="https://docs.python.org/3/library/constants.html#None"' in str(n) for n in none_nodes)
++
++    # Verify description mode
++    app.config.autodoc_typehints = 'description'
++    app.builder.build_all()
++    content = app.env.get_doctree('index')
++    assert 'refuri="https://docs.python.org/3/library/constants.html#None"' in str(content)

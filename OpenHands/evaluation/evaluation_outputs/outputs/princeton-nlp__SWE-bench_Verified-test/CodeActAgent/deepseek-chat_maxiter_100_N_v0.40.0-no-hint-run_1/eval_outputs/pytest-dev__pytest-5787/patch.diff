@@ -1,0 +1,72 @@
+diff --git a/src/_pytest/_code/code.py b/src/_pytest/_code/code.py
+index a0f4d15ce..2c5949b4b 100644
+--- a/src/_pytest/_code/code.py
++++ b/src/_pytest/_code/code.py
+@@ -396,6 +396,41 @@ class ExceptionInfo(Generic[_E]):
+     _striptext = attr.ib(type=str, default="")
+     _traceback = attr.ib(type=Optional[Traceback], default=None)
+ 
++    def __reduce__(self):
++        """Custom serialization that preserves exception chains."""
++        if self._excinfo is None:
++            return (self.__class__.for_later, ())
++        
++        type_, value, tb = self._excinfo
++        # Get chain information
++        chain = []
++        if hasattr(value, '__cause__') and value.__cause__ is not None:
++            chain.append(('cause', value.__cause__))
++        if hasattr(value, '__context__') and value.__context__ is not None and not value.__suppress_context__:
++            chain.append(('context', value.__context__))
++            
++        return (
++            self.__class__._reconstruct,
++            (type_, value, tb, self._striptext, chain)
++        )
++
++    @classmethod
++    def _reconstruct(cls, type_, value, tb, striptext, chain):
++        """Reconstruct exception with chain information."""
++        # Rebuild main exception
++        exc_info = (type_, value, tb)
++        instance = cls(exc_info, striptext)
++        
++        # Rebuild chain
++        if chain:
++            for link_type, link_exc in chain:
++                if link_type == 'cause':
++                    value.__cause__ = link_exc
++                else:
++                    value.__context__ = link_exc
++                    
++        return instance
++
+     @classmethod
+     def from_exc_info(
+         cls,
+diff --git a/testing/test_exception_chains.py b/testing/test_exception_chains.py
+new file mode 100644
+index 000000000..a595db6e8
+--- /dev/null
++++ b/testing/test_exception_chains.py
+@@ -0,0 +1,20 @@
++
++import pytest
++
++def test_chained_exception_with_from():
++    try:
++        try:
++            raise ValueError(11)
++        except Exception as e1:
++            raise ValueError(12) from e1
++    except Exception as e2:
++        raise ValueError(13) from e2
++
++def test_chained_exception_without_from():
++    try:
++        try:
++            raise ValueError(21)
++        except Exception:
++            raise ValueError(22)
++    except Exception:
++        raise ValueError(23)

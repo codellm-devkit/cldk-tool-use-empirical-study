@@ -1,0 +1,33 @@
+diff --git a/django/db/models/query_utils.py b/django/db/models/query_utils.py
+index fde686b2cd..28497a0a95 100644
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -337,4 +337,8 @@ class FilteredRelation:
+         # Resolve the condition in Join.filtered_relation.
+         query = compiler.query
+         where = query.build_filtered_relation_q(self.condition, reuse=set(self.path))
+-        return compiler.compile(where)
++        sql, params = compiler.compile(where)
++        # Ensure conditions are properly scoped to the alias
++        if self.alias:
++            sql = f"{self.alias}.{sql}" if sql else ""
++        return sql, params
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index 54f3258eac..40a2b8ad86 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1598,7 +1598,13 @@ class Query(BaseExpression):
+                         "relations deeper than the relation_name (got %r for "
+                         "%r)." % (lookup, filtered_relation.relation_name)
+                     )
+-        self._filtered_relations[filtered_relation.alias] = filtered_relation
++        # Store multiple filtered relations for same path by combining conditions
++        if filtered_relation.relation_name in self._filtered_relations:
++            existing = self._filtered_relations[filtered_relation.relation_name]
++            existing.condition = existing.condition | filtered_relation.condition
++            existing.path.extend(filtered_relation.path)
++        else:
++            self._filtered_relations[filtered_relation.alias] = filtered_relation
+ 
+     def names_to_path(self, names, opts, allow_many=True, fail_on_missing=False):
+         """

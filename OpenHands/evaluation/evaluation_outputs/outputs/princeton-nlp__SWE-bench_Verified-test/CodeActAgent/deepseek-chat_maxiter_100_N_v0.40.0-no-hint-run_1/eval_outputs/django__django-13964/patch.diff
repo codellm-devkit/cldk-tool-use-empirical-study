@@ -1,0 +1,65 @@
+diff --git a/django/db/models/fields/related_descriptors.py b/django/db/models/fields/related_descriptors.py
+index 872a4c98dc..d5150b0111 100644
+--- a/django/db/models/fields/related_descriptors.py
++++ b/django/db/models/fields/related_descriptors.py
+@@ -18,6 +18,8 @@ example, with the following models::
+         parent = ForeignKey(Parent, related_name='children')
+ 
+  ``child.parent`` is a forward many-to-one relation. ``parent.children`` is a
++"""
++import weakref
+ reverse many-to-one relation.
+ 
+ There are three types of relations (many-to-one, one-to-one, and many-to-many)
+@@ -94,6 +96,24 @@ class ForwardManyToOneDescriptor:
+ 
+     def __init__(self, field_with_rel):
+         self.field = field_with_rel
++        self._pending_relations = weakref.WeakKeyDictionary()
++
++    def _pk_changed_handler(self, sender, instance, **kwargs):
++        """Handle when a tracked related object's PK changes."""
++        if instance in self._pending_relations:
++            for field, rh_field in self.field.related_fields:
++                setattr(self._pending_relations[instance], field.attname, getattr(instance, rh_field.attname))
++            # Clean up after successful update
++            from django.db.models.signals import post_save
++            post_save.disconnect(self._pk_changed_handler, sender=sender)
++            del self._pending_relations[instance]
++
++    def _track_pk_changes(self, instance, related_obj):
++        """Track primary key changes on related objects."""
++        if related_obj.pk is None:
++            self._pending_relations[related_obj] = instance
++            from django.db.models.signals import post_save
++            post_save.connect(self._pk_changed_handler, sender=related_obj.__class__, weak=True)
+ 
+     @cached_property
+     def RelatedObjectDoesNotExist(self):
+@@ -243,10 +263,13 @@ class ForwardManyToOneDescriptor:
+             related = self.field.get_cached_value(instance, default=None)
+ 
+             # If we've got an old related object, we need to clear out its
+-            # cache. This cache also might not exist if the related object
+-            # hasn't been accessed yet.
++            # cache and any PK tracking
+             if related is not None:
+                 remote_field.set_cached_value(related, None)
++                if related in self._pending_relations:
++                    from django.db.models.signals import post_save
++                    post_save.disconnect(self._pk_changed_handler, sender=related.__class__)
++                    del self._pending_relations[related]
+ 
+             for lh_field, rh_field in self.field.related_fields:
+                 setattr(instance, lh_field.attname, None)
+@@ -255,6 +278,10 @@ class ForwardManyToOneDescriptor:
+         else:
+             for lh_field, rh_field in self.field.related_fields:
+                 setattr(instance, lh_field.attname, getattr(value, rh_field.attname))
++            
++            # Track PK changes if related object has no PK yet
++            if value.pk is None:
++                self._track_pk_changes(instance, value)
+ 
+         # Set the related instance cache used by __get__ to avoid an SQL query
+         # when accessing the attribute we just set.

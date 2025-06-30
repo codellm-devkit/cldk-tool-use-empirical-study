@@ -1,0 +1,60 @@
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index 9735ce10c8..78e1520c2f 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -550,6 +550,13 @@ class Query(BaseExpression):
+         Perform a COUNT() query using the current filter constraints.
+         """
+         obj = self.clone()
++        # Strip unused annotations that aren't referenced in filters/ordering
++        used_annotations = obj._get_used_annotations()
++        obj.annotations = {
++            alias: annotation
++            for alias, annotation in obj.annotations.items()
++            if alias in used_annotations
++        }
+         obj.add_annotation(Count("*"), alias="__count", is_summary=True)
+         return obj.get_aggregation(using, ["__count"])["__count"]
+ 
+@@ -1108,7 +1115,25 @@ class Query(BaseExpression):
+             self.append_annotation_mask([alias])
+         else:
+             self.set_annotation_mask(set(self.annotation_select).difference({alias}))
+-        self.annotations[alias] = annotation
++
++    def _get_used_annotations(self):
++        """
++        Return set of annotation aliases that are referenced in filters or ordering.
++        """
++        used_annotations = set()
++        # Check where clauses
++        if self.where:
++            for child in self.where.children:
++                if hasattr(child, "get_source_expressions"):
++                    for expr in child.get_source_expressions():
++                        if hasattr(expr, "get_refs"):
++                            used_annotations.update(expr.get_refs())
++        # Check order_by
++        if self.order_by:
++            for expr in self.order_by:
++                if hasattr(expr, "get_refs"):
++                    used_annotations.update(expr.get_refs())
++        return used_annotations
+ 
+     def resolve_expression(self, query, *args, **kwargs):
+         clone = self.clone()
+diff --git a/test_settings.py b/test_settings.py
+new file mode 100644
+index 0000000000..349c686f14
+--- /dev/null
++++ b/test_settings.py
+@@ -0,0 +1,9 @@
++
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++SECRET_KEY = 'test'
++TEST_RUNNER = 'django.test.runner.DiscoverRunner'

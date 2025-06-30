@@ -1,0 +1,64 @@
+diff --git a/django/db/models/fields/related.py b/django/db/models/fields/related.py
+index fad5560486..4441617558 100644
+--- a/django/db/models/fields/related.py
++++ b/django/db/models/fields/related.py
+@@ -951,6 +951,11 @@ class ForeignKey(ForeignObject):
+             # the to_field during FK construction. It won't be guaranteed to
+             # be correct until contribute_to_class is called. Refs #12190.
+             to_field = to_field or (to._meta.pk and to._meta.pk.name)
++            # Propagate db_collation from target field if not explicitly set
++            if 'db_collation' not in kwargs and to_field:
++                target_field = to._meta.get_field(to_field)
++                if hasattr(target_field, 'db_collation') and target_field.db_collation:
++                    kwargs['db_collation'] = target_field.db_collation
+         if not callable(on_delete):
+             raise TypeError("on_delete must be callable.")
+ 
+@@ -1043,6 +1048,8 @@ class ForeignKey(ForeignObject):
+             kwargs["db_index"] = False
+         if self.db_constraint is not True:
+             kwargs["db_constraint"] = self.db_constraint
++        if hasattr(self, 'db_collation') and self.db_collation:
++            kwargs['db_collation'] = self.db_collation
+         # Rel needs more work.
+         to_meta = getattr(self.remote_field.model, "_meta", None)
+         if self.remote_field.field_name and (
+diff --git a/tests/collation_tests.py b/tests/collation_tests.py
+new file mode 100644
+index 0000000000..a44573e2fe
+--- /dev/null
++++ b/tests/collation_tests.py
+@@ -0,0 +1,33 @@
++
++from django.db import models
++from django.test import TestCase
++
++class Account(models.Model):
++    id = models.CharField(primary_key=True, max_length=22, db_collation='utf8_bin')
++    
++    class Meta:
++        app_label = 'collation_tests'
++    
++class Address(models.Model):
++    account = models.ForeignKey(Account, on_delete=models.CASCADE)
++    
++    class Meta:
++        app_label = 'collation_tests'
++    
++class Profile(models.Model):
++    account = models.ForeignKey(Account, on_delete=models.CASCADE)
++    
++    class Meta:
++        app_label = 'collation_tests'
++
++class CollationPropagationTests(TestCase):
++    def test_foreign_key_inherits_collation(self):
++        # Verify Address.account inherits collation from Account.id
++        account_field = Account._meta.get_field('id')
++        address_field = Address._meta.get_field('account')
++        self.assertEqual(address_field.db_collation, account_field.db_collation)
++        
++    def test_explicit_collation_preserved(self):
++        # Verify Profile.account keeps its explicit collation
++        profile_field = Profile._meta.get_field('account')
++        self.assertEqual(profile_field.db_collation, 'utf8_general_ci')

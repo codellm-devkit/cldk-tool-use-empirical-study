@@ -1,0 +1,26 @@
+diff --git a/sphinx/domains/python.py b/sphinx/domains/python.py
+index 7d39d80ed..307772f06 100644
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -140,10 +140,18 @@ def _parse_annotation(annotation: str, env: BuildEnvironment = None) -> List[Nod
+         elif isinstance(node, ast.Name):
+             return [nodes.Text(node.id)]
+         elif isinstance(node, ast.Subscript):
++            # Handle both dict[str, str] and dict(str, str) styles
+             result = unparse(node.value)
+-            result.append(addnodes.desc_sig_punctuation('', '['))
+-            result.extend(unparse(node.slice))
+-            result.append(addnodes.desc_sig_punctuation('', ']'))
++            if isinstance(node.value, ast.Name) and node.value.id == 'dict':
++                # Use parentheses for dict types to match traditional style
++                result.append(addnodes.desc_sig_punctuation('', '('))
++                result.extend(unparse(node.slice))
++                result.append(addnodes.desc_sig_punctuation('', ')'))
++            else:
++                # Use brackets for other subscript types
++                result.append(addnodes.desc_sig_punctuation('', '['))
++                result.extend(unparse(node.slice))
++                result.append(addnodes.desc_sig_punctuation('', ']'))
+             return result
+         elif isinstance(node, ast.Tuple):
+             if node.elts:

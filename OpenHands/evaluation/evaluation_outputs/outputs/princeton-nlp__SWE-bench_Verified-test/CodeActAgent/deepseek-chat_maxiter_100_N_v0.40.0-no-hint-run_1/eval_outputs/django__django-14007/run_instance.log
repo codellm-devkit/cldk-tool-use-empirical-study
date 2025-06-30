@@ -1,0 +1,97 @@
+2025-06-27 14:21:26,867 - INFO - Creating container for django__django-14007...
+2025-06-27 14:21:26,894 - INFO - Container for django__django-14007 created: 32b7698eae43a217e5426f9ef38fb2a9761b911c5a0d78a87fd740165517ef23
+2025-06-27 14:21:27,120 - INFO - Container for django__django-14007 started: 32b7698eae43a217e5426f9ef38fb2a9761b911c5a0d78a87fd740165517ef23
+2025-06-27 14:21:27,121 - INFO - Intermediate patch for django__django-14007 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/django__django-14007/patch.diff, now applying to container...
+2025-06-27 14:21:27,286 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/base.py...
+Checking patch django/db/models/query.py...
+Applied patch django/db/models/base.py cleanly.
+Applied patch django/db/models/query.py cleanly.
+
+2025-06-27 14:21:27,992 - INFO - Git diff before:
+diff --git a/django/db/models/base.py b/django/db/models/base.py
+index 55b1691166..e1eb418610 100644
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -871,8 +871,9 @@ class Model(metaclass=ModelBase):
+             returning_fields = meta.db_returning_fields
+             results = self._do_insert(cls._base_manager, using, fields, returning_fields, raw)
+             if results:
++                connection = cls._base_manager.db
+                 for value, field in zip(results[0], returning_fields):
+-                    setattr(self, field.attname, value)
++                    setattr(self, field.attname, field.from_db_value(value, None, connection))
+         return updated
+ 
+     def _do_update(self, base_qs, using, pk_val, values, update_fields, forced_update):
+diff --git a/django/db/models/query.py b/django/db/models/query.py
+index 387deca527..d373bdf941 100644
+--- a/django/db/models/query.py
++++ b/django/db/models/query.py
+@@ -1303,11 +1303,16 @@ class QuerySet:
+         bulk_return = connections[self.db].features.can_return_rows_from_bulk_insert
+         for item in [objs[i:i + batch_size] for i in range(0, len(objs), batch_size)]:
+             if bulk_return and not ignore_conflicts:
+-                inserted_rows.extend(self._insert(
++                results = self._insert(
+                     item, fields=fields, using=self.db,
+                     returning_fields=self.model._meta.db_returning_fields,
+                     ignore_conflicts=ignore_conflicts,
+-                ))
++                )
++                connection = self.db
++                for obj, values in zip(item, results):
++                    for value, field in zip(values, self.model._meta.db_returning_fields):
++                        setattr(obj, field.attname, field.from_db_value(value, None, connection))
++                inserted_rows.extend(results)
+             else:
+                 self._insert(item, fields=fields, using=self.db, ignore_conflicts=ignore_conflicts)
+         return inserted_rows
+2025-06-27 14:21:27,993 - INFO - Eval script for django__django-14007 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/django__django-14007/eval.sh; copying to container...
+2025-06-27 14:21:33,717 - INFO - Test runtime: 5.64 seconds
+2025-06-27 14:21:33,718 - INFO - Test output for django__django-14007 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/django__django-14007/test_output.txt
+2025-06-27 14:21:33,815 - INFO - Git diff after:
+diff --git a/django/db/models/base.py b/django/db/models/base.py
+index 55b1691166..e1eb418610 100644
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -871,8 +871,9 @@ class Model(metaclass=ModelBase):
+             returning_fields = meta.db_returning_fields
+             results = self._do_insert(cls._base_manager, using, fields, returning_fields, raw)
+             if results:
++                connection = cls._base_manager.db
+                 for value, field in zip(results[0], returning_fields):
+-                    setattr(self, field.attname, value)
++                    setattr(self, field.attname, field.from_db_value(value, None, connection))
+         return updated
+ 
+     def _do_update(self, base_qs, using, pk_val, values, update_fields, forced_update):
+diff --git a/django/db/models/query.py b/django/db/models/query.py
+index 387deca527..d373bdf941 100644
+--- a/django/db/models/query.py
++++ b/django/db/models/query.py
+@@ -1303,11 +1303,16 @@ class QuerySet:
+         bulk_return = connections[self.db].features.can_return_rows_from_bulk_insert
+         for item in [objs[i:i + batch_size] for i in range(0, len(objs), batch_size)]:
+             if bulk_return and not ignore_conflicts:
+-                inserted_rows.extend(self._insert(
++                results = self._insert(
+                     item, fields=fields, using=self.db,
+                     returning_fields=self.model._meta.db_returning_fields,
+                     ignore_conflicts=ignore_conflicts,
+-                ))
++                )
++                connection = self.db
++                for obj, values in zip(item, results):
++                    for value, field in zip(values, self.model._meta.db_returning_fields):
++                        setattr(obj, field.attname, field.from_db_value(value, None, connection))
++                inserted_rows.extend(results)
+             else:
+                 self._insert(item, fields=fields, using=self.db, ignore_conflicts=ignore_conflicts)
+         return inserted_rows
+2025-06-27 14:21:33,815 - INFO - Grading answer for django__django-14007...
+2025-06-27 14:21:33,816 - INFO - report: {'django__django-14007': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_auto_field_subclass_create (custom_pk.tests.CustomPKTests)']}, 'PASS_TO_PASS': {'success': [], 'failure': ['Get can accept pk or the real attribute name', 'Custom pks work with in_bulk, both for integer and non-integer types', 'pk and attribute name are available on the model', 'Both pk and custom attribute_name can be used in filter and friends', "Custom pk doesn't affect related_name based lookups", 'Queries across tables, involving primary key', 'custom pks do not affect save', 'test_custom_field_pk (custom_pk.tests.CustomPKTests)', 'New objects can be created both with pk and the custom name', 'test_unicode_pk (custom_pk.tests.CustomPKTests)', 'test_unique_pk (custom_pk.tests.CustomPKTests)', 'test_zero_non_autoincrement_pk (custom_pk.tests.CustomPKTests)']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-14007: resolved: False
+2025-06-27 14:21:33,816 - INFO - Attempting to stop container sweb.eval.django__django-14007.20250627_135628...
+2025-06-27 14:21:49,077 - INFO - Attempting to remove container sweb.eval.django__django-14007.20250627_135628...
+2025-06-27 14:21:49,093 - INFO - Container sweb.eval.django__django-14007.20250627_135628 removed.

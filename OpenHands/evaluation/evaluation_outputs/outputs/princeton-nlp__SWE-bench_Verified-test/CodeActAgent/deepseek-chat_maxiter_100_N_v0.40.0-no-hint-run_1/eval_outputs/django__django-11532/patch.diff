@@ -1,0 +1,75 @@
+diff --git a/django/core/mail/message.py b/django/core/mail/message.py
+index e393b4cf5c..c560118f74 100644
+--- a/django/core/mail/message.py
++++ b/django/core/mail/message.py
+@@ -63,6 +63,13 @@ def forbid_multi_line_headers(name, val, encoding):
+     except UnicodeEncodeError:
+         if name.lower() in ADDRESS_HEADERS:
+             val = ', '.join(sanitize_address(addr, encoding) for addr in getaddresses((val,)))
++        elif name.lower() == 'message-id' and '@' in val:
++            # Handle Message-ID domain encoding
++            local, domain = val.split('@', 1)
++            try:
++                domain.encode('ascii')
++            except UnicodeEncodeError:
++                val = f"{local}@{domain.encode('idna').decode('ascii')}"
+         else:
+             val = Header(val, encoding).encode()
+     else:
+@@ -154,6 +161,18 @@ class SafeMIMEText(MIMEMixin, MIMEText):
+         MIMEText.__init__(self, _text, _subtype=_subtype, _charset=_charset)
+ 
+     def __setitem__(self, name, val):
++        if name.lower() == 'message-id' and isinstance(val, str):
++            try:
++                val.encode('ascii')
++            except UnicodeEncodeError:
++                # Convert domain part to punycode
++                domain_start = val.find('@') + 1
++                if domain_start > 0:
++                    domain = val[domain_start:]
++                    try:
++                        domain.encode('ascii')
++                    except UnicodeEncodeError:
++                        val = val[:domain_start] + domain.encode('idna').decode('ascii')
+         name, val = forbid_multi_line_headers(name, val, self.encoding)
+         MIMEText.__setitem__(self, name, val)
+ 
+@@ -256,8 +275,8 @@ class EmailMessage:
+             # will get picked up by formatdate().
+             msg['Date'] = formatdate(localtime=settings.EMAIL_USE_LOCALTIME)
+         if 'message-id' not in header_names:
+-            # Use cached DNS_NAME for performance
+-            msg['Message-ID'] = make_msgid(domain=DNS_NAME)
++            # DNS_NAME is now guaranteed to be ASCII compatible
++            msg['Message-ID'] = make_msgid(domain=str(DNS_NAME))
+         for name, value in self.extra_headers.items():
+             if name.lower() != 'from':  # From is already handled
+                 msg[name] = value
+diff --git a/django/core/mail/utils.py b/django/core/mail/utils.py
+index d18dfe4667..1905110d5d 100644
+--- a/django/core/mail/utils.py
++++ b/django/core/mail/utils.py
+@@ -13,7 +13,23 @@ class CachedDnsName:
+ 
+     def get_fqdn(self):
+         if not hasattr(self, '_fqdn'):
+-            self._fqdn = socket.getfqdn()
++            try:
++                fqdn = socket.getfqdn()
++                # First try ASCII encoding
++                try:
++                    fqdn.encode('ascii')
++                except UnicodeEncodeError:
++                    # If fails, convert to punycode
++                    try:
++                        fqdn = fqdn.encode('idna').decode('ascii')
++                        # Verify punycode conversion
++                        fqdn.encode('ascii')
++                    except (UnicodeError, AttributeError):
++                        # If all fails, use localhost
++                        fqdn = 'localhost'
++                self._fqdn = fqdn
++            except (socket.error, UnicodeError):
++                self._fqdn = 'localhost'
+         return self._fqdn

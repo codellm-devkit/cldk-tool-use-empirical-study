@@ -1,0 +1,222 @@
+diff --git a/examples/widgets/span_selector_fix_test.py b/examples/widgets/span_selector_fix_test.py
+new file mode 100644
+index 0000000000..920e5a0846
+--- /dev/null
++++ b/examples/widgets/span_selector_fix_test.py
+@@ -0,0 +1,15 @@
++
++import matplotlib.pyplot as plt
++from matplotlib.widgets_custom import CustomSpanSelector as SpanSelector
++
++fig, ax = plt.subplots()
++ax.plot([10, 20], [10, 20])
++print(f"Initial xlim: {ax.get_xlim()}")  # Should be (10, 20)
++
++def onselect(vmin, vmax):
++    print(f"Selected: {vmin}-{vmax}")
++
++span = SpanSelector(ax, onselect, 'horizontal', interactive=True)
++print(f"After SpanSelector xlim: {ax.get_xlim()}")  # Should still be (10, 20)
++
++plt.show()
+diff --git a/lib/matplotlib/widgets.py b/lib/matplotlib/widgets.py
+index a199e45d40..ea03c89271 100644
+--- a/lib/matplotlib/widgets.py
++++ b/lib/matplotlib/widgets.py
+@@ -2138,23 +2138,44 @@ class SpanSelector(_SelectorWidget):
+             self.canvas = ax.figure.canvas
+             self.connect_default_events()
+ 
++        # Store and lock original limits
++        self._original_xlim = ax.get_xlim()
++        self._original_ylim = ax.get_ylim()
++        ax.set_autoscale_on(False)
++        ax._stale_viewlims = False  # Prevent automatic limit updates
++
++        # Create transform completely isolated from data coordinates
+         if self.direction == 'horizontal':
+-            trans = ax.get_xaxis_transform()
++            trans = mpl.transforms.blended_transform_factory(
++                ax.figure.transFigure, ax.transAxes)
+             w, h = 0, 1
++            ax.set_xlim(self._original_xlim)
++            ax.xaxis.set_major_locator(mpl.ticker.FixedLocator([]))
++            ax.xaxis.set_major_formatter(mpl.ticker.NullFormatter())
+         else:
+-            trans = ax.get_yaxis_transform()
++            trans = mpl.transforms.blended_transform_factory(
++                ax.transAxes, ax.figure.transFigure)
+             w, h = 1, 0
++            ax.set_ylim(self._original_ylim)
++            ax.yaxis.set_major_locator(mpl.ticker.FixedLocator([]))
++            ax.yaxis.set_major_formatter(mpl.ticker.NullFormatter())
++            
+         self._rect = Rectangle((0, 0), w, h,
+-                               transform=trans,
+-                               visible=False,
+-                               **self._rectprops)
+-
++                             transform=trans,
++                             visible=False,
++                             **self._rectprops)
++        self._rect.set_in_layout(False)
+         self.ax.add_patch(self._rect)
++
+         if len(self.artists) > 0:
+             self.artists[0] = self._rect
+         else:
+             self.artists.append(self._rect)
+ 
++        # Disable all automatic limit adjustments
++        ax.set_autoscale_on(False)
++        ax._stale_viewlims = False
++
+     def _setup_edge_handle(self, props):
+         self._edge_handles = ToolLineHandles(self.ax, self.extents,
+                                              direction=self.direction,
+@@ -2366,10 +2387,26 @@ class ToolLineHandles:
+             line_props = {}
+         line_props.update({'visible': False, 'animated': useblit})
+ 
+-        line_fun = ax.axvline if self.direction == 'horizontal' else ax.axhline
+         self._line_props = line_props
+-
+-        self.artists = [line_fun(p, **line_props) for p in positions]
++        trans = ax.figure.transFigure  # Use figure transform
++        self.artists = []
++        
++        # Save and disable autoscaling
++        xautoscale = ax.get_autoscalex_on()
++        yautoscale = ax.get_autoscaley_on()
++        ax.set_autoscale_on(False)
++        
++        for p in positions:
++            if self.direction == 'horizontal':
++                line = Line2D([p, p], [0, 1], transform=trans, **line_props)
++            else:
++                line = Line2D([0, 1], [p, p], transform=trans, **line_props)
++            ax.add_line(line)
++            self.artists.append(line)
++        
++        # Restore autoscale state
++        ax.set_autoscalex_on(xautoscale)
++        ax.set_autoscaley_on(yautoscale)
+ 
+     @property
+     def positions(self):
+diff --git a/lib/matplotlib/widgets_custom.py b/lib/matplotlib/widgets_custom.py
+new file mode 100644
+index 0000000000..5a85c8a50b
+--- /dev/null
++++ b/lib/matplotlib/widgets_custom.py
+@@ -0,0 +1,35 @@
++
++import matplotlib as mpl
++from matplotlib.widgets import SpanSelector
++from matplotlib.patches import Rectangle
++from matplotlib.lines import Line2D
++import numpy as np
++
++class CustomSpanSelector(SpanSelector):
++    def __init__(self, *args, **kwargs):
++        super().__init__(*args, **kwargs)
++        self._original_xlim = self.ax.get_xlim()
++        self._original_ylim = self.ax.get_ylim()
++        
++    def _press(self, event):
++        """Override to preserve limits during interaction"""
++        super()._press(event)
++        self._reset_limits()
++        
++    def _onmove(self, event):
++        """Override to preserve limits during interaction"""
++        super()._onmove(event)
++        self._reset_limits()
++        
++    def _release(self, event):
++        """Override to preserve limits after interaction"""
++        super()._release(event)
++        self._reset_limits()
++        
++    def _reset_limits(self):
++        """Forcefully reset to original limits"""
++        if self.direction == 'horizontal':
++            self.ax.set_xlim(self._original_xlim)
++        else:
++            self.ax.set_ylim(self._original_ylim)
++        self.ax.figure.canvas.draw_idle()
+diff --git a/lib/matplotlib/widgets_custom/__init__.py b/lib/matplotlib/widgets_custom/__init__.py
+new file mode 100644
+index 0000000000..ace5317b8c
+--- /dev/null
++++ b/lib/matplotlib/widgets_custom/__init__.py
+@@ -0,0 +1,5 @@
++
++
++from .custom_span import CustomSpanSelector
++__all__ = ['CustomSpanSelector']
++
+diff --git a/lib/matplotlib/widgets_custom/custom_span.py b/lib/matplotlib/widgets_custom/custom_span.py
+new file mode 100644
+index 0000000000..a45b9c766c
+--- /dev/null
++++ b/lib/matplotlib/widgets_custom/custom_span.py
+@@ -0,0 +1,58 @@
++
++
++import matplotlib as mpl
++from matplotlib.widgets import SpanSelector
++from matplotlib.transforms import blended_transform_factory
++from matplotlib.patches import Rectangle
++
++class CustomSpanSelector:
++    def __init__(self, ax, onselect, direction, **kwargs):
++        self.ax = ax
++        self.onselect = onselect
++        self.direction = direction
++        self._original_xlim = ax.get_xlim()
++        self._original_ylim = ax.get_ylim()
++        
++        # Create rectangle in axes coordinates
++        if direction == 'horizontal':
++            trans = blended_transform_factory(ax.transData, ax.transAxes)
++            w, h = 0, 1
++        else:
++            trans = blended_transform_factory(ax.transAxes, ax.transData)
++            w, h = 1, 0
++            
++        self.rect = Rectangle((0, 0), w, h,
++                            transform=trans,
++                            visible=False,
++                            **kwargs.get('rectprops', {}))
++        ax.add_patch(self.rect)
++        
++        # Connect events
++        self.cids = [
++            ax.figure.canvas.mpl_connect('button_press_event', self._press),
++            ax.figure.canvas.mpl_connect('button_release_event', self._release),
++            ax.figure.canvas.mpl_connect('motion_notify_event', self._onmove)
++        ]
++
++    def _press(self, event):
++        if event.inaxes != self.ax:
++            return
++        self.rect.set_visible(True)
++        self.ax.figure.canvas.draw_idle()
++
++    def _onmove(self, event):
++        if event.inaxes != self.ax:
++            return
++        # Update rectangle position here
++        self.ax.figure.canvas.draw_idle()
++
++    def _release(self, event):
++        self.rect.set_visible(False)
++        self.ax.set_xlim(self._original_xlim)
++        self.ax.set_ylim(self._original_ylim)
++        self.ax.figure.canvas.draw_idle()
++
++    def disconnect(self):
++        for cid in self.cids:
++            self.ax.figure.canvas.mpl_disconnect(cid)
++

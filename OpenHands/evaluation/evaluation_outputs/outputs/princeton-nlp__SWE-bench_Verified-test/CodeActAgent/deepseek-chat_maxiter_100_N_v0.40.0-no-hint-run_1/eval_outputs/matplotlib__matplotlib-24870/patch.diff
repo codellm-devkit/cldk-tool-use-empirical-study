@@ -1,0 +1,60 @@
+diff --git a/lib/matplotlib/contour.py b/lib/matplotlib/contour.py
+index 144eadeae2..0fffa3fe6b 100644
+--- a/lib/matplotlib/contour.py
++++ b/lib/matplotlib/contour.py
+@@ -1117,12 +1117,16 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
+ 
+         return lev[i0:i1]
+ 
+-    def _process_contour_level_args(self, args):
++    def _process_contour_level_args(self, args, kwargs=None):
+         """
+         Determine the contour levels and store in self.levels.
+         """
++        if kwargs is None:
++            kwargs = {}
+         if self.levels is None:
+-            if len(args) == 0:
++            if kwargs.get('_is_boolean_input', False):
++                levels_arg = [0.5]  # Special case for boolean inputs
++            elif len(args) == 0:
+                 levels_arg = 7  # Default, hard-wired.
+             else:
+                 levels_arg = args[0]
+@@ -1456,13 +1460,16 @@ class QuadContourSet(ContourSet):
+         else:
+             raise _api.nargs_error(fn, takes="from 1 to 4", given=nargs)
+         z = ma.masked_invalid(z, copy=False)
++        # Store whether input was boolean before conversion
++        is_boolean = isinstance(args[0 if nargs <= 2 else 2], np.ndarray) and args[0 if nargs <= 2 else 2].dtype == bool
+         self.zmax = float(z.max())
+         self.zmin = float(z.min())
+         if self.logscale and self.zmin <= 0:
+             z = ma.masked_where(z <= 0, z)
+             _api.warn_external('Log scale: values of z <= 0 have been masked')
+             self.zmin = float(z.min())
+-        self._process_contour_level_args(args)
++        kwargs['_is_boolean_input'] = is_boolean
++        self._process_contour_level_args(args, kwargs)
+         return (x, y, z)
+ 
+     def _check_xyz(self, args, kwargs):
+diff --git a/test_contour_boolean.py b/test_contour_boolean.py
+new file mode 100644
+index 0000000000..3dccbcc0a2
+--- /dev/null
++++ b/test_contour_boolean.py
+@@ -0,0 +1,13 @@
++
++import numpy as np
++import matplotlib.pyplot as plt
++
++# Create boolean array
++ii, jj = np.ogrid[:100, :100]
++im = (ii+jj) % 20 < 10
++
++# Test boolean input without levels
++plt.subplot(121).contour(im)
++plt.subplot(122).contour(im, levels=[0.5])  # Expected same result
++plt.savefig('contour_boolean_test.png')
++print("Test script created - run with: python test_contour_boolean.py")

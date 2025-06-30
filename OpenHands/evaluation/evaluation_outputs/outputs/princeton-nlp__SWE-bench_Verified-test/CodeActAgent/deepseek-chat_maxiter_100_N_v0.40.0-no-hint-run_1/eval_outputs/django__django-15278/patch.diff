@@ -1,0 +1,49 @@
+diff --git a/django/db/backends/sqlite3/schema.py b/django/db/backends/sqlite3/schema.py
+index 6752a8e3c0..61481528b9 100644
+--- a/django/db/backends/sqlite3/schema.py
++++ b/django/db/backends/sqlite3/schema.py
+@@ -37,6 +37,22 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
+         super().__exit__(exc_type, exc_value, traceback)
+         self.connection.enable_constraint_checking()
+ 
++    def _field_requires_table_recreation(self, field):
++        """Return True if field requires table recreation due to SQLite limitations."""
++        return (field.unique and not field.null) or (
++            isinstance(field, models.OneToOneField) and field.null
++        )
++
++    def add_field(self, model, field):
++        """
++        Override to handle nullable OneToOneField creation via table recreation.
++        SQLite cannot add UNIQUE constraints via ALTER TABLE.
++        """
++        if self._field_requires_table_recreation(field):
++            self._remake_table(model, create_field=field)
++        else:
++            super().add_field(model, field)
++
+     def quote_value(self, value):
+         # The backend "mostly works" without this function and there are use
+         # cases for compiling Python without the sqlite3 libraries (e.g.
+diff --git a/tests/test_oto_field/models.py b/tests/test_oto_field/models.py
+new file mode 100644
+index 0000000000..565765767f
+--- /dev/null
++++ b/tests/test_oto_field/models.py
+@@ -0,0 +1,8 @@
++from django.db import models
++
++class ModelA(models.Model):
++    pass
++
++class ModelB(models.Model):
++    a = models.OneToOneField(ModelA, null=True, on_delete=models.CASCADE)
++
+diff --git a/tests/test_settings.py b/tests/test_settings.py
+new file mode 100644
+index 0000000000..e064048ea4
+--- /dev/null
++++ b/tests/test_settings.py
+@@ -0,0 +1,2 @@
++DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3'}}
++INSTALLED_APPS = ['test_oto_field']

@@ -1,0 +1,35 @@
+diff --git a/sphinx/ext/autodoc/mock.py b/sphinx/ext/autodoc/mock.py
+index 98a3a3a96..545e50b97 100644
+--- a/sphinx/ext/autodoc/mock.py
++++ b/sphinx/ext/autodoc/mock.py
+@@ -70,7 +70,9 @@ class _MockObject:
+ 
+ def _make_subclass(name: str, module: str, superclass: Any = _MockObject,
+                    attributes: Any = None) -> Any:
+-    attrs = {'__module__': module, '__display_name__': module + '.' + name}
++    # Handle cases where name might be a TypeVar or other typing object
++    display_name = module + '.' + (getattr(name, '__name__', None) or str(name))
++    attrs = {'__module__': module, '__display_name__': display_name}
+     attrs.update(attributes or {})
+ 
+     return type(name, (superclass,), attrs)
+diff --git a/tests/test_ext_autodoc_mock.py b/tests/test_ext_autodoc_mock.py
+index 4760493cf..18678b499 100644
+--- a/tests/test_ext_autodoc_mock.py
++++ b/tests/test_ext_autodoc_mock.py
+@@ -117,3 +117,15 @@ def test_mock_decorator():
+     assert func.__doc__ == "docstring"
+     assert Foo.meth.__doc__ == "docstring"
+     assert Bar.__doc__ == "docstring"
++
++
++def test_mock_generic_types():
++    """Test that mock handles generic type variables correctly."""
++    from typing import TypeVar
++    mock = _MockObject()
++    
++    T = TypeVar('T')
++    generic_mock = mock.T
++    
++    assert isinstance(generic_mock, _MockObject)
++    assert repr(generic_mock).startswith('_MockObject.T')

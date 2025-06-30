@@ -1,0 +1,73 @@
+diff --git a/django/template/defaultfilters.py b/django/template/defaultfilters.py
+index 23c3a08c67..f7aab6a11e 100644
+--- a/django/template/defaultfilters.py
++++ b/django/template/defaultfilters.py
+@@ -153,9 +153,14 @@ def floatformat(text, arg=-1):
+     try:
+         input_val = str(text)
+         d = Decimal(input_val)
++        # Normalize zero values to prevent precision issues
++        if d.is_zero():
++            d = Decimal('0')
+     except InvalidOperation:
+         try:
+             d = Decimal(str(float(text)))
++            if d.is_zero():
++                d = Decimal('0')
+         except (ValueError, InvalidOperation, TypeError):
+             return ""
+     try:
+@@ -163,15 +168,39 @@ def floatformat(text, arg=-1):
+     except ValueError:
+         return input_val
+ 
++    # First handle all zero values regardless of precision
++    if d.is_zero():
++        if p == 0:  # Explicit special case for precision 0
++            return "0"
++        elif p <= 0:
++            return mark_safe(
++                formats.number_format(
++                    "0",
++                    0,
++                    use_l10n=use_l10n,
++                    force_grouping=force_grouping,
++                )
++            )
++        else:
++            return mark_safe(
++                formats.number_format(
++                    "0." + "0" * abs(p),
++                    abs(p),
++                    use_l10n=use_l10n,
++                    force_grouping=force_grouping,
++                )
++            )
++
+     try:
+         m = int(d) - d
+     except (ValueError, OverflowError, InvalidOperation):
+         return input_val
+ 
+-    if not m and p < 0:
++    # Handle whole numbers when precision <= 0
++    if not m and p <= 0:
+         return mark_safe(
+             formats.number_format(
+-                "%d" % (int(d)),
++                str(int(d)),
+                 0,
+                 use_l10n=use_l10n,
+                 force_grouping=force_grouping,
+@@ -184,6 +213,11 @@ def floatformat(text, arg=-1):
+     units = len(tupl[1])
+     units += -tupl[2] if m else tupl[2]
+     prec = abs(p) + units + 1
++    # Ensure we never create a context with prec < 1
++    prec = max(prec, 1)
++    # For zero precision cases, use at least 1 decimal place
++    if p == 0:
++        prec = max(prec, 2)
+ 
+     # Avoid conversion to scientific notation by accessing `sign`, `digits`,
+     # and `exponent` from Decimal.as_tuple() directly.

@@ -1,0 +1,43 @@
+diff --git a/sphinx/directives/other.py b/sphinx/directives/other.py
+index 19f7c0a8d..4afbca748 100644
+--- a/sphinx/directives/other.py
++++ b/sphinx/directives/other.py
+@@ -376,6 +376,15 @@ class Include(BaseInclude, SphinxDirective):
+         rel_filename, filename = self.env.relfn2path(self.arguments[0])
+         self.arguments[0] = filename
+         self.env.note_included(filename)
++        
++        # Check for modified content in environment
++        if hasattr(self.env, 'modified_content') and filename in self.env.modified_content:
++            from docutils.io import StringInput
++            self.state.document.settings._source = StringInput(
++                source=self.env.modified_content[filename],
++                source_path=filename
++            )
++            return super().run()
+         return super().run()
+ 
+ 
+diff --git a/sphinx/environment/__init__.py b/sphinx/environment/__init__.py
+index cf698ea6d..da69f5653 100644
+--- a/sphinx/environment/__init__.py
++++ b/sphinx/environment/__init__.py
+@@ -167,6 +167,7 @@ class BuildEnvironment:
+         # the docutils settings for building
+         self.settings: dict[str, Any] = default_settings.copy()
+         self.settings['env'] = self
++        self.modified_content: dict[str, str] = {}
+ 
+         # All "docnames" here are /-separated and relative and exclude
+         # the source suffix.
+diff --git a/sphinx/io.py b/sphinx/io.py
+index 4874fdf39..586b91412 100644
+--- a/sphinx/io.py
++++ b/sphinx/io.py
+@@ -112,6 +112,8 @@ class SphinxStandaloneReader(SphinxBaseReader):
+         # emit "source-read" event
+         arg = [content]
+         env.events.emit('source-read', env.docname, arg)
++        if hasattr(env, 'modified_content'):
++            env.modified_content[env.docname] = arg[0]
+         return arg[0]

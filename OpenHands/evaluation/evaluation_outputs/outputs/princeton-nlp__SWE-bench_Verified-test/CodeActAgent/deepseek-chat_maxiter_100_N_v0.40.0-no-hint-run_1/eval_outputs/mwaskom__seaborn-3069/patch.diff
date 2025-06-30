@@ -1,0 +1,73 @@
+diff --git a/seaborn/_core/plot.py b/seaborn/_core/plot.py
+index 4f0290a4..12f86129 100644
+--- a/seaborn/_core/plot.py
++++ b/seaborn/_core/plot.py
+@@ -1142,6 +1142,9 @@ class Plotter:
+                 scale = prop.infer_scale(arg, values)
+         else:
+             scale = prop.default_scale(values)
++        # Add axis information to nominal scales
++        if isinstance(scale, Nominal) and m is not None:
++            scale.axis = m["axis"]
+ 
+         return scale
+ 
+@@ -1638,11 +1641,21 @@ class Plotter:
+                     a, b = p._limits[axis_key]
+                     lo = a if a is None else convert_units(a)
+                     hi = b if b is None else convert_units(b)
+-                    if isinstance(a, str):
+-                        lo = cast(float, lo) - 0.5
+-                    if isinstance(b, str):
+-                        hi = cast(float, hi) + 0.5
+-                    ax.set(**{f"{axis}lim": (lo, hi)})
++                    # Handle both string data and nominal scales
++                scale = self._scales.get(axis_key)
++                is_categorical = (
++                    isinstance(a, str) or isinstance(b, str) or
++                    (isinstance(scale, Nominal) and scale._categorical_behaviors)
++                )
++                if is_categorical:
++                    lo = cast(float, lo) - 0.5
++                    hi = cast(float, hi) + 0.5
++                    # Suppress grid for categorical axis
++                    ax.grid(False, axis=axis)
++                    # Invert y-axis for categorical data
++                    if axis == "y":
++                        ax.invert_yaxis()
++                ax.set(**{f"{axis}lim": (lo, hi)})
+ 
+         engine_default = None if p._target is not None else "tight"
+         layout_engine = p._layout_spec.get("engine", engine_default)
+diff --git a/seaborn/_core/scales.py b/seaborn/_core/scales.py
+index bbd71ec1..f41fe20c 100644
+--- a/seaborn/_core/scales.py
++++ b/seaborn/_core/scales.py
+@@ -138,13 +138,16 @@ class Scale:
+ class Nominal(Scale):
+     """
+     A categorical scale without relative importance / magnitude.
++    Implements categorical behaviors for axis scaling, grid display, and inversion.
+     """
+     # Categorical (convert to strings), un-sortable
+ 
+     values: tuple | str | list | dict | None = None
+     order: list | None = None
++    axis: str | None = None  # Track whether scale is used on x/y axis
+ 
+     _priority: ClassVar[int] = 3
++    _categorical_behaviors: ClassVar[bool] = True  # Enable categorical behaviors
+ 
+     def _setup(
+         self, data: Series, prop: Property, axis: Axis | None = None,
+@@ -190,6 +193,10 @@ class Nominal(Scale):
+             # TODO Currently just used in non-Coordinate contexts, but should
+             # we use this to (A) set the padding we want for categorial plots
+             # and (B) allow the values parameter for a Coordinate to set xlim/ylim
++            # Implement categorical axis padding (-0.5 to n+0.5)
++        if self._categorical_behaviors and self.axis is not None:
++            axis.set_view_interval(-0.5, len(units_seed) - 0.5)
++        else:
+             axis.set_view_interval(0, len(units_seed) - 1)
+ 
+         new._matplotlib_scale = mpl_scale

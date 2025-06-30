@@ -1,0 +1,45 @@
+diff --git a/requests/models.py b/requests/models.py
+index e7d292d5..bc35d937 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -369,6 +369,10 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+         else:
+             url = unicode(url) if is_py2 else str(url)
+ 
++        # Check for empty labels in hostname before parsing
++        if '.' in url.split('://')[-1].split('/')[0] and any(not label for label in url.split('://')[-1].split('/')[0].split('.')):
++            raise InvalidURL('URL has an invalid label.')
++
+         # Remove leading whitespaces from url
+         url = url.lstrip()
+ 
+@@ -379,10 +383,18 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+             self.url = url
+             return
+ 
++        # Check for empty labels before parsing
++        if '://' in url:
++            host_part = url.split('://')[1].split('/')[0].split('?')[0]
++            if any(not label for label in host_part.split('.')):
++                raise InvalidURL('URL has an invalid label.')
++
+         # Support for unicode domain names and paths.
+         try:
+             scheme, auth, host, port, path, query, fragment = parse_url(url)
+         except LocationParseError as e:
++            if 'label empty' in str(e):
++                raise InvalidURL('URL has an invalid label.')
+             raise InvalidURL(*e.args)
+ 
+         if not scheme:
+@@ -394,6 +406,10 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+         if not host:
+             raise InvalidURL("Invalid URL %r: No host supplied" % url)
+ 
++        # Check for empty labels in hostname
++        if u'.' in host and any(not label for label in host.split(u'.')):
++            raise InvalidURL('URL has an invalid label.')
++
+         # In general, we want to try IDNA encoding the hostname if the string contains
+         # non-ASCII characters. This allows users to automatically get the correct IDNA
+         # behaviour. For strings containing only ASCII characters, we need to also verify

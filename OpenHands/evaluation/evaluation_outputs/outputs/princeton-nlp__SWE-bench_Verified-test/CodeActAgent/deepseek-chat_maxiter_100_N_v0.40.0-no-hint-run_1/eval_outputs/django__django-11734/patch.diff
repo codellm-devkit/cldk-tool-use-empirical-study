@@ -1,0 +1,56 @@
+diff --git a/django/db/models/expressions.py b/django/db/models/expressions.py
+index 2b59dd301a..9dd48d01a7 100644
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -552,11 +552,13 @@ class ResolvedOuterRef(F):
+     """
+     contains_aggregate = False
+ 
+-    def as_sql(self, *args, **kwargs):
+-        raise ValueError(
+-            'This queryset contains a reference to an outer query and may '
+-            'only be used in a subquery.'
+-        )
++    def as_sql(self, compiler, connection, **kwargs):
++        if not compiler.query.subquery:
++            raise ValueError(
++                'This queryset contains a reference to an outer query and may '
++                'only be used in a subquery.'
++            )
++        return super().as_sql(compiler, connection, **kwargs)
+ 
+     def relabeled_clone(self, relabels):
+         return self
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index 35f3c5e1ea..d828c6e5b3 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1360,6 +1360,10 @@ class Query(BaseExpression):
+         joinpromoter = JoinPromoter(q_object.connector, len(q_object.children), current_negated)
+         for child in q_object.children:
+             if isinstance(child, Node):
++                # Preserve subquery context for negated branches
++                if branch_negated or current_negated:
++                    child = child.clone()
++                    child.subquery = True
+                 child_clause, needed_inner = self._add_q(
+                     child, used_aliases, branch_negated,
+                     current_negated, allow_joins, split_subq, simple_col)
+diff --git a/tests/test_settings.py b/tests/test_settings.py
+new file mode 100644
+index 0000000000..67670974f2
+--- /dev/null
++++ b/tests/test_settings.py
+@@ -0,0 +1,12 @@
++
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++INSTALLED_APPS = [
++    'django.contrib.contenttypes',
++    'tests.queries',
++]
++SECRET_KEY = 'test'

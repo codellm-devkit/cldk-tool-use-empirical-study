@@ -1,0 +1,112 @@
+diff --git a/django/contrib/admin/sites.py b/django/contrib/admin/sites.py
+index 61be31d890..2fe66314fa 100644
+--- a/django/contrib/admin/sites.py
++++ b/django/contrib/admin/sites.py
+@@ -453,7 +453,13 @@ class AdminSite:
+                 pass
+             else:
+                 if getattr(match.func, "should_append_slash", True):
+-                    return HttpResponsePermanentRedirect("%s/" % request.path)
++
++                    from urllib.parse import urlencode
++                    query_string = urlencode(request.GET)
++                    return HttpResponsePermanentRedirect(
++                        f"{request.path}/?{query_string}" if query_string else f"{request.path}/"
++                    )
++
+         raise Http404
+ 
+     def _build_app_dict(self, request, label=None):
+diff --git a/test_admin_redirect.py b/test_admin_redirect.py
+new file mode 100644
+index 0000000000..aa5f40f437
+--- /dev/null
++++ b/test_admin_redirect.py
+@@ -0,0 +1,26 @@
++
++import os
++import django
++from django.test.utils import setup_test_environment
++
++os.environ['DJANGO_SETTINGS_MODULE'] = 'test_settings'
++django.setup()
++setup_test_environment()
++
++from django.test import TestCase
++from django.contrib.admin.sites import AdminSite
++from django.test import RequestFactory
++from django.http import QueryDict
++
++class AdminSiteTests(TestCase):
++    def test_catch_all_view_preserves_query(self):
++        site = AdminSite()
++        factory = RequestFactory()
++        request = factory.get('/admin/auth/foo?id=123')
++        response = site.catch_all_view(request, 'auth/foo')
++        self.assertEqual(response.url, '/admin/auth/foo/?id=123')
++
++if __name__ == '__main__':
++    import pytest
++    pytest.main()
++
+diff --git a/test_redirect.py b/test_redirect.py
+new file mode 100644
+index 0000000000..cf94a4d76d
+--- /dev/null
++++ b/test_redirect.py
+@@ -0,0 +1,32 @@
++
++import os
++import django
++from django.conf import settings
++from django.http import HttpRequest, HttpResponsePermanentRedirect
++from django.test import RequestFactory
++from urllib.parse import urlencode
++
++# Minimal settings
++settings.configure(
++    SECRET_KEY='test',
++    APPEND_SLASH=True,
++)
++
++django.setup()
++
++def test_redirect_preserves_query():
++    factory = RequestFactory()
++    request = factory.get('/admin/auth/foo?id=123')
++    request.path = '/admin/auth/foo'
++    request.GET = {'id': '123'}
++
++    # Correct redirect URL construction
++    query_string = urlencode(request.GET)
++    redirect_url = f"{request.path}/?{query_string}" if query_string else f"{request.path}/"
++    response = HttpResponsePermanentRedirect(redirect_url)
++
++    assert response.url == '/admin/auth/foo/?id=123',         f'Expected redirect to preserve query string, got {response.url}'
++    print('Test passed - redirect preserves query string')
++
++test_redirect_preserves_query()
++
+diff --git a/test_settings.py b/test_settings.py
+new file mode 100644
+index 0000000000..11b0c0cd83
+--- /dev/null
++++ b/test_settings.py
+@@ -0,0 +1,17 @@
++
++import os
++BASE_DIR = os.path.dirname(os.path.dirname(__file__))
++SECRET_KEY = 'test'
++DEBUG = True
++INSTALLED_APPS = [
++    'django.contrib.admin',
++    'django.contrib.auth',
++    'django.contrib.contenttypes',
++]
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++

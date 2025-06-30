@@ -1,0 +1,60 @@
+diff --git a/pylint/pyreverse/inspector.py b/pylint/pyreverse/inspector.py
+index 8fa122022..e525ed73c 100644
+--- a/pylint/pyreverse/inspector.py
++++ b/pylint/pyreverse/inspector.py
+@@ -176,11 +176,20 @@ class Linker(IdGeneratorMixIn, utils.LocalsVisitor):
+         """visit an astroid.Function node
+ 
+         * set the locals_type mapping
++        * store parameter type hints
+         * optionally tag the node with a unique id
+         """
+         if hasattr(node, "locals_type"):
+             return
+         node.locals_type = collections.defaultdict(list)
++        # Store parameter type hints
++        node.param_types = {}
++        for arg in node.args.args:
++            if arg.annotation:
++                try:
++                    node.param_types[arg.name] = arg.annotation.as_string()
++                except AttributeError:
++                    pass
+         if self.tag:
+             node.uid = self.generate_id()
+ 
+diff --git a/pylint/pyreverse/writer.py b/pylint/pyreverse/writer.py
+index 0d80bb9ca..a27ec7cda 100644
+--- a/pylint/pyreverse/writer.py
++++ b/pylint/pyreverse/writer.py
+@@ -199,9 +199,10 @@ class VCGWriter(DiagramWriter):
+             shape = "box"
+         if not self.config.only_classnames:
+             attrs = obj.attrs
+-            methods = [func.name for func in obj.methods]
++            methods = obj.methods
+             # box width for UML like diagram
+-            maxlen = max(len(name) for name in [obj.title] + methods + attrs)
++            method_names = [func.name for func in methods]
++            maxlen = max(len(name) for name in [obj.title] + method_names + attrs)
+             line = "_" * (maxlen + 2)
+             label = fr"{label}\n\f{line}"
+             for attr in attrs:
+@@ -209,7 +210,16 @@ class VCGWriter(DiagramWriter):
+             if attrs:
+                 label = fr"{label}\n\f{line}"
+             for func in methods:
+-                label = fr"{label}\n\f10{func}()"
++                if hasattr(func, 'param_types') and func.param_types:
++                    params = []
++                    for arg in func.args.args:
++                        param = arg.name
++                        if arg.name in func.param_types:
++                            param += f': {func.param_types[arg.name]}'
++                        params.append(param)
++                    label = fr"{label}\n\f10{func.name}({', '.join(params)})"
++                else:
++                    label = fr"{label}\n\f10{func.name}()"
+         return dict(label=label, shape=shape)
+ 
+     def close_graph(self):

@@ -1,0 +1,260 @@
+2025-06-27 13:59:22,729 - INFO - Creating container for astropy__astropy-14182...
+2025-06-27 13:59:23,130 - INFO - Container for astropy__astropy-14182 created: b467387baa00b056e1fd680a067ddbd7ab4c276e7bd739df77d590c13cdcc6e5
+2025-06-27 13:59:23,373 - INFO - Container for astropy__astropy-14182 started: b467387baa00b056e1fd680a067ddbd7ab4c276e7bd739df77d590c13cdcc6e5
+2025-06-27 13:59:23,374 - INFO - Intermediate patch for astropy__astropy-14182 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/astropy__astropy-14182/patch.diff, now applying to container...
+2025-06-27 13:59:23,530 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:14: trailing whitespace.
+    
+/tmp/patch.diff:20: trailing whitespace.
+        
+/tmp/patch.diff:63: trailing whitespace.
+    
+Checking patch astropy/io/ascii/connect.py...
+Checking patch astropy/io/ascii/core.py...
+Checking patch astropy/io/ascii/fixedwidth.py...
+Checking patch astropy/io/ascii/rst.py...
+Applied patch astropy/io/ascii/connect.py cleanly.
+Applied patch astropy/io/ascii/core.py cleanly.
+Applied patch astropy/io/ascii/fixedwidth.py cleanly.
+Applied patch astropy/io/ascii/rst.py cleanly.
+warning: 3 lines add whitespace errors.
+
+2025-06-27 13:59:24,041 - INFO - Git diff before:
+diff --git a/astropy/io/ascii/connect.py b/astropy/io/ascii/connect.py
+index 1501e45035..c53303f1f7 100644
+--- a/astropy/io/ascii/connect.py
++++ b/astropy/io/ascii/connect.py
+@@ -21,10 +21,18 @@ def io_read(format, filename, **kwargs):
+ 
+ def io_write(format, table, filename, **kwargs):
+     from .ui import write
++    from .rst import RST
+ 
+     if format != "ascii":
+         format = re.sub(r"^ascii\.", "", format)
+         kwargs["format"] = format
++    
++    # Special handling for RST header_rows
++    if format == "rst" and "header_rows" in kwargs:
++        writer = RST()
++        writer.header.header_rows = kwargs.pop("header_rows")
++        kwargs["Writer"] = writer
++        
+     return write(table, filename, **kwargs)
+ 
+ 
+diff --git a/astropy/io/ascii/core.py b/astropy/io/ascii/core.py
+index 381b5b13db..ce4528a1d1 100644
+--- a/astropy/io/ascii/core.py
++++ b/astropy/io/ascii/core.py
+@@ -1811,6 +1811,9 @@ def _get_writer(Writer, fast_writer, **kwargs):
+         kwargs["fast_writer"] = fast_writer
+         return FAST_CLASSES[f"fast_{Writer._format_name}"](**kwargs)
+ 
++    # Special handling for RST header_rows
++    if Writer._format_name == 'rst' and 'header_rows' in kwargs:
++        extra_writer_pars = extra_writer_pars - {'header_rows'}
+     writer_kwargs = {k: v for k, v in kwargs.items() if k not in extra_writer_pars}
+     writer = Writer(**writer_kwargs)
+ 
+diff --git a/astropy/io/ascii/fixedwidth.py b/astropy/io/ascii/fixedwidth.py
+index fdadbbc050..b32b7e1a8c 100644
+--- a/astropy/io/ascii/fixedwidth.py
++++ b/astropy/io/ascii/fixedwidth.py
+@@ -72,6 +72,11 @@ class FixedWidthHeader(basic.BasicHeader):
+     position_line = None  # secondary header line position
+     """ row index of line that specifies position (default = 1) """
+     set_of_position_line_characters = set(r'`~!#$%^&*-_+=\|":' + "'")
++    header_rows = ["name"]  # Default header rows configuration
++
++    def __init__(self, **kwargs):
++        self.header_rows = kwargs.pop('header_rows', ["name"])
++        super().__init__(**kwargs)
+ 
+     def get_line(self, lines, index):
+         for i, line in enumerate(self.process_lines(lines)):
+diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
+index abdeba8efb..c9d148d255 100644
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -18,13 +18,24 @@ class SimpleRSTHeader(FixedWidthHeader):
+     start_line = 1
+     splitter_class = DefaultSplitter
+     position_char = "="
+-
++    
+     def get_fixedwidth_params(self, line):
+         vals, starts, ends = super().get_fixedwidth_params(line)
+         # The right hand column can be unbounded
+         ends[-1] = None
+         return vals, starts, ends
+ 
++    def process_lines(self, lines):
++        if len(self.header_rows) > 1:
++            # Handle multiple header rows
++            header_lines = [lines[0]] + [self._format_header_line(lines[0])]
++            return header_lines + lines[1:]
++        return super().process_lines(lines)
++
++    def _format_header_line(self, line):
++        """Format additional header lines (e.g. units)"""
++        return " ".join([f"{'='*len(col)}" for col in line.split()])
++
+ 
+ class SimpleRSTData(FixedWidthData):
+     start_line = 3
+@@ -57,10 +68,16 @@ class RST(FixedWidth):
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+ 
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, **kwargs):
++        self._header_rows = kwargs.pop('header_rows', None)
++        super().__init__(delimiter_pad=None, bookend=False, **kwargs)
++        if self._header_rows is not None:
++            self.header.header_rows = self._header_rows
+ 
+     def write(self, lines):
+         lines = super().write(lines)
+-        lines = [lines[1]] + lines + [lines[1]]
++        # For RST format, we want to duplicate the separator line
++        # at both top and bottom of the table
++        separator_idx = len(self.header.header_rows)  # Index of separator line
++        lines = [lines[separator_idx]] + lines + [lines[separator_idx]]
+         return lines
+diff --git a/pyproject.toml b/pyproject.toml
+index 0d1ee66ab9..ec234472e2 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,5 +1,5 @@
+ [build-system]
+-requires = ["setuptools",
++requires = ["setuptools==68.0.0",
+             "setuptools_scm>=6.2",
+             "wheel",
+             "cython==0.29.30",
+2025-06-27 13:59:24,041 - INFO - Eval script for astropy__astropy-14182 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/astropy__astropy-14182/eval.sh; copying to container...
+2025-06-27 14:00:26,136 - INFO - Test runtime: 62.02 seconds
+2025-06-27 14:00:26,138 - INFO - Test output for astropy__astropy-14182 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/astropy__astropy-14182/test_output.txt
+2025-06-27 14:00:26,246 - INFO - Git diff after:
+diff --git a/astropy/io/ascii/connect.py b/astropy/io/ascii/connect.py
+index 1501e45035..c53303f1f7 100644
+--- a/astropy/io/ascii/connect.py
++++ b/astropy/io/ascii/connect.py
+@@ -21,10 +21,18 @@ def io_read(format, filename, **kwargs):
+ 
+ def io_write(format, table, filename, **kwargs):
+     from .ui import write
++    from .rst import RST
+ 
+     if format != "ascii":
+         format = re.sub(r"^ascii\.", "", format)
+         kwargs["format"] = format
++    
++    # Special handling for RST header_rows
++    if format == "rst" and "header_rows" in kwargs:
++        writer = RST()
++        writer.header.header_rows = kwargs.pop("header_rows")
++        kwargs["Writer"] = writer
++        
+     return write(table, filename, **kwargs)
+ 
+ 
+diff --git a/astropy/io/ascii/core.py b/astropy/io/ascii/core.py
+index 381b5b13db..ce4528a1d1 100644
+--- a/astropy/io/ascii/core.py
++++ b/astropy/io/ascii/core.py
+@@ -1811,6 +1811,9 @@ def _get_writer(Writer, fast_writer, **kwargs):
+         kwargs["fast_writer"] = fast_writer
+         return FAST_CLASSES[f"fast_{Writer._format_name}"](**kwargs)
+ 
++    # Special handling for RST header_rows
++    if Writer._format_name == 'rst' and 'header_rows' in kwargs:
++        extra_writer_pars = extra_writer_pars - {'header_rows'}
+     writer_kwargs = {k: v for k, v in kwargs.items() if k not in extra_writer_pars}
+     writer = Writer(**writer_kwargs)
+ 
+diff --git a/astropy/io/ascii/fixedwidth.py b/astropy/io/ascii/fixedwidth.py
+index fdadbbc050..b32b7e1a8c 100644
+--- a/astropy/io/ascii/fixedwidth.py
++++ b/astropy/io/ascii/fixedwidth.py
+@@ -72,6 +72,11 @@ class FixedWidthHeader(basic.BasicHeader):
+     position_line = None  # secondary header line position
+     """ row index of line that specifies position (default = 1) """
+     set_of_position_line_characters = set(r'`~!#$%^&*-_+=\|":' + "'")
++    header_rows = ["name"]  # Default header rows configuration
++
++    def __init__(self, **kwargs):
++        self.header_rows = kwargs.pop('header_rows', ["name"])
++        super().__init__(**kwargs)
+ 
+     def get_line(self, lines, index):
+         for i, line in enumerate(self.process_lines(lines)):
+diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
+index abdeba8efb..c9d148d255 100644
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -18,13 +18,24 @@ class SimpleRSTHeader(FixedWidthHeader):
+     start_line = 1
+     splitter_class = DefaultSplitter
+     position_char = "="
+-
++    
+     def get_fixedwidth_params(self, line):
+         vals, starts, ends = super().get_fixedwidth_params(line)
+         # The right hand column can be unbounded
+         ends[-1] = None
+         return vals, starts, ends
+ 
++    def process_lines(self, lines):
++        if len(self.header_rows) > 1:
++            # Handle multiple header rows
++            header_lines = [lines[0]] + [self._format_header_line(lines[0])]
++            return header_lines + lines[1:]
++        return super().process_lines(lines)
++
++    def _format_header_line(self, line):
++        """Format additional header lines (e.g. units)"""
++        return " ".join([f"{'='*len(col)}" for col in line.split()])
++
+ 
+ class SimpleRSTData(FixedWidthData):
+     start_line = 3
+@@ -57,10 +68,16 @@ class RST(FixedWidth):
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+ 
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, **kwargs):
++        self._header_rows = kwargs.pop('header_rows', None)
++        super().__init__(delimiter_pad=None, bookend=False, **kwargs)
++        if self._header_rows is not None:
++            self.header.header_rows = self._header_rows
+ 
+     def write(self, lines):
+         lines = super().write(lines)
+-        lines = [lines[1]] + lines + [lines[1]]
++        # For RST format, we want to duplicate the separator line
++        # at both top and bottom of the table
++        separator_idx = len(self.header.header_rows)  # Index of separator line
++        lines = [lines[separator_idx]] + lines + [lines[separator_idx]]
+         return lines
+diff --git a/pyproject.toml b/pyproject.toml
+index 0d1ee66ab9..ec234472e2 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,5 +1,5 @@
+ [build-system]
+-requires = ["setuptools",
++requires = ["setuptools==68.0.0",
+             "setuptools_scm>=6.2",
+             "wheel",
+             "cython==0.29.30",
+2025-06-27 14:00:26,246 - INFO - Grading answer for astropy__astropy-14182...
+2025-06-27 14:00:26,253 - INFO - report: {'astropy__astropy-14182': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['astropy/io/ascii/tests/test_rst.py::test_rst_with_header_rows']}, 'PASS_TO_PASS': {'success': ['astropy/io/ascii/tests/test_rst.py::test_read_normal', 'astropy/io/ascii/tests/test_rst.py::test_read_normal_names', 'astropy/io/ascii/tests/test_rst.py::test_read_normal_names_include', 'astropy/io/ascii/tests/test_rst.py::test_read_normal_exclude', 'astropy/io/ascii/tests/test_rst.py::test_read_unbounded_right_column', 'astropy/io/ascii/tests/test_rst.py::test_read_unbounded_right_column_header', 'astropy/io/ascii/tests/test_rst.py::test_read_right_indented_table', 'astropy/io/ascii/tests/test_rst.py::test_trailing_spaces_in_row_definition'], 'failure': ['astropy/io/ascii/tests/test_rst.py::test_write_normal']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for astropy__astropy-14182: resolved: False
+2025-06-27 14:00:26,254 - INFO - Attempting to stop container sweb.eval.astropy__astropy-14182.20250627_135628...
+2025-06-27 14:00:41,510 - INFO - Attempting to remove container sweb.eval.astropy__astropy-14182.20250627_135628...
+2025-06-27 14:00:41,541 - INFO - Container sweb.eval.astropy__astropy-14182.20250627_135628 removed.

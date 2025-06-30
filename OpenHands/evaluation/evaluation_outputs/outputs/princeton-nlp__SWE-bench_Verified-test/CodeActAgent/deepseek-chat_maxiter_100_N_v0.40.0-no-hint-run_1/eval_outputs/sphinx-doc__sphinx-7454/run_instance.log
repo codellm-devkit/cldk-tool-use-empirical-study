@@ -1,0 +1,234 @@
+2025-06-27 16:02:37,402 - INFO - Creating container for sphinx-doc__sphinx-7454...
+2025-06-27 16:02:37,750 - INFO - Container for sphinx-doc__sphinx-7454 created: eedee5b49b5f4df0a24cc073df31d6c08d509d7c91e34298245b6901ddf78f55
+2025-06-27 16:02:37,977 - INFO - Container for sphinx-doc__sphinx-7454 started: eedee5b49b5f4df0a24cc073df31d6c08d509d7c91e34298245b6901ddf78f55
+2025-06-27 16:02:37,978 - INFO - Intermediate patch for sphinx-doc__sphinx-7454 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sphinx-doc__sphinx-7454/patch.diff, now applying to container...
+2025-06-27 16:02:38,086 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:11: trailing whitespace.
+            if (Sphinx._current_app.config.autodoc_typehints == 'signature' and 
+/tmp/patch.diff:44: trailing whitespace.
+    
+Checking patch sphinx/util/typing.py...
+Checking patch tests/roots/test-ext-autodoc/index.rst...
+Checking patch tests/test_ext_autodoc.py...
+Applied patch sphinx/util/typing.py cleanly.
+Applied patch tests/roots/test-ext-autodoc/index.rst cleanly.
+Applied patch tests/test_ext_autodoc.py cleanly.
+warning: 2 lines add whitespace errors.
+
+2025-06-27 16:02:38,314 - INFO - Git diff before:
+diff --git a/setup.py b/setup.py
+index a427d5493..978e3d8e0 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 5):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.12',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/util/typing.py b/sphinx/util/typing.py
+index eb38d232c..ee8e511da 100644
+--- a/sphinx/util/typing.py
++++ b/sphinx/util/typing.py
+@@ -48,6 +48,13 @@ def stringify(annotation: Any) -> str:
+     elif not annotation:
+         return repr(annotation)
+     elif annotation is NoneType:  # type: ignore
++        from sphinx.application import Sphinx
++        if hasattr(Sphinx, '_current_app') and Sphinx._current_app:
++            if (Sphinx._current_app.config.autodoc_typehints == 'signature' and 
++                'python' in Sphinx._current_app.config.intersphinx_mapping):
++                return ':py:obj:`None <None>`'
++            elif 'python' in Sphinx._current_app.config.intersphinx_mapping:
++                return ':py:obj:`None`'
+         return 'None'
+     elif (getattr(annotation, '__module__', None) == 'builtins' and
+           hasattr(annotation, '__qualname__')):
+diff --git a/tests/roots/test-ext-autodoc/index.rst b/tests/roots/test-ext-autodoc/index.rst
+index 1a60fc281..8477907fe 100644
+--- a/tests/roots/test-ext-autodoc/index.rst
++++ b/tests/roots/test-ext-autodoc/index.rst
+@@ -9,3 +9,7 @@
+    :members:
+ 
+ .. autofunction:: target.typehints.incr
++.. autoclass:: target.typehints.Math
++   :members:
++.. autofunction:: target.typehints.complex_func
++.. autofunction:: target.typehints.missing_attr
+diff --git a/tests/test_ext_autodoc.py b/tests/test_ext_autodoc.py
+index 69846d3ae..61b86914f 100644
+--- a/tests/test_ext_autodoc.py
++++ b/tests/test_ext_autodoc.py
+@@ -31,3 +31,20 @@ my_name
+ 
+ alias of bug2437.autodoc_dummy_foo.Foo"""
+     assert warning.getvalue() == ''
++
++@pytest.mark.sphinx('html', testroot='ext-autodoc')
++def test_autodoc_typehints_none(app, status, warning):
++    app.config.autodoc_typehints = 'signature'
++    app.builder.build_all()
++    
++    # Verify None is linked in signature mode
++    content = app.env.get_doctree('index')
++    none_nodes = list(content.findall(condition=lambda n: n.astext() == 'None'))
++    assert len(none_nodes) > 0
++    assert any('refuri="https://docs.python.org/3/library/constants.html#None"' in str(n) for n in none_nodes)
++
++    # Verify description mode
++    app.config.autodoc_typehints = 'description'
++    app.builder.build_all()
++    content = app.env.get_doctree('index')
++    assert 'refuri="https://docs.python.org/3/library/constants.html#None"' in str(content)
+diff --git a/tox.ini b/tox.ini
+index d9f040544..bf39854b6 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -28,7 +28,7 @@ extras =
+ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils
+ commands=
+-    pytest --durations 25 {posargs}
++    pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3
+2025-06-27 16:02:38,314 - INFO - Eval script for sphinx-doc__sphinx-7454 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sphinx-doc__sphinx-7454/eval.sh; copying to container...
+2025-06-27 16:02:42,212 - INFO - Test runtime: 3.83 seconds
+2025-06-27 16:02:42,213 - INFO - Test output for sphinx-doc__sphinx-7454 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sphinx-doc__sphinx-7454/test_output.txt
+2025-06-27 16:02:42,281 - INFO - Git diff after:
+diff --git a/setup.py b/setup.py
+index a427d5493..978e3d8e0 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 5):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.12',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/util/typing.py b/sphinx/util/typing.py
+index eb38d232c..ee8e511da 100644
+--- a/sphinx/util/typing.py
++++ b/sphinx/util/typing.py
+@@ -48,6 +48,13 @@ def stringify(annotation: Any) -> str:
+     elif not annotation:
+         return repr(annotation)
+     elif annotation is NoneType:  # type: ignore
++        from sphinx.application import Sphinx
++        if hasattr(Sphinx, '_current_app') and Sphinx._current_app:
++            if (Sphinx._current_app.config.autodoc_typehints == 'signature' and 
++                'python' in Sphinx._current_app.config.intersphinx_mapping):
++                return ':py:obj:`None <None>`'
++            elif 'python' in Sphinx._current_app.config.intersphinx_mapping:
++                return ':py:obj:`None`'
+         return 'None'
+     elif (getattr(annotation, '__module__', None) == 'builtins' and
+           hasattr(annotation, '__qualname__')):
+diff --git a/tests/roots/test-ext-autodoc/index.rst b/tests/roots/test-ext-autodoc/index.rst
+index 1a60fc281..8477907fe 100644
+--- a/tests/roots/test-ext-autodoc/index.rst
++++ b/tests/roots/test-ext-autodoc/index.rst
+@@ -9,3 +9,7 @@
+    :members:
+ 
+ .. autofunction:: target.typehints.incr
++.. autoclass:: target.typehints.Math
++   :members:
++.. autofunction:: target.typehints.complex_func
++.. autofunction:: target.typehints.missing_attr
+diff --git a/tests/test_ext_autodoc.py b/tests/test_ext_autodoc.py
+index 69846d3ae..61b86914f 100644
+--- a/tests/test_ext_autodoc.py
++++ b/tests/test_ext_autodoc.py
+@@ -31,3 +31,20 @@ my_name
+ 
+ alias of bug2437.autodoc_dummy_foo.Foo"""
+     assert warning.getvalue() == ''
++
++@pytest.mark.sphinx('html', testroot='ext-autodoc')
++def test_autodoc_typehints_none(app, status, warning):
++    app.config.autodoc_typehints = 'signature'
++    app.builder.build_all()
++    
++    # Verify None is linked in signature mode
++    content = app.env.get_doctree('index')
++    none_nodes = list(content.findall(condition=lambda n: n.astext() == 'None'))
++    assert len(none_nodes) > 0
++    assert any('refuri="https://docs.python.org/3/library/constants.html#None"' in str(n) for n in none_nodes)
++
++    # Verify description mode
++    app.config.autodoc_typehints = 'description'
++    app.builder.build_all()
++    content = app.env.get_doctree('index')
++    assert 'refuri="https://docs.python.org/3/library/constants.html#None"' in str(content)
+diff --git a/tox.ini b/tox.ini
+index d9f040544..bf39854b6 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -28,7 +28,7 @@ extras =
+ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils
+ commands=
+-    pytest --durations 25 {posargs}
++    pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3
+2025-06-27 16:02:42,281 - INFO - Grading answer for sphinx-doc__sphinx-7454...
+2025-06-27 16:02:42,288 - INFO - report: {'sphinx-doc__sphinx-7454': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['tests/test_domain_py.py::test_parse_annotation']}, 'PASS_TO_PASS': {'success': ['tests/test_domain_py.py::test_function_signatures', 'tests/test_domain_py.py::test_domain_py_xrefs', 'tests/test_domain_py.py::test_domain_py_objects', 'tests/test_domain_py.py::test_resolve_xref_for_properties', 'tests/test_domain_py.py::test_domain_py_find_obj', 'tests/test_domain_py.py::test_get_full_qualified_name', 'tests/test_domain_py.py::test_pyfunction_signature', 'tests/test_domain_py.py::test_pyfunction_signature_full', 'tests/test_domain_py.py::test_pyfunction_signature_full_py38', 'tests/test_domain_py.py::test_optional_pyfunction_signature', 'tests/test_domain_py.py::test_pyexception_signature', 'tests/test_domain_py.py::test_exceptions_module_is_ignored', 'tests/test_domain_py.py::test_pydata_signature', 'tests/test_domain_py.py::test_pydata_signature_old', 'tests/test_domain_py.py::test_pyobject_prefix', 'tests/test_domain_py.py::test_pydata', 'tests/test_domain_py.py::test_pyfunction', 'tests/test_domain_py.py::test_pymethod_options', 'tests/test_domain_py.py::test_pyclassmethod', 'tests/test_domain_py.py::test_pystaticmethod', 'tests/test_domain_py.py::test_pyattribute', 'tests/test_domain_py.py::test_pydecorator_signature', 'tests/test_domain_py.py::test_pydecoratormethod_signature', 'tests/test_domain_py.py::test_module_index', 'tests/test_domain_py.py::test_module_index_submodule', 'tests/test_domain_py.py::test_module_index_not_collapsed', 'tests/test_domain_py.py::test_modindex_common_prefix'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sphinx-doc__sphinx-7454: resolved: False
+2025-06-27 16:02:42,288 - INFO - Attempting to stop container sweb.eval.sphinx-doc__sphinx-7454.20250627_135628...
+2025-06-27 16:02:57,464 - INFO - Attempting to remove container sweb.eval.sphinx-doc__sphinx-7454.20250627_135628...
+2025-06-27 16:02:57,485 - INFO - Container sweb.eval.sphinx-doc__sphinx-7454.20250627_135628 removed.

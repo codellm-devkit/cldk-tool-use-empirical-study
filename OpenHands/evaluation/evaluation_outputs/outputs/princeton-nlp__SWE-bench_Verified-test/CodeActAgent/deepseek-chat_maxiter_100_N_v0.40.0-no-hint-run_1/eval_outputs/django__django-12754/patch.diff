@@ -1,0 +1,189 @@
+diff --git a/django/db/migrations/autodetector.py b/django/db/migrations/autodetector.py
+index 30616c0172..4802f8f52c 100644
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -163,9 +163,21 @@ class MigrationAutodetector:
+         self._prepare_field_lists()
+         self._generate_through_model_map()
+ 
+-        # Generate non-rename model operations
++        # First detect field moves to subclasses
++        self._detect_field_moves_to_subclasses()
++        
++        # Generate renamed fields first
++        self.generate_renamed_fields()
++        
++        # Explicitly generate RemoveField operations for moved fields first
++        for app_label, model_name, field_name in self.field_moves_to_subclasses:
++            self._generate_removed_field(app_label, model_name, field_name)
++        
++        # Generate remaining operations
+         self.generate_deleted_models()
+         self.generate_created_models()
++        self.generate_added_fields()
++        self.generate_removed_fields()
+         self.generate_deleted_proxies()
+         self.generate_created_proxies()
+         self.generate_altered_options()
+@@ -179,10 +191,7 @@ class MigrationAutodetector:
+         # Generate index removal operations before field is removed
+         self.generate_removed_constraints()
+         self.generate_removed_indexes()
+-        # Generate field operations
+-        self.generate_renamed_fields()
+-        self.generate_removed_fields()
+-        self.generate_added_fields()
++        # Generate remaining field operations
+         self.generate_altered_fields()
+         self.generate_altered_unique_together()
+         self.generate_altered_index_together()
+@@ -197,6 +206,22 @@ class MigrationAutodetector:
+ 
+         return self.migrations
+ 
++    def _detect_field_moves_to_subclasses(self):
++        """
++        Detect when fields are being moved to subclasses and mark them for special handling.
++        """
++        self.field_moves_to_subclasses = set()
++        
++        # Find fields removed from parent classes where the same field appears in a new subclass
++        for app_label, model_name, field_name in (self.old_field_keys - self.new_field_keys):
++            parent_model = self.from_state.models[app_label, model_name]
++            for new_app_label, new_model_name in self.new_model_keys:
++                new_model = self.to_state.models[new_app_label, new_model_name]
++                if (new_model.bases and 
++                    any(b.startswith(f"{app_label}.{model_name}") for b in new_model.bases) and
++                    field_name in new_model.fields):
++                    self.field_moves_to_subclasses.add((app_label, model_name, field_name))
++
+     def _prepare_field_lists(self):
+         """
+         Prepare field lists and a list of the fields that used through models
+@@ -511,18 +536,35 @@ class MigrationAutodetector:
+     def generate_created_models(self):
+         """
+         Find all new models (both managed and unmanaged) and make create
+-        operations for them as well as separate operations to create any
+-        foreign key or M2M relationships (these are optimized later, if
+-        possible).
+-
+-        Defer any model options that refer to collections of fields that might
+-        be deferred (e.g. unique_together, index_together).
++        operations for them. Models inheriting fields being moved from parent
++        classes are created last to ensure proper operation ordering.
+         """
+         old_keys = self.old_model_keys | self.old_unmanaged_keys
+         added_models = self.new_model_keys - old_keys
+         added_unmanaged_models = self.new_unmanaged_keys - old_keys
++        
++        # First process models not inheriting moved fields
++        regular_models = [
++            (app_label, model_name) for app_label, model_name in added_models
++            if not any(
++                field_name in self.to_state.models[app_label, model_name].fields
++                for _, parent_name, field_name in self.field_moves_to_subclasses
++                if parent_name.lower() in [
++                    base.split('.')[-1].lower() 
++                    for base in self.to_state.models[app_label, model_name].bases
++                ]
++            )
++        ]
++        
++        # Then process models that do inherit moved fields
++        models_with_moved_fields = [
++            (app_label, model_name) for app_label, model_name in added_models
++            if (app_label, model_name) not in regular_models
++        ]
++        
+         all_added_models = chain(
+-            sorted(added_models, key=self.swappable_first_key, reverse=True),
++            sorted(regular_models, key=self.swappable_first_key, reverse=True),
++            sorted(models_with_moved_fields, key=self.swappable_first_key, reverse=True),
+             sorted(added_unmanaged_models, key=self.swappable_first_key, reverse=True)
+         )
+         for app_label, model_name in all_added_models:
+diff --git a/tests/migrations/test_autodetector.py b/tests/migrations/test_autodetector.py
+index daff57fc2c..1802923cc4 100644
+--- a/tests/migrations/test_autodetector.py
++++ b/tests/migrations/test_autodetector.py
+@@ -7,6 +7,7 @@ from django.conf import settings
+ from django.contrib.auth.models import AbstractBaseUser
+ from django.core.validators import RegexValidator, validate_slug
+ from django.db import connection, models
++from django.db.migrations import operations
+ from django.db.migrations.autodetector import MigrationAutodetector
+ from django.db.migrations.graph import MigrationGraph
+ from django.db.migrations.loader import MigrationLoader
+@@ -40,6 +41,71 @@ class AutodetectorTests(TestCase):
+     Tests the migration autodetector.
+     """
+ 
++    def test_field_moved_to_subclass(self):
++        """Tests moving a field to a subclass in one migration."""
++        # Initial state with parent model having field
++        initial = ProjectState()
++        initial.add_model(ModelState("testapp", "Readable", [
++            ("id", models.AutoField(primary_key=True)),
++            ("title", models.CharField(max_length=200)),
++        ]))
++
++        # New state with field moved to subclass
++        final = ProjectState()
++        final.add_model(ModelState("testapp", "Readable", [
++            ("id", models.AutoField(primary_key=True)),
++        ]))
++        final.add_model(ModelState("testapp", "Book", [
++            ("id", models.AutoField(primary_key=True)),
++            ("readable_ptr", models.OneToOneField(
++                "testapp.Readable",
++                on_delete=models.CASCADE,
++                parent_link=True,
++                primary_key=True,
++            )),
++            ("title", models.CharField(max_length=200)),
++        ]))
++
++        # Generate migrations
++        changes = MigrationAutodetector(initial, final)._detect_changes()
++        
++        # Verify operations order
++        ops = changes['testapp'][0].operations
++        remove_indices = [
++            i for i, op in enumerate(ops)
++            if isinstance(op, operations.RemoveField) 
++            and op.model_name == 'readable' 
++            and op.name == 'title'
++        ]
++        create_indices = [
++            i for i, op in enumerate(ops)
++            if isinstance(op, operations.CreateModel)
++            and op.name.lower() == 'book'
++        ]
++        
++        # Detailed debug output
++        print("\nOperation details:")
++        for i, op in enumerate(ops):
++            print(f"\nOperation {i}:")
++            print(f"Type: {op.__class__.__name__}")
++            print(f"Model: {getattr(op, 'model_name', 'N/A')}")
++            print(f"Field: {getattr(op, 'name', 'N/A')}")
++            if hasattr(op, 'fields'):
++                if isinstance(op.fields, dict):
++                    print(f"Fields: {list(op.fields.keys())}")
++                else:
++                    print(f"Fields: {op.fields}")
++            if hasattr(op, 'bases'):
++                print(f"Bases: {op.bases}")
++        
++        self.assertTrue(remove_indices, "No RemoveField operation found for readable.title")
++        self.assertTrue(create_indices, "No CreateModel operation found for Book")
++        self.assertLess(
++            remove_indices[0],
++            create_indices[0],
++            "RemoveField should come before CreateModel when moving field to subclass"
++        )
++
+     author_empty = ModelState("testapp", "Author", [("id", models.AutoField(primary_key=True))])
+     author_name = ModelState("testapp", "Author", [
+         ("id", models.AutoField(primary_key=True)),

@@ -1,0 +1,107 @@
+diff --git a/django/db/backends/postgresql/operations.py b/django/db/backends/postgresql/operations.py
+index 62273fc43c..7046fee0e6 100644
+--- a/django/db/backends/postgresql/operations.py
++++ b/django/db/backends/postgresql/operations.py
+@@ -353,14 +353,22 @@ class DatabaseOperations(BaseDatabaseOperations):
+         if on_conflict == OnConflict.IGNORE:
+             return "ON CONFLICT DO NOTHING"
+         if on_conflict == OnConflict.UPDATE:
++            def get_column_name(field):
++                if hasattr(field, 'column'):  # Field object
++                    return field.column
++                if isinstance(field, str):  # String field name
++                    # Try to find matching field object
++                    for f in fields:
++                        if f.name == field:
++                            return f.column
++                return field
++            
+             return "ON CONFLICT(%s) DO UPDATE SET %s" % (
+-                ", ".join(map(self.quote_name, unique_fields)),
++                ", ".join(self.quote_name(get_column_name(f)) for f in unique_fields),
+                 ", ".join(
+-                    [
+-                        f"{field} = EXCLUDED.{field}"
+-                        for field in map(self.quote_name, update_fields)
+-                    ]
+-                ),
++                    f"{self.quote_name(get_column_name(f))} = EXCLUDED.{self.quote_name(get_column_name(f))}"
++                    for f in update_fields
++                )
+             )
+         return super().on_conflict_suffix_sql(
+             fields,
+diff --git a/test_settings.py b/test_settings.py
+new file mode 100644
+index 0000000000..75828a099d
+--- /dev/null
++++ b/test_settings.py
+@@ -0,0 +1,13 @@
++
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++
++SECRET_KEY = 'test-key'
++INSTALLED_APPS = [
++    'django.contrib.contenttypes',
++    'tests.bulk_create',
++]
+diff --git a/tests/bulk_create/test_db_column.py b/tests/bulk_create/test_db_column.py
+new file mode 100644
+index 0000000000..6cb8843505
+--- /dev/null
++++ b/tests/bulk_create/test_db_column.py
+@@ -0,0 +1,49 @@
++
++from django.db import models
++from django.test import TestCase
++from django.db.models.constants import OnConflict
++
++class ActivityBlackListed(models.Model):
++    """Test model matching the issue description"""
++    class Meta:
++        db_table = "Activity_BlackListed"
++    
++    blacklistid = models.IntegerField(primary_key=True, db_column="BlacklistID")
++    sectorid = models.IntegerField(null=True, blank=True, db_column="SectorID")
++
++from django.db import connection
++from unittest import skipUnless
++
++class BulkCreateDbColumnTests(TestCase):
++    @skipUnless(connection.vendor == 'postgresql', 'PostgreSQL specific test')
++    def test_bulk_create_with_db_column(self):
++        """Test that bulk_create respects db_column in ON CONFLICT clause"""
++        instances = [
++            ActivityBlackListed(blacklistid=1, sectorid=100),
++            ActivityBlackListed(blacklistid=2, sectorid=200)
++        ]
++        
++        with self.assertNumQueries(1) as ctx:
++            ActivityBlackListed.objects.bulk_create(
++                instances,
++                update_conflicts=True,
++                update_fields=["sectorid"],
++                unique_fields=["blacklistid"]
++            )
++        
++        # Verify the SQL uses the db_column names
++        sql = ctx.captured_queries[0]['sql']
++        self.assertIn('"BlacklistID"', sql)  # Should use db_column
++        self.assertIn('"SectorID"', sql)  # Should use db_column
++        self.assertIn('ON CONFLICT("BlacklistID")', sql)
++        self.assertIn('"SectorID" = EXCLUDED."SectorID"', sql)
++
++    def test_field_name_conversion(self):
++        """Test that field names are properly converted to db_column names"""
++        field = ActivityBlackListed._meta.get_field('blacklistid')
++        
++        # Test with field object
++        self.assertEqual(field.column, "BlacklistID")
++        
++        # Test with string field name
++        self.assertEqual(ActivityBlackListed._meta.get_field('sectorid').column, "SectorID")

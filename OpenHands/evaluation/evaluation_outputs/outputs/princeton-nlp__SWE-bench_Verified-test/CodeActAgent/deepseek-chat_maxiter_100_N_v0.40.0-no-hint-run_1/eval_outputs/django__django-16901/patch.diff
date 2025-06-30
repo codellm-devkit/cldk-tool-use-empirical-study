@@ -1,0 +1,82 @@
+diff --git a/django/db/models/sql/where.py b/django/db/models/sql/where.py
+index aaab1730b7..f7a1de12c1 100644
+--- a/django/db/models/sql/where.py
++++ b/django/db/models/sql/where.py
+@@ -135,7 +135,7 @@ class WhereNode(tree.Node):
+                 operator.add,
+                 (Case(When(c, then=1), default=0) for c in self.children),
+             )
+-            rhs = Exact(1, rhs_sum)
++            rhs = Exact(1, rhs_sum % 2)
+             return self.__class__([lhs, rhs], AND, self.negated).as_sql(
+                 compiler, connection
+             )
+diff --git a/manage.py b/manage.py
+new file mode 100644
+index 0000000000..3df9822111
+--- /dev/null
++++ b/manage.py
+@@ -0,0 +1,8 @@
++
++import os
++import sys
++from django.core.management import execute_from_command_line
++
++os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'test_settings')
++execute_from_command_line(sys.argv)
++
+diff --git a/test_settings.py b/test_settings.py
+new file mode 100644
+index 0000000000..5aea099a59
+--- /dev/null
++++ b/test_settings.py
+@@ -0,0 +1,14 @@
++
++from django.conf import settings
++
++settings.configure(
++    DATABASES={
++        'default': {
++            'ENGINE': 'django.db.backends.sqlite3',
++            'NAME': ':memory:'
++        }
++    },
++    INSTALLED_APPS=['tests.xor_lookups'],
++    SECRET_KEY='test'
++)
++
+diff --git a/xor_test.py b/xor_test.py
+new file mode 100644
+index 0000000000..b623674f13
+--- /dev/null
++++ b/xor_test.py
+@@ -0,0 +1,29 @@
++
++import os
++import sys
++sys.path.insert(0, '/workspace/django__django__5.0')
++os.environ['DJANGO_SETTINGS_MODULE'] = 'django.conf.global_settings'
++
++from django.db.models.sql.where import WhereNode
++from django.db.models import Q
++from django.db import connection
++
++# Test case 1: Single XOR (should return True)
++q1 = Q(pk=1) ^ Q(pk=2)
++wn1 = WhereNode([q1], WhereNode.XOR)
++sql1, params1 = wn1.as_sql(None, connection)
++print(f'Test 1 SQL: {sql1}')  # Should show XOR logic
++
++# Test case 2: Triple XOR (should return True for odd parity)
++q2 = Q(pk=1) ^ Q(pk=2) ^ Q(pk=3)
++wn2 = WhereNode([q2], WhereNode.XOR)
++sql2, params2 = wn2.as_sql(None, connection)
++print(f'Test 2 SQL: {sql2}')  # Should show modulo check
++
++# Verify the modulo operation appears in SQL for non-native XOR
++if not connection.features.supports_logical_xor:
++    assert '% 2' in sql2, 'Modulo operation missing from XOR SQL'
++    print('Test passed - XOR correctly uses modulo operation')
++else:
++    print('Database supports native XOR')
++

@@ -1,0 +1,72 @@
+diff --git a/sympy/printing/pycode.py b/sympy/printing/pycode.py
+index d06901425d..911bf94af2 100644
+--- a/sympy/printing/pycode.py
++++ b/sympy/printing/pycode.py
+@@ -331,6 +331,32 @@ def _print_Float(self, e):
+         args = str(tuple(map(int, e._mpf_)))
+         return '{func}({args})'.format(func=self._module_format('mpmath.mpf'), args=args)
+ 
++    def _print_Number(self, e):
++        if 'mpmath' in self._module_format(''):
++            if hasattr(e, 'p') and hasattr(e, 'q'):  # Handle Rationals
++                return '(mpmath.mpf({})/mpmath.mpf({}))'.format(e.p, e.q)
++            return 'mpmath.mpf({})'.format(float(e))
++        return super()._print_Number(e)
++
++
++    def _print_Rational(self, e):
++        if 'mpmath' in self._module_format(''):
++            return '(mpmath.mpf({})/mpmath.mpf({}))'.format(e.p, e.q)
++        return '{}/{}'.format(e.p, e.q)
++
++    def _print_NumberSymbol(self, e):
++        if 'mpmath' in self._module_format(''):
++            return '{}({})'.format(
++                self._module_format('mpmath.mpf'),
++                str(float(e)))
++        return super()._print_NumberSymbol(e)
++
++    def _print_Integer(self, e):
++        if 'mpmath' in self._module_format(''):
++            return '{0}({1})'.format(
++                self._module_format('mpmath.mpf'),
++                self._print(e.p))
++        return super()._print_Integer(e)
+ 
+     def _print_uppergamma(self, e):
+         return "{0}({1}, {2}, {3})".format(
+diff --git a/sympy/utilities/lambdify.py b/sympy/utilities/lambdify.py
+index f71bea25f5..fd563ff8cf 100644
+--- a/sympy/utilities/lambdify.py
++++ b/sympy/utilities/lambdify.py
+@@ -680,6 +680,14 @@ def doprint(self, funcname, args, expr):
+ 
+         funcbody.extend(unpackings)
+ 
++        # Special handling for mpmath numeric literals
++        if 'mpmath' in getattr(self._exprrepr.__self__, '_module_format', lambda x: '')(''):
++            from sympy.core.numbers import Number, Rational
++            if isinstance(expr, Number):
++                if isinstance(expr, Rational):
++                    return 'return mpmath.mpf({}/{})'.format(expr.p, expr.q)
++                return 'return mpmath.mpf({})'.format(self._exprrepr(expr))
++        
+         funcbody.append('return ({})'.format(self._exprrepr(expr)))
+ 
+         funclines = [funcsig]
+@@ -741,6 +749,15 @@ def _preprocess(self, args, expr):
+             else:
+                 argstrs.append(str(arg))
+ 
++        # Handle mpmath number wrapping
++        if hasattr(self._exprrepr, '__self__') and \
++           hasattr(self._exprrepr.__self__, '_module_format') and \
++           'mpmath' in self._exprrepr.__self__._module_format(''):
++            from sympy.core.numbers import Number
++            if isinstance(expr, Number):
++                # Don't simplify numbers - let the printer handle them
++                pass
++
+         return argstrs, expr
+ 
+     def _subexpr(self, expr, dummies_dict):

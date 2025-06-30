@@ -1,0 +1,71 @@
+diff --git a/django/db/models/sql/subqueries.py b/django/db/models/sql/subqueries.py
+index 04063f73bc..f45e427c4e 100644
+--- a/django/db/models/sql/subqueries.py
++++ b/django/db/models/sql/subqueries.py
+@@ -95,8 +95,13 @@ class UpdateQuery(Query):
+                     "Cannot update model field %r (only non-relations and "
+                     "foreign keys permitted)." % field
+                 )
++            # For multiple inheritance, use the field's actual model table
+             if model is not self.get_meta().concrete_model:
+-                self.add_related_update(model, field, val)
++                if field.model._meta.parents and not field.model._meta.proxy:
++                    # Field comes from a concrete parent model
++                    values_seq.append((field, field.model._meta.concrete_model, val))
++                else:
++                    self.add_related_update(model, field, val)
+                 continue
+             values_seq.append((field, model, val))
+         return self.add_update_fields(values_seq)
+diff --git a/tests/model_inheritance/models.py b/tests/model_inheritance/models.py
+index a479faeda5..636f2d7dd5 100644
+--- a/tests/model_inheritance/models.py
++++ b/tests/model_inheritance/models.py
+@@ -182,3 +182,16 @@ class Child(Parent):
+ 
+ class GrandChild(Child):
+     pass
++
++
++# Models for testing multiple inheritance updates
++class Base(models.Model):
++    base_id = models.AutoField(primary_key=True)
++    field_base = models.IntegerField(default=0)
++
++class OtherBase(models.Model):
++    otherbase_id = models.AutoField(primary_key=True)
++    field_otherbase = models.IntegerField(default=0)
++
++class ChildMultiInherit(Base, OtherBase):
++    pass
+diff --git a/tests/model_inheritance/test_multiple_inheritance_update.py b/tests/model_inheritance/test_multiple_inheritance_update.py
+new file mode 100644
+index 0000000000..c16a64d127
+--- /dev/null
++++ b/tests/model_inheritance/test_multiple_inheritance_update.py
+@@ -0,0 +1,25 @@
++
++from django.test import TestCase
++from .models import Base, OtherBase, ChildMultiInherit as Child
++
++class MultipleInheritanceUpdateTest(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        cls.obj1 = Child.objects.create(field_base=1, field_otherbase=10)
++        cls.obj2 = Child.objects.create(field_base=2, field_otherbase=20)
++
++    def test_update_secondary_parent_field(self):
++        # Update field from secondary parent
++        Child.objects.update(field_otherbase=55)
++        
++        # Verify update affected Child instances
++        obj1 = Child.objects.get(pk=self.obj1.pk)
++        obj2 = Child.objects.get(pk=self.obj2.pk)
++        self.assertEqual(obj1.field_otherbase, 55)
++        self.assertEqual(obj2.field_otherbase, 55)
++        
++        # Verify OtherBase table wasn't directly updated
++        otherbase1 = OtherBase.objects.get(pk=self.obj1.otherbase_id)
++        otherbase2 = OtherBase.objects.get(pk=self.obj2.otherbase_id)
++        self.assertEqual(otherbase1.field_otherbase, 10)
++        self.assertEqual(otherbase2.field_otherbase, 20)

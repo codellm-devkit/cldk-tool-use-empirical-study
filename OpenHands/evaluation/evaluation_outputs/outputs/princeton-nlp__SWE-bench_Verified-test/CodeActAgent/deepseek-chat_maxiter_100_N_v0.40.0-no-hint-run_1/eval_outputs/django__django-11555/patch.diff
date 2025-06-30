@@ -1,0 +1,23 @@
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index e15e64cde4..6a219eb349 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -2212,11 +2212,17 @@ class Query(BaseExpression):
+ def get_order_dir(field, default='ASC'):
+     """
+     Return the field name and direction for an order specification. For
+-    example, '-foo' is returned as ('foo', 'DESC').
++    example, '-foo' is returned as ('foo', 'DESC'). Handles both string
++    field names and expression objects.
+ 
+     The 'default' param is used to indicate which way no prefix (or a '+'
+     prefix) should sort. The '-' prefix always sorts the opposite way.
+     """
++    if hasattr(field, 'resolve_expression'):
++        # Already an expression (F() or OrderBy), return as-is with direction
++        dirn = ORDER_DIR[default]
++        return field, dirn[0]
++    
+     dirn = ORDER_DIR[default]
+     if field[0] == '-':
+         return field[1:], dirn[1]

@@ -1,0 +1,190 @@
+2025-06-27 16:01:09,539 - INFO - Creating container for sphinx-doc__sphinx-10449...
+2025-06-27 16:01:09,908 - INFO - Container for sphinx-doc__sphinx-10449 created: 2fa84c396c90cfc9fed3f0a6855f50428e4d91db8e66e43558d186982b248eee
+2025-06-27 16:01:10,115 - INFO - Container for sphinx-doc__sphinx-10449 started: 2fa84c396c90cfc9fed3f0a6855f50428e4d91db8e66e43558d186982b248eee
+2025-06-27 16:01:10,115 - INFO - Intermediate patch for sphinx-doc__sphinx-10449 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sphinx-doc__sphinx-10449/patch.diff, now applying to container...
+2025-06-27 16:01:10,226 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:11: trailing whitespace.
+            
+/tmp/patch.diff:105: trailing whitespace.
+            
+/tmp/patch.diff:132: trailing whitespace.
+        
+/tmp/patch.diff:148: trailing whitespace.
+                    field_list, processed_annotations, 
+Checking patch sphinx/ext/autodoc/typehints.py...
+Checking patch sphinx/ext/autodoc/typehints_modified.py...
+Applied patch sphinx/ext/autodoc/typehints.py cleanly.
+Applied patch sphinx/ext/autodoc/typehints_modified.py cleanly.
+warning: 4 lines add whitespace errors.
+
+2025-06-27 16:01:10,466 - INFO - Git diff before:
+diff --git a/sphinx/ext/autodoc/typehints.py b/sphinx/ext/autodoc/typehints.py
+index 06768168e..0e5df1550 100644
+--- a/sphinx/ext/autodoc/typehints.py
++++ b/sphinx/ext/autodoc/typehints.py
+@@ -28,8 +28,9 @@ def record_typehints(app: Sphinx, objtype: str, name: str, obj: Any,
+             for param in sig.parameters.values():
+                 if param.annotation is not param.empty:
+                     annotation[param.name] = typing.stringify(param.annotation, mode)
+-            if sig.return_annotation is not sig.empty:
+-                annotation['return'] = typing.stringify(sig.return_annotation, mode)
++            
++            # Skip return type recording entirely - only process parameter types
++            pass
+     except (TypeError, ValueError):
+         pass
+ 
+@@ -52,6 +53,12 @@ def merge_typehints(app: Sphinx, domain: str, objtype: str, contentnode: Element
+ 
+     annotations = app.env.temp_data.get('annotations', {})
+     if annotations.get(fullname, {}):
++        # Create a copy of annotations without return type for classes
++        processed_annotations = annotations[fullname].copy()
++        # Remove return type for all objects, not just classes
++        if 'return' in processed_annotations:
++            del processed_annotations['return']
++
+         field_lists = [n for n in contentnode if isinstance(n, nodes.field_list)]
+         if field_lists == []:
+             field_list = insert_field_list(contentnode)
+@@ -59,14 +66,14 @@ def merge_typehints(app: Sphinx, domain: str, objtype: str, contentnode: Element
+ 
+         for field_list in field_lists:
+             if app.config.autodoc_typehints_description_target == "all":
+-                modify_field_list(field_list, annotations[fullname])
++                modify_field_list(field_list, processed_annotations)
+             elif app.config.autodoc_typehints_description_target == "documented_params":
+                 augment_descriptions_with_types(
+-                    field_list, annotations[fullname], force_rtype=True
++                    field_list, processed_annotations, force_rtype=True, objtype=objtype
+                 )
+             else:
+                 augment_descriptions_with_types(
+-                    field_list, annotations[fullname], force_rtype=False
++                    field_list, processed_annotations, force_rtype=False, objtype=objtype
+                 )
+ 
+ 
+@@ -133,7 +140,8 @@ def modify_field_list(node: nodes.field_list, annotations: Dict[str, str]) -> No
+ def augment_descriptions_with_types(
+     node: nodes.field_list,
+     annotations: Dict[str, str],
+-    force_rtype: bool
++    force_rtype: bool,
++    objtype: str
+ ) -> None:
+     fields = cast(Iterable[nodes.field], node)
+     has_description = set()  # type: Set[str]
+@@ -169,7 +177,8 @@ def augment_descriptions_with_types(
+             node += field
+ 
+     # Add 'rtype' if 'return' is present and 'rtype' isn't.
+-    if 'return' in annotations:
++    # Skip for classes and None returns since they don't need return types
++    if 'return' in annotations and not (objtype == 'class' or annotations['return'] == 'None'):
+         rtype = annotations['return']
+         if 'return' not in has_type and ('return' in has_description or
+                                          (force_rtype and rtype != "None")):
+diff --git a/tox.ini b/tox.ini
+index 105a02597..90ada0821 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -29,7 +29,7 @@ setenv =
+     PYTHONWARNINGS = all
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -X warn_default_encoding -m pytest --durations 25 {posargs}
++    python -X dev -X warn_default_encoding -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:du-latest]
+ commands =
+2025-06-27 16:01:10,466 - INFO - Eval script for sphinx-doc__sphinx-10449 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sphinx-doc__sphinx-10449/eval.sh; copying to container...
+2025-06-27 16:01:15,945 - INFO - Test runtime: 5.42 seconds
+2025-06-27 16:01:15,945 - INFO - Test output for sphinx-doc__sphinx-10449 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/sphinx-doc__sphinx-10449/test_output.txt
+2025-06-27 16:01:16,006 - INFO - Git diff after:
+diff --git a/sphinx/ext/autodoc/typehints.py b/sphinx/ext/autodoc/typehints.py
+index 06768168e..0e5df1550 100644
+--- a/sphinx/ext/autodoc/typehints.py
++++ b/sphinx/ext/autodoc/typehints.py
+@@ -28,8 +28,9 @@ def record_typehints(app: Sphinx, objtype: str, name: str, obj: Any,
+             for param in sig.parameters.values():
+                 if param.annotation is not param.empty:
+                     annotation[param.name] = typing.stringify(param.annotation, mode)
+-            if sig.return_annotation is not sig.empty:
+-                annotation['return'] = typing.stringify(sig.return_annotation, mode)
++            
++            # Skip return type recording entirely - only process parameter types
++            pass
+     except (TypeError, ValueError):
+         pass
+ 
+@@ -52,6 +53,12 @@ def merge_typehints(app: Sphinx, domain: str, objtype: str, contentnode: Element
+ 
+     annotations = app.env.temp_data.get('annotations', {})
+     if annotations.get(fullname, {}):
++        # Create a copy of annotations without return type for classes
++        processed_annotations = annotations[fullname].copy()
++        # Remove return type for all objects, not just classes
++        if 'return' in processed_annotations:
++            del processed_annotations['return']
++
+         field_lists = [n for n in contentnode if isinstance(n, nodes.field_list)]
+         if field_lists == []:
+             field_list = insert_field_list(contentnode)
+@@ -59,14 +66,14 @@ def merge_typehints(app: Sphinx, domain: str, objtype: str, contentnode: Element
+ 
+         for field_list in field_lists:
+             if app.config.autodoc_typehints_description_target == "all":
+-                modify_field_list(field_list, annotations[fullname])
++                modify_field_list(field_list, processed_annotations)
+             elif app.config.autodoc_typehints_description_target == "documented_params":
+                 augment_descriptions_with_types(
+-                    field_list, annotations[fullname], force_rtype=True
++                    field_list, processed_annotations, force_rtype=True, objtype=objtype
+                 )
+             else:
+                 augment_descriptions_with_types(
+-                    field_list, annotations[fullname], force_rtype=False
++                    field_list, processed_annotations, force_rtype=False, objtype=objtype
+                 )
+ 
+ 
+@@ -133,7 +140,8 @@ def modify_field_list(node: nodes.field_list, annotations: Dict[str, str]) -> No
+ def augment_descriptions_with_types(
+     node: nodes.field_list,
+     annotations: Dict[str, str],
+-    force_rtype: bool
++    force_rtype: bool,
++    objtype: str
+ ) -> None:
+     fields = cast(Iterable[nodes.field], node)
+     has_description = set()  # type: Set[str]
+@@ -169,7 +177,8 @@ def augment_descriptions_with_types(
+             node += field
+ 
+     # Add 'rtype' if 'return' is present and 'rtype' isn't.
+-    if 'return' in annotations:
++    # Skip for classes and None returns since they don't need return types
++    if 'return' in annotations and not (objtype == 'class' or annotations['return'] == 'None'):
+         rtype = annotations['return']
+         if 'return' not in has_type and ('return' in has_description or
+                                          (force_rtype and rtype != "None")):
+diff --git a/tox.ini b/tox.ini
+index 105a02597..90ada0821 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -29,7 +29,7 @@ setenv =
+     PYTHONWARNINGS = all
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -X warn_default_encoding -m pytest --durations 25 {posargs}
++    python -X dev -X warn_default_encoding -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:du-latest]
+ commands =
+2025-06-27 16:01:16,006 - INFO - Grading answer for sphinx-doc__sphinx-10449...
+2025-06-27 16:01:16,014 - INFO - report: {'sphinx-doc__sphinx-10449': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['tests/test_ext_autodoc_configs.py::test_autodoc_typehints_description_with_documented_init']}, 'PASS_TO_PASS': {'success': ['tests/test_ext_autodoc_configs.py::test_autoclass_content_class', 'tests/test_ext_autodoc_configs.py::test_autoclass_content_init', 'tests/test_ext_autodoc_configs.py::test_autodoc_class_signature_mixed', 'tests/test_ext_autodoc_configs.py::test_autodoc_class_signature_separated_init', 'tests/test_ext_autodoc_configs.py::test_autodoc_class_signature_separated_new', 'tests/test_ext_autodoc_configs.py::test_autoclass_content_both', 'tests/test_ext_autodoc_configs.py::test_autodoc_inherit_docstrings', 'tests/test_ext_autodoc_configs.py::test_autodoc_docstring_signature', 'tests/test_ext_autodoc_configs.py::test_autoclass_content_and_docstring_signature_class', 'tests/test_ext_autodoc_configs.py::test_autoclass_content_and_docstring_signature_init', 'tests/test_ext_autodoc_configs.py::test_autoclass_content_and_docstring_signature_both', 'tests/test_ext_autodoc_configs.py::test_mocked_module_imports', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_signature', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_none', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_none_for_overload', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_description_with_documented_init_no_undoc', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_description_with_documented_init_no_undoc_doc_rtype', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_description_for_invalid_node', 'tests/test_ext_autodoc_configs.py::test_autodoc_type_aliases', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_format_fully_qualified', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_format_fully_qualified_for_class_alias', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_format_fully_qualified_for_generic_alias', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_format_fully_qualified_for_newtype_alias', 'tests/test_ext_autodoc_configs.py::test_autodoc_default_options', 'tests/test_ext_autodoc_configs.py::test_autodoc_default_options_with_values'], 'failure': ['tests/test_ext_autodoc_configs.py::test_autodoc_typehints_description', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_description_no_undoc', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_description_no_undoc_doc_rtype', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_both', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_description_and_type_aliases']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sphinx-doc__sphinx-10449: resolved: False
+2025-06-27 16:01:16,014 - INFO - Attempting to stop container sweb.eval.sphinx-doc__sphinx-10449.20250627_135628...
+2025-06-27 16:01:31,186 - INFO - Attempting to remove container sweb.eval.sphinx-doc__sphinx-10449.20250627_135628...
+2025-06-27 16:01:31,205 - INFO - Container sweb.eval.sphinx-doc__sphinx-10449.20250627_135628 removed.

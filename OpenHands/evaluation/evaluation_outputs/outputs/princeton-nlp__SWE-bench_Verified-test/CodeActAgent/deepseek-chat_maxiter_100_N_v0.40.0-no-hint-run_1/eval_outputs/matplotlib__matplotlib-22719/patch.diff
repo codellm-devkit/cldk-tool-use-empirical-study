@@ -1,0 +1,78 @@
+diff --git a/lib/matplotlib/axes/_axes.py b/lib/matplotlib/axes/_axes.py
+index f1ec9406ea..30a384c6fe 100644
+--- a/lib/matplotlib/axes/_axes.py
++++ b/lib/matplotlib/axes/_axes.py
+@@ -1634,6 +1634,12 @@ class Axes(_AxesBase):
+         additionally use any  `matplotlib.colors` spec, e.g. full names
+         (``'green'``) or hex strings (``'#008000'``).
+         """
++        # Handle empty arrays
++        if len(args) >= 1 and hasattr(args[0], '__len__') and len(args[0]) == 0:
++            args = (np.array([], dtype=float), *args[1:])
++        if len(args) >= 2 and hasattr(args[1], '__len__') and len(args[1]) == 0:
++            args = (args[0], np.array([], dtype=float), *args[2:])
++            
+         kwargs = cbook.normalize_kwargs(kwargs, mlines.Line2D)
+         lines = [*self._get_lines(*args, data=data, **kwargs)]
+         for line in lines:
+@@ -8093,6 +8099,12 @@ such objects
+ 
+     table = mtable.table
+ 
++    def _safe_convert_units(self, x, axis):
++        """Safely convert units handling empty arrays."""
++        if hasattr(x, '__len__') and len(x) == 0:
++            return np.array([], dtype=float)
++        return getattr(self, f'{axis}axis').convert_units(x)
++
+     # args can by either Y or y1, y2, ... and all should be replaced
+     stackplot = _preprocess_data()(mstack.stackplot)
+ 
+diff --git a/lib/matplotlib/category.py b/lib/matplotlib/category.py
+index c823b68fd9..e6efa74fa0 100644
+--- a/lib/matplotlib/category.py
++++ b/lib/matplotlib/category.py
+@@ -45,25 +45,32 @@ class StrCategoryConverter(units.ConversionInterface):
+         -------
+         float or ndarray[float]
+         """
++        # Return empty array immediately for empty input
++        if isinstance(value, (list, np.ndarray)) and len(value) == 0:
++            return np.array([], dtype=float)
++            
+         if unit is None:
+             raise ValueError(
+                 'Missing category information for StrCategoryConverter; '
+                 'this might be caused by unintendedly mixing categorical and '
+                 'numeric data')
+         StrCategoryConverter._validate_unit(unit)
++            
+         # dtype = object preserves numerical pass throughs
+         values = np.atleast_1d(np.array(value, dtype=object))
+-        # pass through sequence of non binary numbers
+-        with _api.suppress_matplotlib_deprecation_warning():
+-            is_numlike = all(units.ConversionInterface.is_numlike(v)
+-                             and not isinstance(v, (str, bytes))
+-                             for v in values)
+-        if is_numlike:
+-            _api.warn_deprecated(
+-                "3.5", message="Support for passing numbers through unit "
+-                "converters is deprecated since %(since)s and support will be "
+-                "removed %(removal)s; use Axis.convert_units instead.")
+-            return np.asarray(values, dtype=float)
++        
++        # Skip empty arrays and non-numeric data
++        if len(values) > 0:
++            with _api.suppress_matplotlib_deprecation_warning():
++                is_numlike = all(units.ConversionInterface.is_numlike(v)
++                                 and not isinstance(v, (str, bytes))
++                                 for v in values)
++            if is_numlike:
++                _api.warn_deprecated(
++                    "3.5", message="Support for passing numbers through unit "
++                    "converters is deprecated since %(since)s and support will be "
++                    "removed %(removal)s; use Axis.convert_units instead.")
++                return np.asarray(values, dtype=float)
+         # force an update so it also does type checking
+         unit.update(values)
+         return np.vectorize(unit._mapping.__getitem__, otypes=[float])(values)

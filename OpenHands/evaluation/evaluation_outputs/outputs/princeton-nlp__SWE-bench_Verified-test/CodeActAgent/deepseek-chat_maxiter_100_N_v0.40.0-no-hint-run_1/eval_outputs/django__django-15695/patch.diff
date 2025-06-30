@@ -1,0 +1,30 @@
+diff --git a/django/db/migrations/operations/models.py b/django/db/migrations/operations/models.py
+index d17232e4ec..2081678b11 100644
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -967,7 +967,24 @@ class RenameIndex(IndexOperation):
+ 
+     def database_backwards(self, app_label, schema_editor, from_state, to_state):
+         if self.old_fields:
+-            # Backward operation with unnamed index is a no-op.
++            # For unnamed indexes, restore the original auto-generated name
++            model = from_state.apps.get_model(app_label, self.model_name)
++            if not self.allow_migrate_model(schema_editor.connection.alias, model):
++                return
++            columns = [
++                model._meta.get_field(field).column for field in self.old_fields
++            ]
++            matching_index_name = schema_editor._constraint_names(
++                model, column_names=columns, index=True
++            )
++            if len(matching_index_name) != 1:
++                return
++            old_index = models.Index(
++                fields=self.old_fields,
++                name=matching_index_name[0],
++            )
++            new_index = models.Index(fields=self.old_fields, name=self.new_name)
++            schema_editor.rename_index(model, new_index, old_index)
+             return
+ 
+         self.new_name_lower, self.old_name_lower = (

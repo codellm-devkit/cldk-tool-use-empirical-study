@@ -1,0 +1,79 @@
+diff --git a/django/utils/deprecation.py b/django/utils/deprecation.py
+index b2c681b33c..8cff42b4b3 100644
+--- a/django/utils/deprecation.py
++++ b/django/utils/deprecation.py
+@@ -132,6 +132,8 @@ class MiddlewareMixin:
+             )(request)
+         response = response or await self.get_response(request)
+         if hasattr(self, 'process_response'):
++            if asyncio.iscoroutine(response):
++                response = await response
+             response = await sync_to_async(
+                 self.process_response,
+                 thread_sensitive=True,
+diff --git a/run_middleware_test.py b/run_middleware_test.py
+new file mode 100644
+index 0000000000..cf5aff3417
+--- /dev/null
++++ b/run_middleware_test.py
+@@ -0,0 +1,19 @@
++
++import os
++import django
++from django.conf import settings
++
++if not settings.configured:
++    settings.configure(
++        SECRET_KEY='test',
++        ROOT_URLCONF='tests.urls',
++        MIDDLEWARE=[],
++    )
++    django.setup()
++
++from django.test.runner import DiscoverRunner
++
++test_runner = DiscoverRunner(verbosity=2)
++failures = test_runner.run_tests(['tests.asgi_middleware_test'])
++if failures:
++    exit(1)
+diff --git a/tests/asgi_middleware_test/test_coroutine_response.py b/tests/asgi_middleware_test/test_coroutine_response.py
+new file mode 100644
+index 0000000000..e8c2285a34
+--- /dev/null
++++ b/tests/asgi_middleware_test/test_coroutine_response.py
+@@ -0,0 +1,35 @@
++
++import asyncio
++from django.http import HttpResponse
++from django.test import SimpleTestCase
++from django.utils.deprecation import MiddlewareMixin
++
++class SyncMiddleware(MiddlewareMixin):
++    def process_response(self, request, response):
++        return response
++
++class AsyncMiddleware(MiddlewareMixin):
++    async_capable = True
++    sync_capable = True
++    
++    def process_response(self, request, response):
++        return response
++
++class ASGIMiddlewareTest(SimpleTestCase):
++    async def test_async_middleware(self):
++        async def get_response(request):
++            return HttpResponse("Test")
++            
++        middleware = AsyncMiddleware(get_response)
++        response = await middleware.__acall__("fake_request")
++        self.assertIsInstance(response, HttpResponse)
++        self.assertEqual(response.content, b"Test")
++
++    def test_sync_middleware(self):
++        def get_response(request):
++            return HttpResponse("Test")
++            
++        middleware = SyncMiddleware(get_response)
++        response = middleware("fake_request")
++        self.assertIsInstance(response, HttpResponse)
++        self.assertEqual(response.content, b"Test")

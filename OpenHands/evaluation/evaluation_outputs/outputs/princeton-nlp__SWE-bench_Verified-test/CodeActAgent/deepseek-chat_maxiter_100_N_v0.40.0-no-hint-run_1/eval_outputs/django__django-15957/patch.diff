@@ -1,0 +1,113 @@
+diff --git a/django/db/models/fields/related_descriptors.py b/django/db/models/fields/related_descriptors.py
+index b192df4fbf..2463ad0462 100644
+--- a/django/db/models/fields/related_descriptors.py
++++ b/django/db/models/fields/related_descriptors.py
+@@ -132,12 +132,13 @@ class ForwardManyToOneDescriptor:
+         related_field = self.field.foreign_related_fields[0]
+         remote_field = self.field.remote_field
+ 
+-        # FIXME: This will need to be revisited when we introduce support for
+-        # composite fields. In the meantime we take this practical approach to
+-        # solve a regression on 1.6 when the reverse manager in hidden
+-        # (related_name ends with a '+'). Refs #21410.
+-        # The check for len(...) == 1 is a special case that allows the query
+-        # to be join-less and smaller. Refs #21760.
++        # Handle sliced querysets by first applying the slice
++        is_sliced = getattr(queryset, '_is_sliced', False)
++        if is_sliced:
++            sliced_queryset = queryset._clone()
++            queryset = queryset._clone()
++            queryset.query.clear_limits()
++
+         if remote_field.is_hidden() or len(self.field.foreign_related_fields) == 1:
+             query = {
+                 "%s__in"
+@@ -147,6 +148,11 @@ class ForwardManyToOneDescriptor:
+             query = {"%s__in" % self.field.related_query_name(): instances}
+         queryset = queryset.filter(**query)
+ 
++        # Reapply slice after filtering if original queryset was sliced
++        if is_sliced:
++            queryset = sliced_queryset._clone()
++            queryset._result_cache = list(queryset._result_cache)[:sliced_queryset.query.high_mark]
++
+         # Since we're going to assign directly in the cache,
+         # we must manage the reverse relation cache manually.
+         if not remote_field.multiple:
+diff --git a/django/db/models/query.py b/django/db/models/query.py
+index be0deb90b0..d26523ac8c 100644
+--- a/django/db/models/query.py
++++ b/django/db/models/query.py
+@@ -2162,6 +2162,7 @@ class Prefetch:
+ 
+         self.queryset = queryset
+         self.to_attr = to_attr
++        self._is_sliced = queryset is not None and queryset.query.is_sliced
+ 
+     def __getstate__(self):
+         obj_dict = self.__dict__.copy()
+diff --git a/test_settings.py b/test_settings.py
+new file mode 100644
+index 0000000000..ba32c57949
+--- /dev/null
++++ b/test_settings.py
+@@ -0,0 +1,13 @@
++
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++INSTALLED_APPS = [
++    'django.contrib.contenttypes',
++    'django.contrib.auth',
++    'tests.prefetch_related',
++]
++SECRET_KEY = 'test'
+diff --git a/tests/prefetch_related/tests.py b/tests/prefetch_related/tests.py
+index 1ac17fde73..602057c685 100644
+--- a/tests/prefetch_related/tests.py
++++ b/tests/prefetch_related/tests.py
+@@ -48,6 +48,13 @@ class TestDataMixin:
+ 
+         cls.author1 = Author.objects.create(name="Charlotte", first_book=cls.book1)
+         cls.author2 = Author.objects.create(name="Anne", first_book=cls.book1)
++        # Add some books with authors for testing prefetch with slices
++        cls.book_with_authors1 = Book.objects.create(title="Book with authors 1")
++        cls.book_with_authors2 = Book.objects.create(title="Book with authors 2")
++        for i in range(10):
++            author = Author.objects.create(name=f"Author {i}", first_book=cls.book1)
++            cls.book_with_authors1.authors.add(author)
++            cls.book_with_authors2.authors.add(author)
+         cls.author3 = Author.objects.create(name="Emily", first_book=cls.book1)
+         cls.author4 = Author.objects.create(name="Jane", first_book=cls.book4)
+ 
+@@ -541,6 +548,27 @@ class CustomPrefetchTests(TestCase):
+                     [["houses", "rooms"]],
+                 )
+ 
++    def test_prefetch_with_sliced_queryset(self):
++        # Test that prefetch_related works with sliced querysets
++        books = Book.objects.filter(
++            pk__in=[self.book_with_authors1.pk, self.book_with_authors2.pk]
++        ).prefetch_related(
++            Prefetch(
++                'authors',
++                queryset=Author.objects.order_by('name')[:3],  # Only get first 3 authors
++                to_attr='first_three_authors'
++            )
++        )
++        
++        with self.assertNumQueries(2):
++            for book in books:
++                authors = book.first_three_authors
++                self.assertEqual(len(authors), 3)
++                # Verify we got the first 3 alphabetically
++                self.assertEqual(authors[0].name, "Author 0")
++                self.assertEqual(authors[1].name, "Author 1")
++                self.assertEqual(authors[2].name, "Author 2")
++
+         # Ambiguous: Lookup houses_lst doesn't yet exist when performing
+         # houses_lst__rooms.
+         msg = (

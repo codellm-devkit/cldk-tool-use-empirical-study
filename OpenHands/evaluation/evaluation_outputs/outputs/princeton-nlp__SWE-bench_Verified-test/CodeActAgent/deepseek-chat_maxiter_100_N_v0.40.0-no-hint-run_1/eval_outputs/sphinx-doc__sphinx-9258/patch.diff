@@ -1,0 +1,64 @@
+diff --git a/sphinx/ext/napoleon/docstring.py b/sphinx/ext/napoleon/docstring.py
+index d8cb75a5f..124c7c367 100644
+--- a/sphinx/ext/napoleon/docstring.py
++++ b/sphinx/ext/napoleon/docstring.py
+@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
+ 
+ _directive_regex = re.compile(r'\.\. \S+::')
+ _google_section_regex = re.compile(r'^(\s|\w)+:\s*$')
+-_google_typed_arg_regex = re.compile(r'(.+?)\(\s*(.*[^\s]+)\s*\)')
++_google_typed_arg_regex = re.compile(r'(.+?)(?:\(\s*(.*[^\s]+)\s*\)|:\s*(.*[^\s\|]+(?:\s*\|\s*[^\s\|]+)*)\s*)')
+ _numpy_section_regex = re.compile(r'^[=\-`:\'"~^_*+#<>]{2,}\s*$')
+ _single_colon_regex = re.compile(r'(?<!:):(?!:)')
+ _xref_or_code_regex = re.compile(
+@@ -56,15 +56,29 @@ _SINGLETONS = ("None", "True", "False", "Ellipsis")
+ 
+ def _convert_type_spec(_type: str, translations: Dict[str, str] = {}) -> str:
+     """Convert type specification to reference in reST."""
++    print(f"DEBUG - Converting type: {_type}")  # Debug output
++    _type = _type.strip()
+     if _type in translations:
+         return translations[_type]
++    
++    if '|' in _type:
++        types = []
++        for t in _type.split('|'):
++            converted = _convert_type_spec(t, translations)
++            # Only add :class: if not already present and not a special type
++            if not converted.startswith((':class:', ':obj:')) and t.strip() != 'None':
++                converted = f':class:`{t.strip()}`'
++            types.append(converted)
++        result = ' | '.join(types)
++        print(f"DEBUG - Union type result: {result}")  # Debug output
++        return result
++    
++    if _type == 'None':
++        return ':obj:`None`'
+     else:
+-        if _type == 'None':
+-            return ':obj:`None`'
+-        else:
+-            return ':class:`%s`' % _type
+-
+-    return _type
++        result = f':class:`{_type}`'
++        print(f"DEBUG - Simple type result: {result}")  # Debug output
++        return result
+ 
+ 
+ class GoogleDocstring:
+@@ -262,12 +276,14 @@ class GoogleDocstring:
+ 
+         before, colon, after = self._partition_field_on_colon(line)
+         _name, _type, _desc = before, '', after
++        print(f"DEBUG - Raw before: {before}")  # Debug output
+ 
+         if parse_type:
+             match = _google_typed_arg_regex.match(before)
+             if match:
+                 _name = match.group(1).strip()
+-                _type = match.group(2)
++                _type = match.group(2) or match.group(3)  # Handle both capture groups
++                print(f"DEBUG - Parsed name: {_name}, type: {_type}")  # Debug output
+ 
+         _name = self._escape_args_and_kwargs(_name)

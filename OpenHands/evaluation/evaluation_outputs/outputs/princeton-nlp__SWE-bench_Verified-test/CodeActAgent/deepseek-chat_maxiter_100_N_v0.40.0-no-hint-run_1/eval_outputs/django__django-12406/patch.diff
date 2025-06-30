@@ -1,0 +1,81 @@
+diff --git a/django/forms/models.py b/django/forms/models.py
+index dafc11f995..094c5942ec 100644
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1192,6 +1192,9 @@ class ModelChoiceField(ChoiceField):
+ 
+         # Call Field instead of ChoiceField __init__() because we don't need
+         # ChoiceField.__init__().
++        if widget is None or isinstance(widget, RadioSelect):
++            from django.forms.widgets import RadioSelect
++            widget = RadioSelect(allow_empty=not required)
+         Field.__init__(
+             self, required=required, widget=widget, label=label,
+             initial=initial, help_text=help_text, **kwargs
+diff --git a/django/forms/widgets.py b/django/forms/widgets.py
+index 40ac1d3162..b6ae4f1c16 100644
+--- a/django/forms/widgets.py
++++ b/django/forms/widgets.py
+@@ -755,10 +755,26 @@ class SelectMultiple(Select):
+ 
+ 
+ class RadioSelect(ChoiceWidget):
++    """
++    A radio input widget that can optionally exclude blank/null choices.
++    
++    Attributes:
++        allow_empty (bool): If False, excludes blank/null choices from being rendered.
++                           Defaults to True for backward compatibility.
++    """
+     input_type = 'radio'
+     template_name = 'django/forms/widgets/radio.html'
+     option_template_name = 'django/forms/widgets/radio_option.html'
+ 
++    def __init__(self, attrs=None, choices=(), allow_empty=True):
++        self.allow_empty = allow_empty
++        super().__init__(attrs, choices)
++
++    def optgroups(self, name, value, attrs=None):
++        if not self.allow_empty:
++            self.choices = [c for c in self.choices if c[0] not in ('', None)]
++        return super().optgroups(name, value, attrs)
++
+ 
+ class CheckboxSelectMultiple(ChoiceWidget):
+     allow_multiple_selected = True
+diff --git a/docs/ref/forms/widgets.txt b/docs/ref/forms/widgets.txt
+index e986154753..4f98c8513c 100644
+--- a/docs/ref/forms/widgets.txt
++++ b/docs/ref/forms/widgets.txt
+@@ -690,6 +690,8 @@ that specifies the template used to render each choice. For example, for the
+ 
+     * ``template_name``: ``'django/forms/widgets/radio.html'``
+     * ``option_template_name``: ``'django/forms/widgets/radio_option.html'``
++    * ``allow_empty``: When ``False``, excludes blank/null choices from being rendered.
++      Defaults to ``True`` for backward compatibility.
+ 
+     Similar to :class:`Select`, but rendered as a list of radio buttons within
+     ``<li>`` tags:
+diff --git a/tests/forms_tests/widget_tests/test_radioselect.py b/tests/forms_tests/widget_tests/test_radioselect.py
+index 0f85563a58..78e59c9f5b 100644
+--- a/tests/forms_tests/widget_tests/test_radioselect.py
++++ b/tests/forms_tests/widget_tests/test_radioselect.py
+@@ -143,3 +143,18 @@ class RadioSelectTest(WidgetTest):
+             <li><label><input type="radio" name="beatle_0" value="R"> Ringo</label></li>
+             </ul>"""
+         ))
++
++    def test_no_blank_option_when_allow_empty_false(self):
++        """RadioSelect doesn't render blank option when allow_empty=False."""
++        choices = (('', '------'),) + self.beatles
++        self.check_html(
++            self.widget(choices=choices, allow_empty=False),
++            'beatle',
++            'J',
++            html="""<ul>
++            <li><label><input checked type="radio" name="beatle" value="J"> John</label></li>
++            <li><label><input type="radio" name="beatle" value="P"> Paul</label></li>
++            <li><label><input type="radio" name="beatle" value="G"> George</label></li>
++            <li><label><input type="radio" name="beatle" value="R"> Ringo</label></li>
++            </ul>"""
++        )

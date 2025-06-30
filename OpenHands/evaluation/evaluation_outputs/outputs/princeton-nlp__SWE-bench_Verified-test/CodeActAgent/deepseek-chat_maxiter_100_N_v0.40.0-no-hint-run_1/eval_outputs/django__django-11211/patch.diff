@@ -1,0 +1,134 @@
+diff --git a/django/contrib/contenttypes/fields.py b/django/contrib/contenttypes/fields.py
+index ed98ecb48c..2c7ae2a38f 100644
+--- a/django/contrib/contenttypes/fields.py
++++ b/django/contrib/contenttypes/fields.py
+@@ -184,14 +184,28 @@ class GenericForeignKey(FieldCacheMixin):
+             if ct_id is not None:
+                 fk_val = getattr(instance, self.fk_field)
+                 if fk_val is not None:
+-                    fk_dict[ct_id].add(fk_val)
++                    # Get the field to properly convert UUID strings if needed
++                    field = self.model._meta.get_field(self.fk_field)
++                    prepared_value = field.get_prep_value(fk_val)
++                    # Ensure UUID strings are properly converted
++                    if isinstance(prepared_value, str):
++                        try:
++                            import uuid
++                            prepared_value = uuid.UUID(prepared_value)
++                        except (ValueError, AttributeError):
++                            pass
++                    fk_dict[ct_id].add(prepared_value)
+                     instance_dict[ct_id] = instance
+ 
+         ret_val = []
+         for ct_id, fkeys in fk_dict.items():
+             instance = instance_dict[ct_id]
+             ct = self.get_content_type(id=ct_id, using=instance._state.db)
+-            ret_val.extend(ct.get_all_objects_for_this_type(pk__in=fkeys))
++            try:
++                ret_val.extend(ct.get_all_objects_for_this_type(pk__in=fkeys))
++            except ValueError:
++                # Handle case where UUID conversion failed
++                ret_val.extend(ct.get_all_objects_for_this_type(pk__in=[str(fk) for fk in fkeys]))
+ 
+         # For doing the join in Python, we have to match both the FK val and the
+         # content type, so we use a callable that returns a (fk, class) pair.
+@@ -201,8 +215,18 @@ class GenericForeignKey(FieldCacheMixin):
+                 return None
+             else:
+                 model = self.get_content_type(id=ct_id,
+-                                              using=obj._state.db).model_class()
+-                return (model._meta.pk.get_prep_value(getattr(obj, self.fk_field)),
++                                            using=obj._state.db).model_class()
++                if model is None:
++                    return None
++                fk_value = getattr(obj, self.fk_field)
++                # Ensure UUID strings are properly converted for comparison
++                if isinstance(fk_value, str):
++                    try:
++                        import uuid
++                        fk_value = uuid.UUID(fk_value)
++                    except (ValueError, AttributeError):
++                        pass
++                return (model._meta.pk.get_prep_value(fk_value),
+                         model)
+ 
+         return (
+diff --git a/tests/prefetch_related/models.py b/tests/prefetch_related/models.py
+index 091d600475..7ec9b81740 100644
+--- a/tests/prefetch_related/models.py
++++ b/tests/prefetch_related/models.py
+@@ -16,6 +16,7 @@ class Author(models.Model):
+         'self', through='FavoriteAuthors', symmetrical=False, related_name='favors_me')
+ 
+     class Meta:
++        app_label = 'prefetch_related'
+         ordering = ['id']
+ 
+     def __str__(self):
+@@ -295,3 +296,15 @@ class Flea(models.Model):
+     current_room = models.ForeignKey(Room, models.SET_NULL, related_name='fleas', null=True)
+     pets_visited = models.ManyToManyField(Pet, related_name='fleas_hosted')
+     people_visited = models.ManyToManyField(Person, related_name='fleas_hosted')
++
++
++# Model for GenericForeignKey with UUID pk test
++class GFKWithUUID(models.Model):
++    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
++    name = models.CharField(max_length=20)
++    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
++    object_id = models.CharField(max_length=255)
++    content_object = GenericForeignKey('content_type', 'object_id')
++
++    class Meta:
++        app_label = 'prefetch_related'
+diff --git a/tests/prefetch_related/test_uuid.py b/tests/prefetch_related/test_uuid.py
+index 11a2474f4a..192dc0bb4d 100644
+--- a/tests/prefetch_related/test_uuid.py
++++ b/tests/prefetch_related/test_uuid.py
+@@ -1,6 +1,12 @@
+-from django.test import TestCase
++from django.test import TestCase, override_settings
++from django.apps import apps
+ 
+-from .models import Flea, House, Person, Pet, Room
++from django.contrib.contenttypes.models import ContentType
++
++# Ensure the prefetch_related app is loaded
++apps.get_app_config('prefetch_related')
++
++from .models import Flea, House, Person, Pet, Room, GFKWithUUID
+ 
+ 
+ class UUIDPrefetchRelated(TestCase):
+@@ -68,6 +74,30 @@ class UUIDPrefetchRelatedLookups(TestCase):
+         person.pets.add(pet)
+         person.fleas_hosted.add(*fleas)
+ 
++
++class UUIDGenericForeignKeyTest(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        # Create test objects with distinct names to avoid conflicts
++        cls.pet = Pet.objects.create(name='TestPet')
++        # Create GFK by directly assigning content_object
++        cls.gfk = GFKWithUUID.objects.create(
++            name='TestGFK',
++            content_object=cls.pet
++        )
++        # Verify the relationship was saved correctly
++        cls.gfk = GFKWithUUID.objects.get(pk=cls.gfk.pk)
++        print(f"GFK content_type: {cls.gfk.content_type}")  # Debug output
++        print(f"GFK object_id: {cls.gfk.object_id}")  # Debug output
++        print(f"GFK content_object: {cls.gfk.content_object}")  # Debug output
++
++    def test_prefetch_related_with_gfk_uuid_pk(self):
++        with self.assertNumQueries(2):
++            gfk = GFKWithUUID.objects.prefetch_related('content_object').get(name='TestGFK')
++        with self.assertNumQueries(0):
++            self.assertIsNotNone(gfk.content_object)
++            self.assertEqual(gfk.content_object.name, 'TestPet')
++
+     def test_from_uuid_pk_lookup_uuid_pk_integer_pk(self):
+         # From uuid-pk model, prefetch <uuid-pk model>.<integer-pk model>:
+         with self.assertNumQueries(4):

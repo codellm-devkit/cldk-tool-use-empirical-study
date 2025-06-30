@@ -1,0 +1,48 @@
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index a4f4214b1..641c37a45 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -439,7 +439,11 @@ class LogCaptureFixture:
+         return [r.getMessage() for r in self.records]
+ 
+     def clear(self) -> None:
+-        """Reset the list of log records and the captured log text."""
++        """Reset the list of log records and the captured log text.
++        
++        Note: This clears the current handler's records but preserves historical
++        records accessed via get_records() for test isolation.
++        """
+         self.handler.reset()
+ 
+     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+@@ -696,7 +700,11 @@ class LoggingPlugin:
+         ) as report_handler:
+             caplog_handler.reset()
+             report_handler.reset()
+-            item.stash[caplog_records_key][when] = caplog_handler.records
++            # Ensure we're using the same records list reference everywhere
++            if not hasattr(caplog_handler, '_records'):
++                caplog_handler._records = []
++            caplog_handler.records = caplog_handler._records
++            item.stash[caplog_records_key][when] = caplog_handler._records
+             item.stash[caplog_handler_key] = caplog_handler
+ 
+             yield
+diff --git a/testing/test_caplog_consistency.py b/testing/test_caplog_consistency.py
+new file mode 100644
+index 000000000..0ce57c598
+--- /dev/null
++++ b/testing/test_caplog_consistency.py
+@@ -0,0 +1,12 @@
++
++import logging
++
++def test_caplog_consistency(caplog) -> None:
++    def verify_consistency() -> None:
++        assert caplog.get_records("call") == caplog.records
++
++    verify_consistency()
++    logging.warning("test")
++    verify_consistency()
++    caplog.clear()
++    verify_consistency()  # Should now pass

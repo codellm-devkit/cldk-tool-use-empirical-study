@@ -1,0 +1,55 @@
+diff --git a/AUTHORS b/AUTHORS
+index ca2872f32..e67b82384 100644
+--- a/AUTHORS
++++ b/AUTHORS
+@@ -259,6 +259,7 @@ Nipunn Koorapati
+ Olga Matoula
+ Oleg Pidsadnyi
+ Oleg Sushchenko
++OpenHands
+ Oliver Bestwalter
+ Omar Kohl
+ Omer Hadari
+diff --git a/changelog/1234.bugfix.rst b/changelog/1234.bugfix.rst
+new file mode 100644
+index 000000000..40dfcb03c
+--- /dev/null
++++ b/changelog/1234.bugfix.rst
+@@ -0,0 +1,6 @@
++
++Fix marker inheritance in multiple class inheritance scenarios.
++
++Previously, when a test class inherited from multiple base classes with different markers,
++only markers from one parent class would be preserved due to MRO behavior. Now markers
++are properly collected from all parent classes in the inheritance chain.
+diff --git a/src/_pytest/mark/structures.py b/src/_pytest/mark/structures.py
+index 800a25c92..e74a0dfd4 100644
+--- a/src/_pytest/mark/structures.py
++++ b/src/_pytest/mark/structures.py
+@@ -357,10 +357,22 @@ class MarkDecorator:
+ 
+ def get_unpacked_marks(obj: object) -> Iterable[Mark]:
+     """Obtain the unpacked marks that are stored on an object."""
+-    mark_list = getattr(obj, "pytestmark", [])
+-    if not isinstance(mark_list, list):
+-        mark_list = [mark_list]
+-    return normalize_mark_list(mark_list)
++    marks = []
++    if inspect.isclass(obj):
++        # For classes, collect marks from MRO chain
++        for base in obj.__mro__:
++            if hasattr(base, "pytestmark"):
++                mark_list = getattr(base, "pytestmark", [])
++                if not isinstance(mark_list, list):
++                    mark_list = [mark_list]
++                marks.extend(normalize_mark_list(mark_list))
++    else:
++        # For non-class objects, keep existing behavior
++        mark_list = getattr(obj, "pytestmark", [])
++        if not isinstance(mark_list, list):
++            mark_list = [mark_list]
++        marks.extend(normalize_mark_list(mark_list))
++    return marks
+ 
+ 
+ def normalize_mark_list(

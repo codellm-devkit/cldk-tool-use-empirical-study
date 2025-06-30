@@ -1,0 +1,174 @@
+diff --git a/sympy/matrices/expressions/matadd.py b/sympy/matrices/expressions/matadd.py
+index bef8e1e9ea..209a7435d2 100644
+--- a/sympy/matrices/expressions/matadd.py
++++ b/sympy/matrices/expressions/matadd.py
+@@ -28,12 +28,25 @@ class MatAdd(MatrixExpr, AssocOp):
+     is_MatAdd = True
+ 
+     def __new__(cls, *args, **kwargs):
+-        args = list(map(sympify, args))
++        from sympy.core.mul import Mul
++        from sympy.core.numbers import NegativeOne
++        
++        # Process arguments while preserving subtraction forms
++        processed_args = []
++        for arg in args:
++            arg = sympify(arg)
++            if (isinstance(arg, Mul) and 
++                len(arg.args) == 2 and 
++                arg.args[0] is NegativeOne and
++                isinstance(arg.args[1], MatrixExpr)):
++                processed_args.append(-arg.args[1])
++            else:
++                processed_args.append(arg)
++        
+         check = kwargs.get('check', True)
+-
+-        obj = Basic.__new__(cls, *args)
++        obj = Basic.__new__(cls, *processed_args)
+         if check:
+-            validate(*args)
++            validate(*processed_args)
+         return obj
+ 
+     @property
+@@ -49,6 +62,59 @@ def _eval_transpose(self):
+     def _eval_adjoint(self):
+         return MatAdd(*[adjoint(arg) for arg in self.args]).doit()
+ 
++    def _sympystr(self, printer):
++        from sympy.core.exprtools import factor_terms
++        terms = []
++        for term in self.args:
++            coeff, term = factor_terms(term).as_coeff_Mul()
++            if coeff.is_negative:
++                if terms:
++                    terms.append(' - ' + printer._print(-coeff*term))
++                else:
++                    terms.append('-' + printer._print(-coeff*term))
++            else:
++                if terms:
++                    terms.append(' + ' + printer._print(term))
++                else:
++                    terms.append(printer._print(term))
++        return ''.join(terms)
++
++    def _pretty(self, printer):
++        from sympy.core.exprtools import factor_terms
++        from sympy.printing.pretty.stringpict import prettyForm
++        terms = []
++        for term in self.args:
++            coeff, term = factor_terms(term).as_coeff_Mul()
++            if coeff.is_negative:
++                if terms:
++                    terms.append(prettyForm(' - '))
++                    terms.append(printer._print(-coeff*term))
++                else:
++                    terms.append(prettyForm('-'))
++                    terms.append(printer._print(-coeff*term))
++            else:
++                if terms:
++                    terms.append(prettyForm(' + '))
++                terms.append(printer._print(term))
++        return prettyForm(*terms)
++
++    def _latex(self, printer):
++        from sympy.core.exprtools import factor_terms
++        terms = []
++        for term in self.args:
++            coeff, term = factor_terms(term).as_coeff_Mul()
++            if coeff.is_negative:
++                if terms:
++                    terms.append(' - ' + printer._print(-coeff*term, mode='plain'))
++                else:
++                    terms.append('-' + printer._print(-coeff*term, mode='plain'))
++            else:
++                if terms:
++                    terms.append(' + ' + printer._print(term, mode='plain'))
++                else:
++                    terms.append(printer._print(term, mode='plain'))
++        return ''.join(terms)
++
+     def _eval_trace(self):
+         from .trace import trace
+         return Add(*[trace(arg) for arg in self.args]).doit()
+diff --git a/sympy/matrices/expressions/matexpr.py b/sympy/matrices/expressions/matexpr.py
+index 07dd23549b..af7f59ece4 100644
+--- a/sympy/matrices/expressions/matexpr.py
++++ b/sympy/matrices/expressions/matexpr.py
+@@ -89,15 +89,17 @@ def __abs__(self):
+     def __add__(self, other):
+         return MatAdd(self, other).doit()
+ 
++    @_sympifyit('other', NotImplemented)
++    @call_highest_priority('__rsub__')
++    def __sub__(self, other):
++        from sympy.matrices.expressions.matadd import MatAdd
++        return MatAdd(self, -other, evaluate=False)
++
+     @_sympifyit('other', NotImplemented)
+     @call_highest_priority('__add__')
+     def __radd__(self, other):
+         return MatAdd(other, self).doit()
+ 
+-    @_sympifyit('other', NotImplemented)
+-    @call_highest_priority('__rsub__')
+-    def __sub__(self, other):
+-        return MatAdd(self, -other).doit()
+ 
+     @_sympifyit('other', NotImplemented)
+     @call_highest_priority('__sub__')
+@@ -648,6 +650,20 @@ class MatrixSymbol(MatrixExpr):
+     is_commutative = False
+     _diff_wrt = True
+ 
++    def _sympystr(self, printer):
++        return self.name
++
++    def _pretty(self, printer):
++        from sympy.printing.pretty.stringpict import prettyForm
++        return prettyForm(self.name)
++
++    def _latex(self, printer):
++        return self.name
++
++    def __neg__(self):
++        from sympy.matrices.expressions.matadd import MatAdd
++        return MatAdd(-1, self, evaluate=False)
++
+     def __new__(cls, name, n, m):
+         n, m = sympify(n), sympify(m)
+         obj = Basic.__new__(cls, name, n, m)
+diff --git a/sympy/printing/str.py b/sympy/printing/str.py
+index 0baefe0f7f..e06eb3f796 100644
+--- a/sympy/printing/str.py
++++ b/sympy/printing/str.py
+@@ -312,8 +312,26 @@ def _print_HadamardProduct(self, expr):
+             for arg in expr.args])
+ 
+     def _print_MatAdd(self, expr):
+-        return ' + '.join([self.parenthesize(arg, precedence(expr))
+-            for arg in expr.args])
++        from sympy.core.mul import Mul
++        terms = []
++        for term in expr.args:
++            # Handle all negative terms (matrix and scalar)
++            if isinstance(term, Mul):
++                coeff, rest = term.as_coeff_mul()
++                if coeff == -1:
++                    term_str = self.parenthesize(Mul(*rest), precedence(expr))
++                    if terms:
++                        terms.append(' - ' + term_str)
++                    else:
++                        terms.append('-' + term_str)
++                    continue
++            # Default case
++            term_str = self.parenthesize(term, precedence(expr))
++            if terms:
++                terms.append(' + ' + term_str)
++            else:
++                terms.append(term_str)
++        return ''.join(terms)
+ 
+     def _print_NaN(self, expr):
+         return 'nan'

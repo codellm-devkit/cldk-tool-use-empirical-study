@@ -1,0 +1,164 @@
+2025-06-27 15:48:45,987 - INFO - Creating container for pytest-dev__pytest-7571...
+2025-06-27 15:48:46,074 - INFO - Container for pytest-dev__pytest-7571 created: a877c3524be773621e353365b941e4ebfc1498345a60e1fad637c1f82599a290
+2025-06-27 15:48:46,306 - INFO - Container for pytest-dev__pytest-7571 started: a877c3524be773621e353365b941e4ebfc1498345a60e1fad637c1f82599a290
+2025-06-27 15:48:46,306 - INFO - Intermediate patch for pytest-dev__pytest-7571 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/pytest-dev__pytest-7571/patch.diff, now applying to container...
+2025-06-27 15:48:46,484 - INFO - >>>>> Applied Patch:
+Checking patch src/_pytest/logging.py...
+Checking patch test_caplog_fix.py...
+/tmp/patch.diff:85: new blank line at EOF.
++
+Applied patch src/_pytest/logging.py cleanly.
+Applied patch test_caplog_fix.py cleanly.
+warning: 1 line adds whitespace errors.
+
+2025-06-27 15:48:46,618 - INFO - Git diff before:
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index 11031f2f2..0e955569d 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -319,6 +319,7 @@ class LogCaptureHandler(logging.StreamHandler):
+         """Creates a new log handler."""
+         super().__init__(StringIO())
+         self.records = []  # type: List[logging.LogRecord]
++        self.setLevel(logging.NOTSET)  # Always start with NOTSET level
+ 
+     def emit(self, record: logging.LogRecord) -> None:
+         """Keep the log records in a list in addition to the log text."""
+@@ -346,6 +347,8 @@ class LogCaptureFixture:
+         self._item = item
+         # dict of log name -> log level
+         self._initial_logger_levels = {}  # type: Dict[Optional[str], int]
++        # store original handler level
++        self._initial_handler_level = self.handler.level
+ 
+     def _finalize(self) -> None:
+         """Finalizes the fixture.
+@@ -356,6 +359,10 @@ class LogCaptureFixture:
+         for logger_name, level in self._initial_logger_levels.items():
+             logger = logging.getLogger(logger_name)
+             logger.setLevel(level)
++        # reset handler to NOTSET and clear records
++        self.handler.setLevel(logging.NOTSET)
++        self.handler.reset()
++        self._initial_logger_levels.clear()
+ 
+     @property
+     def handler(self) -> LogCaptureHandler:
+@@ -434,6 +441,9 @@ class LogCaptureFixture:
+         # save the original log-level to restore it during teardown
+         self._initial_logger_levels.setdefault(logger, logger_obj.level)
+         logger_obj.setLevel(level)
++        # Only store handler level if we haven't already
++        if not hasattr(self.handler, '_original_level'):
++            self.handler._original_level = self.handler.level
+         self.handler.setLevel(level)
+ 
+     @contextmanager
+@@ -469,10 +479,25 @@ def caplog(request: FixtureRequest) -> Generator[LogCaptureFixture, None, None]:
+     * caplog.records         -> list of logging.LogRecord instances
+     * caplog.record_tuples   -> list of (logger_name, level, message) tuples
+     * caplog.clear()         -> clear captured records and formatted log output string
++
++    Each test gets a fresh handler instance to ensure isolation.
++    """
++    # Initialize fresh handler and records for this test
++    request.node._store[caplog_handler_key] = LogCaptureHandler()
++    request.node._store[caplog_records_key] = {"setup": [], "call": [], "teardown": []}
++
++    Each test gets a fresh handler instance to ensure isolation.
++    """
++    # Create new handler for this test
++    request.node._store[caplog_handler_key] = LogCaptureHandler()
++    request.node._store[caplog_records_key] = {"setup": [], "call": [], "teardown": []}
++    * caplog.clear()         -> clear captured records and formatted log output string
+     """
+     result = LogCaptureFixture(request.node)
+-    yield result
+-    result._finalize()
++    try:
++        yield result
++    finally:
++        result._finalize()
+ 
+ 
+ def get_log_level_for_setting(config: Config, *setting_names: str) -> Optional[int]:
+2025-06-27 15:48:46,619 - INFO - Eval script for pytest-dev__pytest-7571 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/pytest-dev__pytest-7571/eval.sh; copying to container...
+2025-06-27 15:48:50,983 - INFO - Test runtime: 4.27 seconds
+2025-06-27 15:48:50,984 - INFO - Test output for pytest-dev__pytest-7571 written to logs/run_evaluation/20250627_135628/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/pytest-dev__pytest-7571/test_output.txt
+2025-06-27 15:48:51,058 - INFO - Git diff after:
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index 11031f2f2..0e955569d 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -319,6 +319,7 @@ class LogCaptureHandler(logging.StreamHandler):
+         """Creates a new log handler."""
+         super().__init__(StringIO())
+         self.records = []  # type: List[logging.LogRecord]
++        self.setLevel(logging.NOTSET)  # Always start with NOTSET level
+ 
+     def emit(self, record: logging.LogRecord) -> None:
+         """Keep the log records in a list in addition to the log text."""
+@@ -346,6 +347,8 @@ class LogCaptureFixture:
+         self._item = item
+         # dict of log name -> log level
+         self._initial_logger_levels = {}  # type: Dict[Optional[str], int]
++        # store original handler level
++        self._initial_handler_level = self.handler.level
+ 
+     def _finalize(self) -> None:
+         """Finalizes the fixture.
+@@ -356,6 +359,10 @@ class LogCaptureFixture:
+         for logger_name, level in self._initial_logger_levels.items():
+             logger = logging.getLogger(logger_name)
+             logger.setLevel(level)
++        # reset handler to NOTSET and clear records
++        self.handler.setLevel(logging.NOTSET)
++        self.handler.reset()
++        self._initial_logger_levels.clear()
+ 
+     @property
+     def handler(self) -> LogCaptureHandler:
+@@ -434,6 +441,9 @@ class LogCaptureFixture:
+         # save the original log-level to restore it during teardown
+         self._initial_logger_levels.setdefault(logger, logger_obj.level)
+         logger_obj.setLevel(level)
++        # Only store handler level if we haven't already
++        if not hasattr(self.handler, '_original_level'):
++            self.handler._original_level = self.handler.level
+         self.handler.setLevel(level)
+ 
+     @contextmanager
+@@ -469,10 +479,25 @@ def caplog(request: FixtureRequest) -> Generator[LogCaptureFixture, None, None]:
+     * caplog.records         -> list of logging.LogRecord instances
+     * caplog.record_tuples   -> list of (logger_name, level, message) tuples
+     * caplog.clear()         -> clear captured records and formatted log output string
++
++    Each test gets a fresh handler instance to ensure isolation.
++    """
++    # Initialize fresh handler and records for this test
++    request.node._store[caplog_handler_key] = LogCaptureHandler()
++    request.node._store[caplog_records_key] = {"setup": [], "call": [], "teardown": []}
++
++    Each test gets a fresh handler instance to ensure isolation.
++    """
++    # Create new handler for this test
++    request.node._store[caplog_handler_key] = LogCaptureHandler()
++    request.node._store[caplog_records_key] = {"setup": [], "call": [], "teardown": []}
++    * caplog.clear()         -> clear captured records and formatted log output string
+     """
+     result = LogCaptureFixture(request.node)
+-    yield result
+-    result._finalize()
++    try:
++        yield result
++    finally:
++        result._finalize()
+ 
+ 
+ def get_log_level_for_setting(config: Config, *setting_names: str) -> Optional[int]:
+2025-06-27 15:48:51,059 - INFO - Grading answer for pytest-dev__pytest-7571...
+2025-06-27 15:48:51,059 - INFO - report: {'pytest-dev__pytest-7571': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/logging/test_fixture.py::test_change_level_undos_handler_level']}, 'PASS_TO_PASS': {'success': [], 'failure': ['testing/logging/test_fixture.py::test_change_level', 'testing/logging/test_fixture.py::test_with_statement', 'testing/logging/test_fixture.py::test_log_access', 'testing/logging/test_fixture.py::test_messages', 'testing/logging/test_fixture.py::test_record_tuples', 'testing/logging/test_fixture.py::test_unicode', 'testing/logging/test_fixture.py::test_clear', 'testing/logging/test_fixture.py::test_caplog_captures_for_all_stages', 'testing/logging/test_fixture.py::test_fixture_help', 'testing/logging/test_fixture.py::test_change_level_undo', 'testing/logging/test_fixture.py::test_ini_controls_global_log_level', 'testing/logging/test_fixture.py::test_caplog_can_override_global_log_level', 'testing/logging/test_fixture.py::test_caplog_captures_despite_exception', 'testing/logging/test_fixture.py::test_log_report_captures_according_to_config_option_upon_failure']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-7571: resolved: False
+2025-06-27 15:48:51,060 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-7571.20250627_135628...
+2025-06-27 15:49:06,477 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-7571.20250627_135628...
+2025-06-27 15:49:06,497 - INFO - Container sweb.eval.pytest-dev__pytest-7571.20250627_135628 removed.

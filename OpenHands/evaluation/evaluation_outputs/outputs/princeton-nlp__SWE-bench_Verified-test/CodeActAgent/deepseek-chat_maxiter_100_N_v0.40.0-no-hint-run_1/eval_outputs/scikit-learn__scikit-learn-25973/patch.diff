@@ -1,0 +1,76 @@
+diff --git a/sklearn/feature_selection/_sequential.py b/sklearn/feature_selection/_sequential.py
+index e983c55de..d9b0eed9f 100644
+--- a/sklearn/feature_selection/_sequential.py
++++ b/sklearn/feature_selection/_sequential.py
+@@ -186,7 +186,7 @@ class SequentialFeatureSelector(SelectorMixin, MetaEstimatorMixin, BaseEstimator
+         self.cv = cv
+         self.n_jobs = n_jobs
+ 
+-    def fit(self, X, y=None):
++    def fit(self, X, y=None, **kwargs):
+         """Learn the features to select from X.
+ 
+         Parameters
+@@ -205,6 +205,35 @@ class SequentialFeatureSelector(SelectorMixin, MetaEstimatorMixin, BaseEstimator
+             Returns the instance itself.
+         """
+         self._validate_params()
++        
++        # Store original CV object
++        self._cv = self.cv
++        
++        # Handle groups parameter if provided
++        self._groups = kwargs.get('groups')
++        
++        # Pre-compute and store CV splits
++        if hasattr(self.cv, 'split'):
++            try:
++                if self._groups is not None:
++                    self._cv_splits = list(self.cv.split(X, y, groups=self._groups))
++                else:
++                    self._cv_splits = list(self.cv.split(X, y))
++            except TypeError as e:
++                if 'groups' in str(e):
++                    raise ValueError(
++                        "CV splitting failed. The groups parameter is required "
++                        f"for this CV strategy. Error details: {str(e)}"
++                    ) from e
++                raise ValueError(
++                    "CV splitting failed. Please check your input data."
++                ) from e
++        else:
++            self._cv_splits = None
++            
++        # Validate we have splits if needed
++        if hasattr(self.cv, 'split') and (self._cv_splits is None or len(self._cv_splits) == 0):
++            raise ValueError("No valid CV splits generated")
+ 
+         # FIXME: to be removed in 1.3
+         if self.n_features_to_select in ("warn", None):
+@@ -305,11 +334,25 @@ class SequentialFeatureSelector(SelectorMixin, MetaEstimatorMixin, BaseEstimator
+             if self.direction == "backward":
+                 candidate_mask = ~candidate_mask
+             X_new = X[:, candidate_mask]
++            # Handle CV splits with validation
++            if hasattr(self, '_cv_splits') and self._cv_splits is not None:
++                cv = self._cv_splits
++            elif hasattr(self._cv, 'split'):
++                try:
++                    cv = list(self._cv.split(X, y, groups=self._groups))
++                except TypeError:
++                    cv = list(self._cv.split(X, y))
++            else:
++                cv = self._cv
++            
++            if not cv:
++                raise ValueError("No valid CV splits were generated")
++            
+             scores[feature_idx] = cross_val_score(
+                 estimator,
+                 X_new,
+                 y,
+-                cv=self.cv,
++                cv=cv,
+                 scoring=self.scoring,
+                 n_jobs=self.n_jobs,
+             ).mean()

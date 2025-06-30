@@ -1,0 +1,43 @@
+diff --git a/sympy/matrices/expressions/blockmatrix.py b/sympy/matrices/expressions/blockmatrix.py
+index 95302a05ca..a240f6bcf5 100644
+--- a/sympy/matrices/expressions/blockmatrix.py
++++ b/sympy/matrices/expressions/blockmatrix.py
+@@ -162,9 +162,36 @@ def structurally_equal(self, other):
+             and self.colblocksizes == other.colblocksizes)
+ 
+     def _blockmul(self, other):
+-        if (isinstance(other, BlockMatrix) and
+-                self.colblocksizes == other.rowblocksizes):
+-            return BlockMatrix(self.blocks*other.blocks)
++        if isinstance(other, BlockMatrix):
++            from sympy.matrices.expressions.matexpr import ZeroMatrix
++            from sympy.matrices.immutable import ImmutableDenseMatrix
++            
++            # Handle ZeroMatrix cases explicitly
++            if all(block.is_ZeroMatrix for block in self.blocks):
++                return ZeroMatrix(self.rows, other.cols)
++            if all(block.is_ZeroMatrix for block in other.blocks):
++                return ZeroMatrix(self.rows, other.cols)
++                
++            # Check dimensions safely
++            try:
++                if self.colblocksizes == other.rowblocksizes:
++                    result = self.blocks*other.blocks
++                    # Create new matrix with preserved ZeroMatrix blocks
++                    new_blocks = []
++                    for i in range(result.rows):
++                        row = []
++                        for j in range(result.cols):
++                            if result[i,j] == 0:
++                                row.append(ZeroMatrix(
++                                    self.rowblocksizes[i],
++                                    other.colblocksizes[j]
++                                ))
++                            else:
++                                row.append(result[i,j])
++                        new_blocks.append(row)
++                    return BlockMatrix(ImmutableDenseMatrix(new_blocks))
++            except AttributeError:
++                pass
+ 
+         return self * other
