@@ -7,6 +7,7 @@ from datasets import load_dataset
 import tree_sitter_python as tspython
 from tree_sitter import Language, Parser
 from typing import Dict, List
+import getpass
 
 # ---------------------- Build Tree-sitter Language ----------------------
 LANGUAGE: Language = Language(tspython.language())
@@ -99,7 +100,7 @@ class PatchAnalyzer:
             abc_mag / 3
         )
 
-        if score < 10:
+        if score < 5:
             diff = "easy"
         elif score < 30:
             diff = "medium"
@@ -118,11 +119,12 @@ class PatchAnalyzer:
             "Conditional": total_C,
             "ABC_magnitude_sum": abc_mag,
             "difficulty_score": round(score, 2),
-            "difficulty": diff
+            "patch_difficulty": diff
         }
 
 
 if __name__ == "__main__":
+    # # Golden Patch Metrics
     # output = "golden_patch_metrics.jsonl"
     # sbv = load_dataset("princeton-nlp/SWE-bench_Verified", split="test")
 
@@ -134,45 +136,76 @@ if __name__ == "__main__":
 
     # print(f"Saved metrics for {len(sbv)} instances → {output}")
 
-    test_patch_1 = """\
-diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
---- a/django/db/models/sql/query.py
-+++ b/django/db/models/sql/query.py
-@@ -1124,7 +1124,10 @@ def check_related_objects(self, field, value, opts):
-- if not getattr(expression, 'filterable', True):
-+ hasattr(expression, 'resolve_expression') and
-+ not getattr(expression, 'filterable', True)
-+ ):
-"""
+    # # OpenHands Patch Metrics
+    # oh_trajs = "../OpenHands/evaluation/evaluation_outputs/outputs/princeton-nlp__SWE-bench_Verified-test/CodeActAgent/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/output.jsonl" # path to OpenHands trajectories
+    # oh_output = oh_trajs.replace("output.jsonl", "patch_metrics.jsonl")
+    # with open(oh_output, "w", encoding="utf-8") as fout:
+    #     with open(oh_trajs, "r", encoding="utf-8") as fin:
+    #         for line in fin:
+    #             item = json.loads(line)
+    #             if "test_result" not in item or not item["test_result"]:
+    #                 continue
+    #             metrics = PatchAnalyzer(item["test_result"]["git_patch"]).aggregate()
+    #             record = {"instance_id": item["instance_id"], **metrics}
+    #             fout.write(json.dumps(record) + "\n")
+    # print(f"Saved metrics for OpenHands instances → {oh_output}")
 
-    test_patch_2 = """\
-diff --git a/bar.py b/bar.py
---- a/bar.py
-+++ b/bar.py
-@@ -5,6 +5,10 @@ def bar(a):
-     print(a)
--    if a > 0:
--        return True
-+    if a > 0 and a % 2 == 0:
-+        return True
-+    elif a < 0:
-+        return False
-+    else:
-+        return None
-"""
+    # SWE-Agent Patch Metrics
+    user = getpass.getuser()
+    sa_trajs = f"../SWE-agent/trajectories/{user}/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/preds.json" # path to SWE-Agent trajectories
+    sa_output = sa_trajs.replace("preds.json", "patch_metrics.jsonl")
+    with open(sa_output, "w", encoding="utf-8") as fout:
+        with open(sa_trajs, "r", encoding="utf-8") as fin:
+            data = json.load(fin)
+            for instance_id, instance in data.items():
+                model_patch = instance.get("model_patch")
+                if not model_patch:
+                    continue
+                metrics = PatchAnalyzer(model_patch).aggregate()
+                record = {"instance_id": instance.get("instance_id", instance_id), **metrics}
+                fout.write(json.dumps(record) + "\n")
+    print(f"Saved metrics for SWE-Agent instances → {sa_output}")
 
-    test_patch_3 = """\
-diff --git a/baz.py b/baz.py
---- a/baz.py
-+++ b/baz.py
-@@ -10,3 +10,5 @@ class Baz:
-     pass
--    result = 'negative and even' if a < 0
-+    def new_method(self):
-+        result = compute(self.value)
-"""
+#     # sample test cases
+#     test_patch_1 = """\
+# diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+# --- a/django/db/models/sql/query.py
+# +++ b/django/db/models/sql/query.py
+# @@ -1124,7 +1124,10 @@ def check_related_objects(self, field, value, opts):
+# - if not getattr(expression, 'filterable', True):
+# + hasattr(expression, 'resolve_expression') and
+# + not getattr(expression, 'filterable', True)
+# + ):
+# """
 
-    for i, patch in enumerate([test_patch_1, test_patch_2, test_patch_3], start=1):
-        metrics = PatchAnalyzer(patch).aggregate()
-        print(f"\nPatch {i} Metrics:")
-        print(json.dumps(metrics, indent=2))
+#     test_patch_2 = """\
+# diff --git a/bar.py b/bar.py
+# --- a/bar.py
+# +++ b/bar.py
+# @@ -5,6 +5,10 @@ def bar(a):
+#      print(a)
+# -    if a > 0:
+# -        return True
+# +    if a > 0 and a % 2 == 0:
+# +        return True
+# +    elif a < 0:
+# +        return False
+# +    else:
+# +        return None
+# """
+
+#     test_patch_3 = """\
+# diff --git a/baz.py b/baz.py
+# --- a/baz.py
+# +++ b/baz.py
+# @@ -10,3 +10,5 @@ class Baz:
+#      pass
+# -    result = 'negative and even' if a < 0
+# +    def new_method(self):
+# +        result = compute(self.value)
+# """
+
+#     for i, patch in enumerate([test_patch_1, test_patch_2, test_patch_3], start=1):
+#         metrics = PatchAnalyzer(patch).aggregate()
+#         print(f"\nPatch {i} Metrics:")
+#         print(json.dumps(metrics, indent=2))

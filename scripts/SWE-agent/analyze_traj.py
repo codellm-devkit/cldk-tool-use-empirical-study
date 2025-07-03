@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from commandParser import CommandParser
 
-PATH_TO_TRAJ = "trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test"
+PATH_TO_TRAJ = "../../SWE-agent/trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test"
 
 def plot_turn_chart(dataframe, title, filename):
     fig, ax = plt.subplots(figsize=(20, 10))
@@ -45,9 +45,9 @@ def normalize_action(parser: CommandParser, action_str):
 def analyze_trajectory_actions(root_path):
     parser = CommandParser()
     parser.load_tool_yaml_files([
-        "tools/edit_anthropic/config.yaml",
-        "tools/review_on_submit_m/config.yaml",
-        "tools/registry/config.yaml"
+        "../../SWE-agent/tools/edit_anthropic/config.yaml",
+        "../../SWE-agent/tools/review_on_submit_m/config.yaml",
+        "../../SWE-agent/tools/registry/config.yaml"
     ])
 
     action_counter = Counter()

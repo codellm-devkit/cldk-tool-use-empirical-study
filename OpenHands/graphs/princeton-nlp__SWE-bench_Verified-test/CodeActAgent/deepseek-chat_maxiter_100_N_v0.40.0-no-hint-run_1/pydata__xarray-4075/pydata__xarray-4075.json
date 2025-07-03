@@ -1,0 +1,1462 @@
+{
+  "directed": true,
+  "multigraph": true,
+  "graph": {
+    "resolution_status": "unresolved",
+    "instance_name": "pydata__xarray-4075",
+    "difficulty": "<15 min fix",
+    "golden_patch_difficulty": "medium",
+    "golden_files_change": 1,
+    "patch_difficulty": "medium",
+    "files_change": 1
+  },
+  "nodes": [
+    {
+      "label": "empty action",
+      "args": {},
+      "phase": "general",
+      "step_indices": [
+        0
+      ],
+      "id": "0:empty action"
+    },
+    {
+      "label": "cd",
+      "args": [
+        "/workspace/pydata__xarray__0.12"
+      ],
+      "phase": "general",
+      "step_indices": [
+        1,
+        3,
+        4
+      ],
+      "id": "1:cd"
+    },
+    {
+      "label": "ls",
+      "args": [],
+      "phase": "general",
+      "step_indices": [
+        1
+      ],
+      "id": "2:ls"
+    },
+    {
+      "label": "find",
+      "args": [
+        ".",
+        "test*",
+        "d"
+      ],
+      "phase": "general",
+      "step_indices": [
+        1
+      ],
+      "id": "3:find"
+    },
+    {
+      "label": "grep",
+      "args": [
+        "setup.cfg"
+      ],
+      "phase": "general",
+      "step_indices": [
+        2,
+        2
+      ],
+      "id": "4:grep"
+    },
+    {
+      "label": "pytest",
+      "args": [
+        "xarray/tests"
+      ],
+      "phase": "general",
+      "step_indices": [
+        3
+      ],
+      "id": "5:pytest"
+    },
+    {
+      "label": "grep",
+      "args": [
+        "xarray/"
+      ],
+      "phase": "general",
+      "step_indices": [
+        4
+      ],
+      "id": "6:grep"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py"
+      },
+      "phase": "localization",
+      "step_indices": [
+        5,
+        61
+      ],
+      "id": "7:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "        # we need to mask data values that are nan; else the weights are wrong\n        mask = da.notnull()\n\n        sum_of_weights = self._reduce(mask, self.weights, dim=dim, skipna=False)\n\n        # 0-weights are not valid\n        valid_weights = sum_of_weights != 0.0\n\n        return sum_of_weights.where(valid_weights)",
+        "new_str": "        # we need to mask data values that are nan; else the weights are wrong\n        mask = da.notnull()\n\n        # Convert boolean weights to float/int to ensure proper summation\n        weights = self.weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n\n        sum_of_weights = self._reduce(mask, weights, dim=dim, skipna=False)\n\n        # 0-weights are not valid\n        valid_weights = sum_of_weights != 0.0\n\n        return sum_of_weights.where(valid_weights)",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        6
+      ],
+      "id": "8:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\ncreate",
+      "args": {
+        "path": "/workspace/test_weighted_bool.py",
+        "file_text": "\nimport numpy as np\nimport xarray as xr\n\n# Test case from issue\ndta = xr.DataArray([1., 1., 1.])\nwgt = xr.DataArray(np.array([1, 1, 0], dtype=np.bool))\n\nresult = dta.weighted(wgt).mean()\nprint(\"Result:\", result)\nprint(\"Expected: 1.0\")\n"
+      },
+      "phase": "verification",
+      "step_indices": [
+        7
+      ],
+      "id": "9:str_replace_editor\ncreate"
+    },
+    {
+      "label": "python",
+      "args": [
+        "/workspace/test_weighted_bool.py"
+      ],
+      "phase": "verification",
+      "step_indices": [
+        8,
+        10,
+        12,
+        14,
+        16,
+        18,
+        20,
+        23,
+        25,
+        27,
+        30,
+        33,
+        35,
+        37,
+        39,
+        42,
+        45,
+        49,
+        52,
+        55,
+        58,
+        63,
+        68,
+        82,
+        91
+      ],
+      "id": "10:python"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n        if weights.isnull().any():\n            raise ValueError(\n                \"`weights` cannot contain missing values. \"\n                \"Missing values can be replaced by `weights.fillna(0)`.\"\n            )\n\n        self.obj = obj\n        self.weights = weights\n",
+        "new_str": "\n        if weights.isnull().any():\n            raise ValueError(\n                \"`weights` cannot contain missing values. \"\n                \"Missing values can be replaced by `weights.fillna(0)`.\"\n            )\n\n        # Convert boolean weights to int to ensure proper numerical operations\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n\n        self.obj = obj\n        self.weights = weights\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        9
+      ],
+      "id": "11:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n        # need to mask invalid values in da, as `dot` does not implement skipna\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n\n        # `dot` does not broadcast arrays, so this avoids creating a large\n        # DataArray (if `weights` has additional dimensions)\n        # maybe add fasttrack (`(da * weights).sum(dims=dim, skipna=skipna)`)\n        return dot(da, weights, dims=dim)\n",
+        "new_str": "\n        # need to mask invalid values in da, as `dot` does not implement skipna\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n\n        # Ensure both operands are numeric for correct dot product behavior\n        if da.dtype == bool:\n            da = da.astype(int)\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n\n        # `dot` does not broadcast arrays, so this avoids creating a large\n        # DataArray (if `weights` has additional dimensions)\n        return dot(da, weights, dims=dim)\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        11
+      ],
+      "id": "12:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n        # we need to mask data values that are nan; else the weights are wrong\n        mask = da.notnull()\n\n        # Convert boolean weights to float/int to ensure proper summation\n        weights = self.weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n\n        sum_of_weights = self._reduce(mask, weights, dim=dim, skipna=False)\n\n        # 0-weights are not valid\n        valid_weights = sum_of_weights != 0.0\n\n        return sum_of_weights.where(valid_weights)\n",
+        "new_str": "\n        # we need to mask data values that are nan; else the weights are wrong\n        mask = da.notnull().astype(int)  # Convert mask to int for proper weighting\n\n        weights = self.weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n\n        sum_of_weights = self._reduce(mask, weights, dim=dim, skipna=False)\n\n        # 0-weights are not valid\n        valid_weights = sum_of_weights != 0.0\n\n        return sum_of_weights.where(valid_weights)\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        13
+      ],
+      "id": "13:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n\n        weighted_sum = self._weighted_sum(da, dim=dim, skipna=skipna)\n\n        sum_of_weights = self._sum_of_weights(da, dim=dim)\n\n        return weighted_sum / sum_of_weights\n",
+        "new_str": "\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        # Convert boolean weights to int upfront\n        weights = self.weights.astype(int) if self.weights.dtype == bool else self.weights\n        \n        # Calculate weighted sum with proper numerical weights\n        weighted_sum = dot(da.fillna(0) if skipna else da, weights, dims=dim)\n        \n        # Calculate sum of weights only where data is valid\n        mask = da.notnull().astype(int)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        \n        # Handle division by zero\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        15
+      ],
+      "id": "14:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        # Convert boolean weights to int upfront\n        weights = self.weights.astype(int) if self.weights.dtype == bool else self.weights\n        \n        # Calculate weighted sum with proper numerical weights\n        weighted_sum = dot(da.fillna(0) if skipna else da, weights, dims=dim)\n        \n        # Calculate sum of weights only where data is valid\n        mask = da.notnull().astype(int)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        \n        # Handle division by zero\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        # Convert weights to float (handles boolean weights properly)\n        weights = self.weights.astype(float)\n        \n        # Mask invalid data points if skipna is True\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n        \n        # Calculate weighted sum (data * weights * validity_mask)\n        weighted_sum = dot(da, weights * mask, dims=dim)\n        \n        # Calculate sum of weights only where data is valid\n        sum_of_weights = dot(mask, weights, dims=dim)\n        \n        # Handle division by zero\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        17
+      ],
+      "id": "15:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        # Convert weights to float (handles boolean weights properly)\n        weights = self.weights.astype(float)\n        \n        # Mask invalid data points if skipna is True\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n        \n        # Calculate weighted sum (data * weights * validity_mask)\n        weighted_sum = dot(da, weights * mask, dims=dim)\n        \n        # Calculate sum of weights only where data is valid\n        sum_of_weights = dot(mask, weights, dims=dim)\n        \n        # Handle division by zero\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        # Convert boolean weights to int (True=1, False=0)\n        weights = self.weights.astype(int) if self.weights.dtype == bool else self.weights\n        \n        # Create combined mask of valid data points and weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            valid = da.notnull() & (weights != 0)\n            da = da.fillna(0.0)\n        else:\n            valid = da.notnull() & (weights != 0)\n        \n        # Calculate weighted sum only for valid points\n        weighted_sum = dot(da.where(valid, 0), weights.where(valid, 0), dims=dim)\n        \n        # Count number of valid weighted points\n        count_valid = dot(valid.astype(int), (weights != 0).astype(int), dims=dim)\n        \n        # Calculate mean\n        return xr.where(count_valid != 0, weighted_sum / count_valid, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        19
+      ],
+      "id": "16:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        # Convert boolean weights to int (True=1, False=0)\n        weights = self.weights.astype(int) if self.weights.dtype == bool else self.weights\n        \n        # Create combined mask of valid data points and weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            valid = da.notnull() & (weights != 0)\n            da = da.fillna(0.0)\n        else:\n            valid = da.notnull() & (weights != 0)\n        \n        # Calculate weighted sum only for valid points\n        weighted_sum = dot(da.where(valid, 0), weights.where(valid, 0), dims=dim)\n        \n        # Count number of valid weighted points\n        count_valid = dot(valid.astype(int), (weights != 0).astype(int), dims=dim)\n        \n        # Calculate mean\n        return xr.where(count_valid != 0, weighted_sum / count_valid, float('nan'))\n\n\n",
+        "new_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights, convert to int and use simple mean of included points\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            valid = da.notnull() & (weights != 0)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            sum_values = dot(da.where(valid, 0), weights, dims=dim)\n            count = dot(valid.astype(int), weights, dims=dim)\n            return xr.where(count != 0, sum_values / count, float('nan'))\n        \n        # Original weighted mean implementation for non-boolean weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        21
+      ],
+      "id": "17:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        # Convert boolean weights to int (True=1, False=0)\n        weights = self.weights.astype(int) if self.weights.dtype == bool else self.weights\n        \n        # Create combined mask of valid data points and weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            valid = da.notnull() & (weights != 0)\n            da = da.fillna(0.0)\n        else:\n            valid = da.notnull() & (weights != 0)\n        \n        # Calculate weighted sum only for valid points\n        weighted_sum = dot(da.where(valid, 0), weights.where(valid, 0), dims=dim)\n        \n        # Count number of valid weighted points\n        count_valid = dot(valid.astype(int), (weights != 0).astype(int), dims=dim)\n        \n        # Calculate mean\n        return xr.where(count_valid != 0, weighted_sum / count_valid, float('nan'))\n",
+        "new_str": "\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights, convert to int and use simple mean of included points\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            valid = da.notnull() & (weights != 0)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            sum_values = dot(da.where(valid, 0), weights, dims=dim)\n            count = dot(valid.astype(int), weights, dims=dim)\n            return xr.where(count != 0, sum_values / count, float('nan'))\n        \n        # Original weighted mean implementation for non-boolean weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        22
+      ],
+      "id": "18:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights, convert to int and use simple mean of included points\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            valid = da.notnull() & (weights != 0)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            sum_values = dot(da.where(valid, 0), weights, dims=dim)\n            count = dot(valid.astype(int), weights, dims=dim)\n            return xr.where(count != 0, sum_values / count, float('nan'))\n        \n        # Original weighted mean implementation for non-boolean weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights, treat as mask and calculate simple mean\n        if weights.dtype == bool:\n            valid = da.notnull() & weights\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            sum_values = da.where(valid, 0).sum(dim=dim)\n            count = valid.sum(dim=dim)\n            return xr.where(count != 0, sum_values / count, float('nan'))\n        \n        # Original weighted mean implementation for non-boolean weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        24
+      ],
+      "id": "19:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights, treat as mask and calculate simple mean\n        if weights.dtype == bool:\n            valid = da.notnull() & weights\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            sum_values = da.where(valid, 0).sum(dim=dim)\n            count = valid.sum(dim=dim)\n            return xr.where(count != 0, sum_values / count, float('nan'))\n        \n        # Original weighted mean implementation for non-boolean weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights, convert to 1/0 and calculate properly weighted mean\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            weighted_sum = dot(da, weights, dims=dim)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # Original weighted mean implementation for non-boolean weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        26
+      ],
+      "id": "20:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights, convert to 1/0 and calculate properly weighted mean\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            weighted_sum = dot(da, weights, dims=dim)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # Original weighted mean implementation for non-boolean weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "new_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights, treat as pure mask and calculate simple mean\n        if weights.dtype == bool:\n            masked = da.where(weights)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                return masked.mean(dim=dim, skipna=True)\n            return masked.mean(dim=dim)\n        \n        # Original weighted mean implementation for non-boolean weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        28
+      ],
+      "id": "21:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights, convert to 1/0 and calculate properly weighted mean\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            weighted_sum = dot(da, weights, dims=dim)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # Original weighted mean implementation for non-boolean weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights, treat as pure mask and calculate simple mean\n        if weights.dtype == bool:\n            masked = da.where(weights)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                return masked.mean(dim=dim, skipna=True)\n            return masked.mean(dim=dim)\n        \n        # Original weighted mean implementation for non-boolean weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        29
+      ],
+      "id": "22:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights, treat as pure mask and calculate simple mean\n        if weights.dtype == bool:\n            masked = da.where(weights)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                return masked.mean(dim=dim, skipna=True)\n            return masked.mean(dim=dim)\n        \n        # Original weighted mean implementation for non-boolean weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "new_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # Convert boolean weights to int (True=1, False=0)\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n        \n        # Handle NaN values if needed\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        # Calculate weighted sum and sum of weights\n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        \n        # For boolean weights, ensure we divide by count of True weights\n        if self.weights.dtype == bool:\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n            \n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        31
+      ],
+      "id": "23:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights, treat as pure mask and calculate simple mean\n        if weights.dtype == bool:\n            masked = da.where(weights)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                return masked.mean(dim=dim, skipna=True)\n            return masked.mean(dim=dim)\n        \n        # Original weighted mean implementation for non-boolean weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n",
+        "new_str": "\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # Convert boolean weights to int (True=1, False=0)\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n        \n        # Handle NaN values if needed\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        # Calculate weighted sum and sum of weights\n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        \n        # For boolean weights, ensure we divide by count of True weights\n        if self.weights.dtype == bool:\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n            \n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        32
+      ],
+      "id": "24:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # Convert boolean weights to int (True=1, False=0)\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n        \n        # Handle NaN values if needed\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        # Calculate weighted sum and sum of weights\n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        \n        # For boolean weights, ensure we divide by count of True weights\n        if self.weights.dtype == bool:\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n            \n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights, first handle NaN then apply boolean mask\n        if weights.dtype == bool:\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            # Apply boolean mask and calculate simple mean\n            masked = da.where(weights)\n            return masked.mean(dim=dim, skipna=skipna)\n        \n        # Original weighted mean implementation for non-boolean weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        34
+      ],
+      "id": "25:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights, first handle NaN then apply boolean mask\n        if weights.dtype == bool:\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            # Apply boolean mask and calculate simple mean\n            masked = da.where(weights)\n            return masked.mean(dim=dim, skipna=skipna)\n        \n        # Original weighted mean implementation for non-boolean weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights - treat as pure selection mask\n        if weights.dtype == bool:\n            # First select only points where weight is True\n            selected = da.where(weights)\n            # Then calculate simple mean of selected points\n            return selected.mean(dim=dim, skipna=skipna)\n        \n        # For numerical weights - use standard weighted mean\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        36
+      ],
+      "id": "26:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights - treat as pure selection mask\n        if weights.dtype == bool:\n            # First select only points where weight is True\n            selected = da.where(weights)\n            # Then calculate simple mean of selected points\n            return selected.mean(dim=dim, skipna=skipna)\n        \n        # For numerical weights - use standard weighted mean\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights - completely exclude False-weighted points\n        if weights.dtype == bool:\n            # Create new DataArray with only True-weighted points\n            filtered = da.where(weights, drop=True)\n            return filtered.mean(dim=dim, skipna=skipna)\n        \n        # For numerical weights - use standard weighted mean\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        38
+      ],
+      "id": "27:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights - completely exclude False-weighted points\n        if weights.dtype == bool:\n            # Create new DataArray with only True-weighted points\n            filtered = da.where(weights, drop=True)\n            return filtered.mean(dim=dim, skipna=skipna)\n        \n        # For numerical weights - use standard weighted mean\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "new_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights - first filter then mean\n        if weights.dtype == bool:\n            # Convert weights to mask and apply\n            mask = weights & da.notnull() if not skipna else weights\n            filtered = da.where(mask, drop=True)\n            return filtered.mean(dim=dim)\n        \n        # For numerical weights - standard weighted mean\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        40
+      ],
+      "id": "28:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights - completely exclude False-weighted points\n        if weights.dtype == bool:\n            # Create new DataArray with only True-weighted points\n            filtered = da.where(weights, drop=True)\n            return filtered.mean(dim=dim, skipna=skipna)\n        \n        # For numerical weights - use standard weighted mean\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights - first filter then mean\n        if weights.dtype == bool:\n            # Convert weights to mask and apply\n            mask = weights & da.notnull() if not skipna else weights\n            filtered = da.where(mask, drop=True)\n            return filtered.mean(dim=dim)\n        \n        # For numerical weights - standard weighted mean\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        41
+      ],
+      "id": "29:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights - first filter then mean\n        if weights.dtype == bool:\n            # Convert weights to mask and apply\n            mask = weights & da.notnull() if not skipna else weights\n            filtered = da.where(mask, drop=True)\n            return filtered.mean(dim=dim)\n        \n        # For numerical weights - standard weighted mean\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "new_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            weighted_sum = dot(da, weights, dims=dim)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        43
+      ],
+      "id": "30:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights - first filter then mean\n        if weights.dtype == bool:\n            # Convert weights to mask and apply\n            mask = weights & da.notnull() if not skipna else weights\n            filtered = da.where(mask, drop=True)\n            return filtered.mean(dim=dim)\n        \n        # For numerical weights - standard weighted mean\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            weighted_sum = dot(da, weights, dims=dim)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        44
+      ],
+      "id": "31:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            weighted_sum = dot(da, weights, dims=dim)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "new_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # First mask out False-weighted points completely\n            masked = da.where(weights, 0)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate sum of included points\n            sum_values = masked.sum(dim=dim)\n            # Count of included points\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, sum_values / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        46,
+        47
+      ],
+      "id": "32:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            weighted_sum = dot(da, weights, dims=dim)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n",
+        "new_str": "\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # First mask out False-weighted points completely\n            masked = da.where(weights, 0)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate sum of included points\n            sum_values = masked.sum(dim=dim)\n            # Count of included points\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, sum_values / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        48
+      ],
+      "id": "33:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "edit_status": "failure: unknown"
+      },
+      "phase": "patch",
+      "step_indices": [
+        50,
+        69,
+        77,
+        80,
+        85,
+        88,
+        89,
+        96
+      ],
+      "id": "34:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # First mask out False-weighted points completely\n            masked = da.where(weights, 0)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate sum of included points\n            sum_values = masked.sum(dim=dim)\n            # Count of included points\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, sum_values / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            # Calculate sum of weighted values\n            weighted_sum = (da * weights).sum(dim=dim)\n            # Count of included points (sum of weights)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        51
+      ],
+      "id": "35:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            # Calculate sum of weighted values\n            weighted_sum = (da * weights).sum(dim=dim)\n            # Count of included points (sum of weights)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "new_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            # Calculate weighted sum using dot product\n            weighted_sum = dot(da, weights, dims=dim)\n            # Count of included points (sum of weights)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        53
+      ],
+      "id": "36:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            # Calculate sum of weighted values\n            weighted_sum = (da * weights).sum(dim=dim)\n            # Count of included points (sum of weights)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            # Calculate weighted sum using dot product\n            weighted_sum = dot(da, weights, dims=dim)\n            # Count of included points (sum of weights)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        54
+      ],
+      "id": "37:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            # Calculate weighted sum using dot product\n            weighted_sum = dot(da, weights, dims=dim)\n            # Count of included points (sum of weights)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "new_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # First mask out False-weighted points completely\n            masked = da.where(weights, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate simple mean of included points\n            return masked.mean(dim=dim)\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        56
+      ],
+      "id": "38:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            # Calculate weighted sum using dot product\n            weighted_sum = dot(da, weights, dims=dim)\n            # Count of included points (sum of weights)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # First mask out False-weighted points completely\n            masked = da.where(weights, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate simple mean of included points\n            return masked.mean(dim=dim)\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        57
+      ],
+      "id": "39:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # First mask out False-weighted points completely\n            masked = da.where(weights, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate simple mean of included points\n            return masked.mean(dim=dim)\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "new_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            # Calculate sum of weighted values\n            weighted_sum = (da * weights).sum(dim=dim)\n            # Count of included points (sum of weights)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        59
+      ],
+      "id": "40:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # First mask out False-weighted points completely\n            masked = da.where(weights, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate simple mean of included points\n            return masked.mean(dim=dim)\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        60
+      ],
+      "id": "41:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # First mask out False-weighted points completely\n            masked = da.where(weights, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate simple mean of included points\n            return masked.mean(dim=dim)\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            # Calculate weighted sum and count of included points\n            weighted_sum = (da * weights).sum(dim=dim)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        62
+      ],
+      "id": "42:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            # Calculate weighted sum and count of included points\n            weighted_sum = (da * weights).sum(dim=dim)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "new_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # First completely mask out False-weighted points\n            masked = da.where(weights, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate simple mean of included points\n            return masked.mean(dim=dim)\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        64,
+        65
+      ],
+      "id": "43:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "view_range": [
+          170,
+          205
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        66,
+        71,
+        74,
+        76,
+        79,
+        84,
+        87,
+        93,
+        95
+      ],
+      "id": "44:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                da = da.fillna(0.0)\n            # Calculate weighted sum and count of included points\n            weighted_sum = (da * weights).sum(dim=dim)\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, weighted_sum / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # First completely mask out False-weighted points\n            masked = da.where(weights, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate simple mean of included points\n            return masked.mean(dim=dim)\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        67
+      ],
+      "id": "45:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # First completely mask out False-weighted points\n            masked = da.where(weights, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate simple mean of included points\n            return masked.mean(dim=dim)\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "new_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            # First completely mask out False-weighted points\n            masked = da.where(weights, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate sum of included points\n            sum_values = masked.sum(dim=dim)\n            # Count of included points\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, sum_values / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        70,
+        72,
+        73,
+        75,
+        78
+      ],
+      "id": "46:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # First completely mask out False-weighted points\n            masked = da.where(weights, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate simple mean of included points\n            return masked.mean(dim=dim)\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\", \n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            # First completely mask out False-weighted points\n            masked = da.where(weights, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate sum of included points\n            sum_values = masked.sum(dim=dim)\n            # Count of included points\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, sum_values / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        81
+      ],
+      "id": "47:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\", \n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            # First completely mask out False-weighted points\n            masked = da.where(weights, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate sum of included points\n            sum_values = masked.sum(dim=dim)\n            # Count of included points\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, sum_values / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "new_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # Convert to mask (1=include, 0=exclude)\n            mask = weights.astype(int)\n            # Apply mask and drop excluded points\n            masked = da.where(mask, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate simple mean of included points\n            return masked.mean(dim=dim)\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        83,
+        86
+      ],
+      "id": "48:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\", \n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            # First completely mask out False-weighted points\n            masked = da.where(weights, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate sum of included points\n            sum_values = masked.sum(dim=dim)\n            # Count of included points\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, sum_values / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "new_str": "\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # Convert to mask (1=include, 0=exclude)\n            mask = weights.astype(int)\n            # Apply mask and drop excluded points\n            masked = da.where(mask, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate simple mean of included points\n            return masked.mean(dim=dim)\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        90
+      ],
+      "id": "49:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pydata__xarray__0.12/xarray/core/weighted.py",
+        "old_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            # Convert to mask (1=include, 0=exclude)\n            mask = weights.astype(int)\n            # Apply mask and drop excluded points\n            masked = da.where(mask, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate simple mean of included points\n            return masked.mean(dim=dim)\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "new_str": "\n\n\n    def _weighted_mean(\n        self,\n        da: \"DataArray\",\n        dim: Optional[Union[Hashable, Iterable[Hashable]]] = None,\n        skipna: Optional[bool] = None,\n    ) -> \"DataArray\":\n        \"\"\"Reduce a DataArray by a weighted ``mean`` along some dimension(s).\"\"\"\n        \n        weights = self.weights\n        \n        # For boolean weights\n        if weights.dtype == bool:\n            weights = weights.astype(int)\n            # First completely mask out False-weighted points\n            masked = da.where(weights, drop=True)\n            if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n                masked = masked.fillna(0.0)\n            # Calculate sum of included points\n            sum_values = masked.sum(dim=dim)\n            # Count of included points\n            count = weights.sum(dim=dim)\n            return xr.where(count != 0, sum_values / count, float('nan'))\n        \n        # For numerical weights\n        if skipna or (skipna is None and da.dtype.kind in \"cfO\"):\n            da = da.fillna(0.0)\n            mask = da.notnull().astype(float)\n        else:\n            mask = da.notnull().astype(float)\n            \n        weighted_sum = dot(da, weights * mask, dims=dim)\n        sum_of_weights = dot(mask, weights, dims=dim)\n        return xr.where(sum_of_weights != 0, weighted_sum / sum_of_weights, float('nan'))\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        92,
+        94
+      ],
+      "id": "50:str_replace_editor\nstr_replace"
+    }
+  ],
+  "edges": [
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "0:empty action",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "2:ls",
+      "key": 0
+    },
+    {
+      "label": "3",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "5:pytest",
+      "key": 0
+    },
+    {
+      "label": "4",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "6:grep",
+      "key": 0
+    },
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "2:ls",
+      "target": "3:find",
+      "key": 0
+    },
+    {
+      "label": "2",
+      "type": "exec",
+      "source": "3:find",
+      "target": "4:grep",
+      "key": 0
+    },
+    {
+      "label": "2",
+      "type": "exec",
+      "source": "4:grep",
+      "target": "4:grep",
+      "key": 0
+    },
+    {
+      "label": "3",
+      "type": "exec",
+      "source": "4:grep",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "4",
+      "type": "exec",
+      "source": "5:pytest",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "5",
+      "type": "exec",
+      "source": "6:grep",
+      "target": "7:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "6",
+      "type": "exec",
+      "source": "7:str_replace_editor\nview",
+      "target": "8:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "62",
+      "type": "exec",
+      "source": "7:str_replace_editor\nview",
+      "target": "42:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "7:str_replace_editor\nview",
+      "target": "44:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "7",
+      "type": "exec",
+      "source": "8:str_replace_editor\nstr_replace",
+      "target": "9:str_replace_editor\ncreate",
+      "key": 0
+    },
+    {
+      "label": "8",
+      "type": "exec",
+      "source": "9:str_replace_editor\ncreate",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "9",
+      "type": "exec",
+      "source": "10:python",
+      "target": "11:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "11",
+      "type": "exec",
+      "source": "10:python",
+      "target": "12:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "13",
+      "type": "exec",
+      "source": "10:python",
+      "target": "13:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "15",
+      "type": "exec",
+      "source": "10:python",
+      "target": "14:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "17",
+      "type": "exec",
+      "source": "10:python",
+      "target": "15:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "19",
+      "type": "exec",
+      "source": "10:python",
+      "target": "16:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "21",
+      "type": "exec",
+      "source": "10:python",
+      "target": "17:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "24",
+      "type": "exec",
+      "source": "10:python",
+      "target": "19:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "26",
+      "type": "exec",
+      "source": "10:python",
+      "target": "20:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "28",
+      "type": "exec",
+      "source": "10:python",
+      "target": "21:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "31",
+      "type": "exec",
+      "source": "10:python",
+      "target": "23:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "34",
+      "type": "exec",
+      "source": "10:python",
+      "target": "25:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "36",
+      "type": "exec",
+      "source": "10:python",
+      "target": "26:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "38",
+      "type": "exec",
+      "source": "10:python",
+      "target": "27:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "40",
+      "type": "exec",
+      "source": "10:python",
+      "target": "28:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "43",
+      "type": "exec",
+      "source": "10:python",
+      "target": "30:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "46",
+      "type": "exec",
+      "source": "10:python",
+      "target": "32:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "50",
+      "type": "exec",
+      "source": "10:python",
+      "target": "34:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "69",
+      "type": "exec",
+      "source": "10:python",
+      "target": "34:str_replace_editor\nstr_replace",
+      "key": 1
+    },
+    {
+      "label": "53",
+      "type": "exec",
+      "source": "10:python",
+      "target": "36:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "56",
+      "type": "exec",
+      "source": "10:python",
+      "target": "38:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "59",
+      "type": "exec",
+      "source": "10:python",
+      "target": "40:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "64",
+      "type": "exec",
+      "source": "10:python",
+      "target": "43:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "83",
+      "type": "exec",
+      "source": "10:python",
+      "target": "48:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "92",
+      "type": "exec",
+      "source": "10:python",
+      "target": "50:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "10",
+      "type": "exec",
+      "source": "11:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "12",
+      "type": "exec",
+      "source": "12:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "14",
+      "type": "exec",
+      "source": "13:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "16",
+      "type": "exec",
+      "source": "14:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "18",
+      "type": "exec",
+      "source": "15:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "20",
+      "type": "exec",
+      "source": "16:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "22",
+      "type": "exec",
+      "source": "17:str_replace_editor\nstr_replace",
+      "target": "18:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "23",
+      "type": "exec",
+      "source": "18:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "25",
+      "type": "exec",
+      "source": "19:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "27",
+      "type": "exec",
+      "source": "20:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "29",
+      "type": "exec",
+      "source": "21:str_replace_editor\nstr_replace",
+      "target": "22:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "30",
+      "type": "exec",
+      "source": "22:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "32",
+      "type": "exec",
+      "source": "23:str_replace_editor\nstr_replace",
+      "target": "24:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "33",
+      "type": "exec",
+      "source": "24:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "35",
+      "type": "exec",
+      "source": "25:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "37",
+      "type": "exec",
+      "source": "26:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "39",
+      "type": "exec",
+      "source": "27:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "41",
+      "type": "exec",
+      "source": "28:str_replace_editor\nstr_replace",
+      "target": "29:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "42",
+      "type": "exec",
+      "source": "29:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "44",
+      "type": "exec",
+      "source": "30:str_replace_editor\nstr_replace",
+      "target": "31:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "45",
+      "type": "exec",
+      "source": "31:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "47",
+      "type": "exec",
+      "source": "32:str_replace_editor\nstr_replace",
+      "target": "32:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "48",
+      "type": "exec",
+      "source": "32:str_replace_editor\nstr_replace",
+      "target": "33:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "49",
+      "type": "exec",
+      "source": "33:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "51",
+      "type": "exec",
+      "source": "34:str_replace_editor\nstr_replace",
+      "target": "35:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "70",
+      "type": "exec",
+      "source": "34:str_replace_editor\nstr_replace",
+      "target": "46:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "78",
+      "type": "exec",
+      "source": "34:str_replace_editor\nstr_replace",
+      "target": "46:str_replace_editor\nstr_replace",
+      "key": 1
+    },
+    {
+      "label": "81",
+      "type": "exec",
+      "source": "34:str_replace_editor\nstr_replace",
+      "target": "47:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "86",
+      "type": "exec",
+      "source": "34:str_replace_editor\nstr_replace",
+      "target": "48:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "89",
+      "type": "exec",
+      "source": "34:str_replace_editor\nstr_replace",
+      "target": "34:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "90",
+      "type": "exec",
+      "source": "34:str_replace_editor\nstr_replace",
+      "target": "49:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "52",
+      "type": "exec",
+      "source": "35:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "54",
+      "type": "exec",
+      "source": "36:str_replace_editor\nstr_replace",
+      "target": "37:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "55",
+      "type": "exec",
+      "source": "37:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "57",
+      "type": "exec",
+      "source": "38:str_replace_editor\nstr_replace",
+      "target": "39:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "58",
+      "type": "exec",
+      "source": "39:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "60",
+      "type": "exec",
+      "source": "40:str_replace_editor\nstr_replace",
+      "target": "41:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "61",
+      "type": "exec",
+      "source": "41:str_replace_editor\nstr_replace",
+      "target": "7:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "63",
+      "type": "exec",
+      "source": "42:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "65",
+      "type": "exec",
+      "source": "43:str_replace_editor\nstr_replace",
+      "target": "43:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "66",
+      "type": "exec",
+      "source": "43:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "67",
+      "type": "exec",
+      "source": "44:str_replace_editor\nview",
+      "target": "45:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "72",
+      "type": "exec",
+      "source": "44:str_replace_editor\nview",
+      "target": "46:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "75",
+      "type": "exec",
+      "source": "44:str_replace_editor\nview",
+      "target": "46:str_replace_editor\nstr_replace",
+      "key": 1
+    },
+    {
+      "label": "77",
+      "type": "exec",
+      "source": "44:str_replace_editor\nview",
+      "target": "34:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "80",
+      "type": "exec",
+      "source": "44:str_replace_editor\nview",
+      "target": "34:str_replace_editor\nstr_replace",
+      "key": 1
+    },
+    {
+      "label": "85",
+      "type": "exec",
+      "source": "44:str_replace_editor\nview",
+      "target": "34:str_replace_editor\nstr_replace",
+      "key": 2
+    },
+    {
+      "label": "88",
+      "type": "exec",
+      "source": "44:str_replace_editor\nview",
+      "target": "34:str_replace_editor\nstr_replace",
+      "key": 3
+    },
+    {
+      "label": "96",
+      "type": "exec",
+      "source": "44:str_replace_editor\nview",
+      "target": "34:str_replace_editor\nstr_replace",
+      "key": 4
+    },
+    {
+      "label": "94",
+      "type": "exec",
+      "source": "44:str_replace_editor\nview",
+      "target": "50:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "68",
+      "type": "exec",
+      "source": "45:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "71",
+      "type": "exec",
+      "source": "46:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "74",
+      "type": "exec",
+      "source": "46:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nview",
+      "key": 1
+    },
+    {
+      "label": "76",
+      "type": "exec",
+      "source": "46:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nview",
+      "key": 2
+    },
+    {
+      "label": "79",
+      "type": "exec",
+      "source": "46:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nview",
+      "key": 3
+    },
+    {
+      "label": "73",
+      "type": "exec",
+      "source": "46:str_replace_editor\nstr_replace",
+      "target": "46:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "82",
+      "type": "exec",
+      "source": "47:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "84",
+      "type": "exec",
+      "source": "48:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "87",
+      "type": "exec",
+      "source": "48:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nview",
+      "key": 1
+    },
+    {
+      "label": "91",
+      "type": "exec",
+      "source": "49:str_replace_editor\nstr_replace",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "93",
+      "type": "exec",
+      "source": "50:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "95",
+      "type": "exec",
+      "source": "50:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nview",
+      "key": 1
+    }
+  ]
+}

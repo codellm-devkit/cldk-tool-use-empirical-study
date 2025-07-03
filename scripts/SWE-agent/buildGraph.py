@@ -9,10 +9,22 @@ from networkx.readwrite import json_graph
 from commandParser import CommandParser
 from datasets import load_dataset
 from collections import defaultdict
+import getpass
 
 # Load SWE-bench_Verified difficulty mapping
 swe_bench_ds = load_dataset("princeton-nlp/SWE-bench_Verified", split="test")
 difficulty_lookup = {row["instance_id"]: row["difficulty"] for row in swe_bench_ds}
+
+# Golden patch difficulty lookup
+golden_patch_metrics = "../golden_patch_metrics.jsonl"
+if os.path.exists(golden_patch_metrics):
+    with open(golden_patch_metrics, "r", encoding="utf-8") as f:
+        lines = [json.loads(line) for line in f]
+        golden_patch_difficulty_lookup = {item["instance_id"]: item["patch_difficulty"] for item in lines}
+        golden_files_change_lookup = {item["instance_id"]: item["file_count"] for item in lines}
+else:
+    golden_patch_difficulty_lookup = {}
+    golden_files_change_lookup = {}
 
 def hash_node_signature(label, args, state):
     normalized = json.dumps({"label": label, "args": args, "state": state}, sort_keys=True)
@@ -52,12 +64,21 @@ def determine_resolution_status(instance_path: str, eval_report_path: str) -> st
         return "unresolved"
     return "unsubmitted"
 
-def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix: str, eval_report_path: str):
+def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix, eval_report_path, patch_metrics_path):
     G = nx.MultiDiGraph()
     node_signature_to_key = {}
     trajectory = traj_data.get("trajectory", [])
     previous_node = None
     localization_nodes = []
+
+    if os.path.exists(patch_metrics_path):
+        with open(patch_metrics_path, "r", encoding="utf-8") as f:
+            lines = [json.loads(line) for line in f]
+            patch_difficulty_lookup = {item["instance_id"]: item["patch_difficulty"] for item in lines}
+            files_change_lookup = {item["instance_id"]: item["file_count"] for item in lines}
+    else:
+        patch_difficulty_lookup = {}
+        files_change_lookup = {}
 
     for step_idx, step in enumerate(trajectory):
         action_str = step.get("action", "")
@@ -139,6 +160,10 @@ def build_graph_from_trajectory(traj_data, parser: CommandParser, output_prefix:
     G.graph["resolution_status"] = resolution_status
     G.graph["instance_name"] = instance_name
     G.graph["difficulty"] = difficulty_lookup.get(instance_name, "unknown")
+    G.graph["golden_patch_difficulty"] = golden_patch_difficulty_lookup.get(instance_name, "unknown")
+    G.graph["golden_files_change"] = golden_files_change_lookup.get(instance_name, 0)
+    G.graph["patch_difficulty"] = patch_difficulty_lookup.get(instance_name, "unknown")
+    G.graph["files_change"] = files_change_lookup.get(instance_name, 0)
 
     os.makedirs(os.path.dirname(output_prefix), exist_ok=True)
     with open(output_prefix + ".json", "w") as f:
@@ -154,12 +179,19 @@ def build_hierarchical_edges(G: nx.MultiDiGraph, localization_nodes):
         data = G.nodes[node]
         path = data.get("args", {}).get("path")
         view_range = data.get("args", {}).get("view_range")
+
         if path:
             path_obj = Path(path)
             if view_range is None:
                 path_nodes.append((node, path_obj))
-            else:
+            elif (
+                isinstance(view_range, (list, tuple)) and
+                len(view_range) == 2 and
+                all(isinstance(x, int) for x in view_range)
+            ):
                 range_nodes_by_path[str(path_obj)].append((node, view_range))
+            else:
+                print(f"[WARN] Skipping invalid view_range for node {node}: {view_range}")
 
     # --- 1) Path hierarchy by folder containment ---
     for child_node, child_path in path_nodes:
@@ -187,11 +219,14 @@ def build_hierarchical_edges(G: nx.MultiDiGraph, localization_nodes):
             for j, (node_j, r_j) in enumerate(range_nodes):
                 if i == j:
                     continue
-                a1, a2 = r_i
-                b1, b2 = r_j
-                if b1 >= a1 and b2 <= a2:
-                    G.add_edge(node_i, node_j, type="hier")
-                    is_nested[node_j] = True
+                try:
+                    a1, a2 = r_i
+                    b1, b2 = r_j
+                    if b1 >= a1 and b2 <= a2:
+                        G.add_edge(node_i, node_j, type="hier")
+                        is_nested[node_j] = True
+                except Exception as e:
+                    print(f"[WARN] Failed to unpack ranges for nesting check: {r_i}, {r_j} ({e})")
 
         # link outermost ranges to:
         #   - exact path node if exists
@@ -293,9 +328,11 @@ def _draw_graph(G: nx.MultiDiGraph, png_path: str):
     plt.close()
 
 if __name__ == "__main__":
-    instance_dir = "../../SWE-agent/trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/astropy__astropy-7671"
+    user = getpass.getuser()
+    instance_dir = f"../../SWE-agent/trajectories/{user}/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/astropy__astropy-7671"
     eval_report_path = "../../SWE-agent/sb-cli-reports/Subset.swe_bench_verified__test__evaluate_swev.json"
-
+    patch_metrics_path = f"../../SWE-agent/trajectories/{user}/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/patch_metrics.jsonl"
+    
     traj_file = None
     for fname in os.listdir(instance_dir):
         if fname.endswith(".traj"):
@@ -319,4 +356,4 @@ if __name__ == "__main__":
         "../../SWE-agent/tools/registry/config.yaml"
     ])
 
-    build_graph_from_trajectory(traj_data, parser, output_prefix, eval_report_path)
+    build_graph_from_trajectory(traj_data, parser, output_prefix, eval_report_path, patch_metrics_path)

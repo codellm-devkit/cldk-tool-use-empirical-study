@@ -1,0 +1,690 @@
+{
+  "directed": true,
+  "multigraph": true,
+  "graph": {
+    "resolution_status": "unresolved",
+    "instance_name": "pytest-dev__pytest-7521",
+    "difficulty": "<15 min fix",
+    "golden_patch_difficulty": "easy",
+    "golden_files_change": 1,
+    "patch_difficulty": "hard",
+    "files_change": 3
+  },
+  "nodes": [
+    {
+      "label": "empty action",
+      "args": {},
+      "phase": "general",
+      "step_indices": [
+        0,
+        8
+      ],
+      "id": "0:empty action"
+    },
+    {
+      "label": "cd",
+      "args": [
+        "/workspace/pytest-dev__pytest__6.0"
+      ],
+      "phase": "general",
+      "step_indices": [
+        1,
+        3,
+        10,
+        16,
+        19,
+        22,
+        25,
+        27,
+        29
+      ],
+      "id": "1:cd"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py"
+      },
+      "phase": "localization",
+      "step_indices": [
+        2
+      ],
+      "id": "2:str_replace_editor\nview"
+    },
+    {
+      "label": "\ngrep",
+      "args": [
+        "src/_pytest/capture.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        3,
+        16
+      ],
+      "id": "3:\ngrep"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py",
+        "view_range": [
+          560,
+          570
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        4
+      ],
+      "id": "4:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py",
+        "view_range": [
+          788,
+          798
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        5
+      ],
+      "id": "5:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py",
+        "view_range": [
+          470,
+          490
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        6,
+        14
+      ],
+      "id": "6:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py",
+        "old_str": "    def snap(self):\n        self._assert_state(\"snap\", (\"started\", \"suspended\"))\n        self.tmpfile.seek(0)\n        res = self.tmpfile.read()\n        self.tmpfile.seek(0)\n        self.tmpfile.truncate()\n        return res",
+        "new_str": "    def snap(self):\n        self._assert_state(\"snap\", (\"started\", \"suspended\"))\n        self.tmpfile.seek(0)\n        # Read raw bytes to preserve line endings\n        res_bytes = self.tmpfile.buffer.read()\n        # Decode while preserving \\r characters\n        res = res_bytes.decode('utf-8', errors='replace')\n        self.tmpfile.seek(0)\n        self.tmpfile.truncate()\n        return res",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        7
+      ],
+      "id": "7:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\ncreate",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/testing/test_capfd_carriage_return.py",
+        "file_text": "\nimport pytest\n\ndef test_capfd_preserves_carriage_return(capfd):\n    \"\"\"Test that capfd preserves carriage returns in output.\"\"\"\n    print('Test\\r', end='')\n    out, err = capfd.readouterr()\n    assert out.endswith('\\r'), f\"Expected carriage return, got: {out!r}\"\n\ndef test_capfd_preserves_dos_line_endings(capfd):\n    \"\"\"Test that DOS-style line endings are preserved.\"\"\"\n    print('Line1\\r\\nLine2', end='')\n    out, err = capfd.readouterr()\n    assert '\\r\\n' in out, f\"Expected CRLF, got: {out!r}\"\n"
+      },
+      "phase": "verification",
+      "step_indices": [
+        9
+      ],
+      "id": "8:str_replace_editor\ncreate"
+    },
+    {
+      "label": "\npython",
+      "args": [
+        "testing/test_capfd_carriage_return.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        10,
+        19,
+        22,
+        25,
+        27,
+        29
+      ],
+      "id": "9:\npython"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py",
+        "old_str": "\n    def __init__(self, targetfd: int) -> None:\n        self.targetfd = targetfd\n\n        try:\n            os.fstat(targetfd)\n        except OSError:\n            # FD capturing is conceptually simple -- create a temporary file,\n            # redirect the FD to it, redirect back when done. But when the\n            # target FD is invalid it throws a wrench into this loveley scheme.\n            #\n            # Tests themselves shouldn't care if the FD is valid, FD capturing\n            # should work regardless of external circumstances. So falling back\n            # to just sys capturing is not a good option.\n            #\n            # Further complications are the need to support suspend() and the\n            # possibility of FD reuse (e.g. the tmpfile getting the very same\n            # target FD). The following approach is robust, I believe.\n            self.targetfd_invalid = os.open(\n                os.devnull, os.O_RDWR\n            )  # type: Optional[int]\n            os.dup2(self.targetfd_invalid, targetfd)\n        else:\n            self.targetfd_invalid = None\n        self.targetfd_save = os.dup(targetfd)\n\n        if targetfd == 0:\n            self.tmpfile = open(os.devnull)\n            self.syscapture = SysCapture(targetfd)\n        else:\n            self.tmpfile = EncodedFile(\n                # TODO: Remove type ignore, fixed in next mypy release.\n                TemporaryFile(buffering=0),  # type: ignore[arg-type]\n                encoding=\"utf-8\",\n                errors=\"replace\",\n                write_through=True,\n            )\n            if targetfd in patchsysdict:\n                self.syscapture = SysCapture(targetfd, self.tmpfile)\n            else:\n                self.syscapture = NoCapture()\n\n        self._state = \"initialized\"\n",
+        "new_str": "\n    def __init__(self, targetfd: int) -> None:\n        self.targetfd = targetfd\n\n        try:\n            os.fstat(targetfd)\n        except OSError:\n            self.targetfd_invalid = os.open(\n                os.devnull, os.O_RDWR\n            )  # type: Optional[int]\n            os.dup2(self.targetfd_invalid, targetfd)\n        else:\n            self.targetfd_invalid = None\n        self.targetfd_save = os.dup(targetfd)\n\n        if targetfd == 0:\n            self.tmpfile = open(os.devnull)\n            self.syscapture = SysCapture(targetfd)\n        else:\n            # Use binary mode temporary file to preserve line endings\n            self.tmpfile = TemporaryFile(buffering=0)  # type: ignore[arg-type]\n            if targetfd in patchsysdict:\n                self.syscapture = SysCapture(targetfd)\n            else:\n                self.syscapture = NoCapture()\n\n        self._state = \"initialized\"\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        11
+      ],
+      "id": "10:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py",
+        "old_str": "\n    def snap(self):\n        self._assert_state(\"snap\", (\"started\", \"suspended\"))\n        self.tmpfile.seek(0)\n        res = self.tmpfile.read()\n        self.tmpfile.seek(0)\n        self.tmpfile.truncate()\n        return res\n",
+        "new_str": "\n    def snap(self):\n        self._assert_state(\"snap\", (\"started\", \"suspended\"))\n        self.tmpfile.seek(0)\n        res_bytes = self.tmpfile.read()\n        self.tmpfile.seek(0)\n        self.tmpfile.truncate()\n        # Decode while preserving all control characters\n        return res_bytes.decode('utf-8', errors='replace')\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        12,
+        13
+      ],
+      "id": "11:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py",
+        "view_range": [
+          478,
+          490
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        15
+      ],
+      "id": "12:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py",
+        "view_range": [
+          462,
+          472
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        17
+      ],
+      "id": "13:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py",
+        "old_str": "\n    def snap(self):\n        self._assert_state(\"snap\", (\"started\", \"suspended\"))\n        self.tmpfile.seek(0)\n        # Read raw bytes to preserve line endings\n        res_bytes = self.tmpfile.buffer.read()\n        # Decode while preserving \\r characters\n        res = res_bytes.decode('utf-8', errors='replace')\n        self.tmpfile.seek(0)\n        self.tmpfile.truncate()\n        return res\n",
+        "new_str": "\n    def snap(self):\n        self._assert_state(\"snap\", (\"started\", \"suspended\"))\n        self.tmpfile.seek(0)\n        # Read raw bytes directly from binary file\n        res_bytes = self.tmpfile.read()\n        # Decode while preserving all control characters\n        res = res_bytes.decode('utf-8', errors='replace')\n        self.tmpfile.seek(0)\n        self.tmpfile.truncate()\n        return res\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        18
+      ],
+      "id": "14:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py",
+        "view_range": [
+          330,
+          350
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        20,
+        23
+      ],
+      "id": "15:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py",
+        "old_str": "\n\n    def snap(self):\n        res = self.tmpfile.getvalue()\n        self.tmpfile.seek(0)\n        self.tmpfile.truncate()\n        return res\n\n",
+        "new_str": "\n\n    def snap(self):\n        self.tmpfile.seek(0)\n        res_bytes = self.tmpfile.buffer.getvalue()\n        self.tmpfile.seek(0)\n        self.tmpfile.truncate()\n        return res_bytes.decode('utf-8', errors='replace')\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        21
+      ],
+      "id": "16:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py",
+        "old_str": "\n    def writeorg(self, data):\n        self._assert_state(\"writeorg\", (\"started\", \"suspended\"))\n        self._old.write(data)\n        self._old.flush()\n",
+        "new_str": "\n    def writeorg(self, data):\n        self._assert_state(\"writeorg\", (\"started\", \"suspended\"))\n        if isinstance(data, str):\n            data = data.encode('utf-8')\n        self._old.buffer.write(data)\n        self._old.buffer.flush()\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        24
+      ],
+      "id": "17:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py",
+        "old_str": "\n\n    def writeorg(self, data):\n        self._assert_state(\"writeorg\", (\"started\", \"suspended\"))\n        if isinstance(data, str):\n            data = data.encode('utf-8')\n        self._old.buffer.write(data)\n        self._old.buffer.flush()\n\n",
+        "new_str": "\n\n    def writeorg(self, data):\n        self._assert_state(\"writeorg\", (\"started\", \"suspended\"))\n        if isinstance(data, str):\n            data = data.encode('utf-8', errors='replace')\n        # Write raw bytes directly to avoid any text processing\n        os.write(self._old.fileno(), data)\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        26
+      ],
+      "id": "18:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/src/_pytest/capture.py",
+        "old_str": "\n\nclass CaptureIO(io.TextIOWrapper):\n    def __init__(self) -> None:\n        super().__init__(io.BytesIO(), encoding=\"UTF-8\", newline=\"\", write_through=True)\n\n    def getvalue(self) -> str:\n        assert isinstance(self.buffer, io.BytesIO)\n        return self.buffer.getvalue().decode(\"UTF-8\")\n\n",
+        "new_str": "\n\nclass CaptureIO:\n    def __init__(self) -> None:\n        self.buffer = io.BytesIO()\n        \n    def write(self, data):\n        if isinstance(data, str):\n            data = data.encode('utf-8', errors='replace')\n        self.buffer.write(data)\n        return len(data)\n        \n    def getvalue(self) -> str:\n        return self.buffer.getvalue().decode('utf-8', errors='replace')\n\n    # Required file-like methods\n    def flush(self): pass\n    def close(self): pass\n    @property\n    def encoding(self): return 'utf-8'\n    @property\n    def errors(self): return 'replace'\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        28
+      ],
+      "id": "19:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/doc/en/capture.rst",
+        "old_str": "\n.. _`captures`:\n\nCaptures\n========\n\n.. _`capfd`:\n\nThe ``capfd`` fixture\n---------------------\n",
+        "new_str": "\n.. _`captures`:\n\nCaptures\n========\n\n.. note::\n   By default, Python's print function converts carriage returns (\\r) to newlines (\\n).\n   To capture raw output including original line endings, use the ``raw=True`` parameter\n   with the capture fixtures.\n\n.. _`capfd`:\n\nThe ``capfd`` fixture\n---------------------\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        30
+      ],
+      "id": "20:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/doc/en/capture.rst",
+        "view_range": [
+          1,
+          20
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        31,
+        33
+      ],
+      "id": "21:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/doc/en/capture.rst",
+        "old_str": "\n\nDefault stdout/stderr/stdin capturing behaviour\n---------------------------------------------------------\n\nDuring test execution any output sent to ``stdout`` and ``stderr`` is\ncaptured.  If a test or a setup method fails its according captured\noutput will usually be shown along with the failure traceback. (this\nbehavior can be configured by the ``--show-capture`` command-line option).\n\nIn addition, ``stdin`` is set to a \"null\" object which will\nfail on attempts to read from it because it is rarely desired\nto wait for interactive input when running automated tests.\n\nBy default capturing is done by intercepting writes to low level\nfile descriptors.  This allows to capture output from simple\n\n",
+        "new_str": "\n\nDefault stdout/stderr/stdin capturing behaviour\n---------------------------------------------------------\n\n.. note::\n   Python's print function and sys.stdout handling may convert line endings\n   (such as converting ``\\r`` to ``\\n``) before pytest captures the output.\n   To capture raw output including original line endings, consider writing\n   directly to the underlying file descriptor or using binary mode.\n\nDuring test execution any output sent to ``stdout`` and ``stderr`` is\ncaptured.  If a test or a setup method fails its according captured\noutput will usually be shown along with the failure traceback. (this\nbehavior can be configured by the ``--show-capture`` command-line option).\n\nIn addition, ``stdin`` is set to a \"null\" object which will\nfail on attempts to read from it because it is rarely desired\nto wait for interactive input when running automated tests.\n\nBy default capturing is done by intercepting writes to low level\nfile descriptors.  This allows to capture output from simple\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        32
+      ],
+      "id": "22:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__6.0/doc/en/capture.rst",
+        "old_str": "\n.. _`captures`:\n\nCapturing of the stdout/stderr output\n=========================================================\n\nDefault stdout/stderr/stdin capturing behaviour\n---------------------------------------------------------\n\nDuring test execution any output sent to ``stdout`` and ``stderr`` is\ncaptured.  If a test or a setup method fails its according captured\noutput will usually be shown along with the failure traceback. (this\nbehavior can be configured by the ``--show-capture`` command-line option).\n\nIn addition, ``stdin`` is set to a \"null\" object which will\nfail on attempts to read from it because it is rarely desired\nto wait for interactive input when running automated tests.\n\nBy default capturing is done by intercepting writes to low level\nfile descriptors.  This allows to capture output from simple\n",
+        "new_str": "\n.. _`captures`:\n\nCapturing of the stdout/stderr output\n=========================================================\n\nDefault stdout/stderr/stdin capturing behaviour\n---------------------------------------------------------\n\n.. note::\n   Python's print function and sys.stdout handling may convert line endings\n   (such as converting ``\\r`` to ``\\n``) before pytest captures the output.\n   To capture raw output including original line endings, consider writing\n   directly to the underlying file descriptor or using binary mode.\n\nDuring test execution any output sent to ``stdout`` and ``stderr`` is\ncaptured.  If a test or a setup method fails its according captured\noutput will usually be shown along with the failure traceback. (this\nbehavior can be configured by the ``--show-capture`` command-line option).\n\nIn addition, ``stdin`` is set to a \"null\" object which will\nfail on attempts to read from it because it is rarely desired\nto wait for interactive input when running automated tests.\n\nBy default capturing is done by intercepting writes to low level\nfile descriptors.  This allows to capture output from simple\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        34
+      ],
+      "id": "23:str_replace_editor\nstr_replace"
+    }
+  ],
+  "edges": [
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "0:empty action",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "9",
+      "type": "exec",
+      "source": "0:empty action",
+      "target": "8:str_replace_editor\ncreate",
+      "key": 0
+    },
+    {
+      "label": "2",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "2:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "3",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "3:\ngrep",
+      "key": 0
+    },
+    {
+      "label": "16",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "3:\ngrep",
+      "key": 1
+    },
+    {
+      "label": "10",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "9:\npython",
+      "key": 0
+    },
+    {
+      "label": "19",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "9:\npython",
+      "key": 1
+    },
+    {
+      "label": "22",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "9:\npython",
+      "key": 2
+    },
+    {
+      "label": "25",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "9:\npython",
+      "key": 3
+    },
+    {
+      "label": "27",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "9:\npython",
+      "key": 4
+    },
+    {
+      "label": "29",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "9:\npython",
+      "key": 5
+    },
+    {
+      "label": "3",
+      "type": "exec",
+      "source": "2:str_replace_editor\nview",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "2:str_replace_editor\nview",
+      "target": "4:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "2:str_replace_editor\nview",
+      "target": "5:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "2:str_replace_editor\nview",
+      "target": "6:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "2:str_replace_editor\nview",
+      "target": "13:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "2:str_replace_editor\nview",
+      "target": "15:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "4",
+      "type": "exec",
+      "source": "3:\ngrep",
+      "target": "4:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "17",
+      "type": "exec",
+      "source": "3:\ngrep",
+      "target": "13:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "5",
+      "type": "exec",
+      "source": "4:str_replace_editor\nview",
+      "target": "5:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "6",
+      "type": "exec",
+      "source": "5:str_replace_editor\nview",
+      "target": "6:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "7",
+      "type": "exec",
+      "source": "6:str_replace_editor\nview",
+      "target": "7:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "15",
+      "type": "exec",
+      "source": "6:str_replace_editor\nview",
+      "target": "12:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "6:str_replace_editor\nview",
+      "target": "12:str_replace_editor\nview",
+      "key": 1
+    },
+    {
+      "label": "8",
+      "type": "exec",
+      "source": "7:str_replace_editor\nstr_replace",
+      "target": "0:empty action",
+      "key": 0
+    },
+    {
+      "label": "10",
+      "type": "exec",
+      "source": "8:str_replace_editor\ncreate",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "11",
+      "type": "exec",
+      "source": "9:\npython",
+      "target": "10:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "20",
+      "type": "exec",
+      "source": "9:\npython",
+      "target": "15:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "23",
+      "type": "exec",
+      "source": "9:\npython",
+      "target": "15:str_replace_editor\nview",
+      "key": 1
+    },
+    {
+      "label": "26",
+      "type": "exec",
+      "source": "9:\npython",
+      "target": "18:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "28",
+      "type": "exec",
+      "source": "9:\npython",
+      "target": "19:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "30",
+      "type": "exec",
+      "source": "9:\npython",
+      "target": "20:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "12",
+      "type": "exec",
+      "source": "10:str_replace_editor\nstr_replace",
+      "target": "11:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "13",
+      "type": "exec",
+      "source": "11:str_replace_editor\nstr_replace",
+      "target": "11:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "14",
+      "type": "exec",
+      "source": "11:str_replace_editor\nstr_replace",
+      "target": "6:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "16",
+      "type": "exec",
+      "source": "12:str_replace_editor\nview",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "18",
+      "type": "exec",
+      "source": "13:str_replace_editor\nview",
+      "target": "14:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "19",
+      "type": "exec",
+      "source": "14:str_replace_editor\nstr_replace",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "21",
+      "type": "exec",
+      "source": "15:str_replace_editor\nview",
+      "target": "16:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "24",
+      "type": "exec",
+      "source": "15:str_replace_editor\nview",
+      "target": "17:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "22",
+      "type": "exec",
+      "source": "16:str_replace_editor\nstr_replace",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "25",
+      "type": "exec",
+      "source": "17:str_replace_editor\nstr_replace",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "27",
+      "type": "exec",
+      "source": "18:str_replace_editor\nstr_replace",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "29",
+      "type": "exec",
+      "source": "19:str_replace_editor\nstr_replace",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "31",
+      "type": "exec",
+      "source": "20:str_replace_editor\nstr_replace",
+      "target": "21:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "32",
+      "type": "exec",
+      "source": "21:str_replace_editor\nview",
+      "target": "22:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "34",
+      "type": "exec",
+      "source": "21:str_replace_editor\nview",
+      "target": "23:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "33",
+      "type": "exec",
+      "source": "22:str_replace_editor\nstr_replace",
+      "target": "21:str_replace_editor\nview",
+      "key": 0
+    }
+  ]
+}

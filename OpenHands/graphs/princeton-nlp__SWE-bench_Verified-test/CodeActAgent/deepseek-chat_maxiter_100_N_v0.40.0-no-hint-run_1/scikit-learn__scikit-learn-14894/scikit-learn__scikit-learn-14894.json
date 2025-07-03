@@ -1,0 +1,534 @@
+{
+  "directed": true,
+  "multigraph": true,
+  "graph": {
+    "resolution_status": "resolved",
+    "instance_name": "scikit-learn__scikit-learn-14894",
+    "difficulty": "15 min - 1 hour",
+    "golden_patch_difficulty": "medium",
+    "golden_files_change": 1,
+    "patch_difficulty": "medium",
+    "files_change": 1
+  },
+  "nodes": [
+    {
+      "label": "empty action",
+      "args": {},
+      "phase": "general",
+      "step_indices": [
+        0,
+        8
+      ],
+      "id": "0:empty action"
+    },
+    {
+      "label": "cd",
+      "args": [
+        "/workspace/scikit-learn__scikit-learn__0.22"
+      ],
+      "phase": "general",
+      "step_indices": [
+        1,
+        2,
+        3,
+        6,
+        15
+      ],
+      "id": "1:cd"
+    },
+    {
+      "label": "ls",
+      "args": [],
+      "phase": "general",
+      "step_indices": [
+        1
+      ],
+      "id": "2:ls"
+    },
+    {
+      "label": "find",
+      "args": [
+        ".",
+        "test*",
+        "d"
+      ],
+      "phase": "general",
+      "step_indices": [
+        1
+      ],
+      "id": "3:find"
+    },
+    {
+      "label": "grep",
+      "args": [
+        "test",
+        "Makefile"
+      ],
+      "phase": "general",
+      "step_indices": [
+        2
+      ],
+      "id": "4:grep"
+    },
+    {
+      "label": "grep",
+      "args": [
+        "test",
+        "setup.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        2
+      ],
+      "id": "5:grep"
+    },
+    {
+      "label": "pytest",
+      "args": [
+        "sklearn/svm/tests"
+      ],
+      "phase": "general",
+      "step_indices": [
+        3
+      ],
+      "id": "6:pytest"
+    },
+    {
+      "label": "str_replace_editor\ncreate",
+      "args": {
+        "path": "/workspace/reproduce_svm_sparse_issue.py",
+        "file_text": "\nimport numpy as np\nimport scipy.sparse\nfrom sklearn.svm import SVR\n\n# Reproduction case from issue\nx_train = np.array([\n    [0, 1, 0, 0],\n    [0, 0, 0, 1],\n    [0, 0, 1, 0],\n    [0, 0, 0, 1]\n])\ny_train = np.array([0.04, 0.04, 0.10, 0.16])\n\nmodel = SVR(\n    C=316.227766017,\n    cache_size=200,\n    coef0=0.0,\n    degree=3,\n    epsilon=0.1,\n    gamma=1.0,\n    kernel='linear',\n    max_iter=15000,\n    shrinking=True,\n    tol=0.001,\n    verbose=False\n)\n\n# Convert to sparse and fit\nxtrain = scipy.sparse.csr_matrix(x_train)\nmodel.fit(xtrain, y_train)  # Should not raise ZeroDivisionError\nprint(\"Success - no ZeroDivisionError occurred\")\n"
+      },
+      "phase": "verification",
+      "step_indices": [
+        4
+      ],
+      "id": "7:str_replace_editor\ncreate"
+    },
+    {
+      "label": "cd",
+      "args": [
+        "/workspace"
+      ],
+      "phase": "general",
+      "step_indices": [
+        5,
+        10,
+        14,
+        17,
+        20
+      ],
+      "id": "8:cd"
+    },
+    {
+      "label": "python",
+      "args": [
+        "reproduce_svm_sparse_issue.py"
+      ],
+      "phase": "verification",
+      "step_indices": [
+        5,
+        10,
+        14,
+        17,
+        20
+      ],
+      "id": "9:python"
+    },
+    {
+      "label": "grep",
+      "args": [
+        "sklearn/svm/"
+      ],
+      "phase": "general",
+      "step_indices": [
+        6
+      ],
+      "id": "10:grep"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/svm/base.py",
+        "view_range": [
+          280,
+          300
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        7,
+        11
+      ],
+      "id": "11:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/svm/base.py",
+        "old_str": "        n_SV = self.support_vectors_.shape[0]\n\n        dual_coef_indices = np.tile(np.arange(n_SV), n_class)\n        dual_coef_indptr = np.arange(0, dual_coef_indices.size + 1,\n                                     dual_coef_indices.size / n_class)\n        self.dual_coef_ = sp.csr_matrix(\n            (dual_coef_data, dual_coef_indices, dual_coef_indptr),\n            (n_class, n_SV))",
+        "new_str": "        n_SV = self.support_vectors_.shape[0]\n\n        if n_SV == 0:\n            self.dual_coef_ = sp.csr_matrix((0, 0))\n        else:\n            dual_coef_indices = np.tile(np.arange(n_SV), n_class)\n            dual_coef_indptr = np.arange(0, dual_coef_indices.size + 1,\n                                         dual_coef_indices.size / n_class)\n            self.dual_coef_ = sp.csr_matrix(\n                (dual_coef_data, dual_coef_indices, dual_coef_indptr),\n                (n_class, n_SV))",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        9
+      ],
+      "id": "12:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "pip",
+      "args": [
+        "uninstall"
+      ],
+      "phase": "general",
+      "step_indices": [
+        12,
+        19
+      ],
+      "id": "13:pip"
+    },
+    {
+      "label": "\ncd",
+      "args": [
+        "/workspace/scikit-learn__scikit-learn__0.22"
+      ],
+      "phase": "general",
+      "step_indices": [
+        12,
+        19
+      ],
+      "id": "14:\ncd"
+    },
+    {
+      "label": "\npip",
+      "args": [
+        "install"
+      ],
+      "phase": "general",
+      "step_indices": [
+        12
+      ],
+      "id": "15:\npip"
+    },
+    {
+      "label": "C-c",
+      "args": [],
+      "phase": "general",
+      "step_indices": [
+        13,
+        16
+      ],
+      "id": "16:C-c"
+    },
+    {
+      "label": "pip",
+      "args": [
+        "install"
+      ],
+      "phase": "general",
+      "step_indices": [
+        15
+      ],
+      "id": "17:pip"
+    },
+    {
+      "label": "which",
+      "args": [
+        "python"
+      ],
+      "phase": "general",
+      "step_indices": [
+        18
+      ],
+      "id": "18:which"
+    },
+    {
+      "label": "python",
+      "args": [
+        "list",
+        "|",
+        "grep",
+        "scikit-learn"
+      ],
+      "phase": "verification",
+      "step_indices": [
+        18
+      ],
+      "id": "19:python"
+    },
+    {
+      "label": "\npython",
+      "args": [
+        "setup.py",
+        "develop"
+      ],
+      "phase": "general",
+      "step_indices": [
+        19
+      ],
+      "id": "20:\npython"
+    }
+  ],
+  "edges": [
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "0:empty action",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "9",
+      "type": "exec",
+      "source": "0:empty action",
+      "target": "12:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "2:ls",
+      "key": 0
+    },
+    {
+      "label": "2",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "4:grep",
+      "key": 0
+    },
+    {
+      "label": "3",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "6:pytest",
+      "key": 0
+    },
+    {
+      "label": "6",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "10:grep",
+      "key": 0
+    },
+    {
+      "label": "15",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "17:pip",
+      "key": 0
+    },
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "2:ls",
+      "target": "3:find",
+      "key": 0
+    },
+    {
+      "label": "2",
+      "type": "exec",
+      "source": "3:find",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "2",
+      "type": "exec",
+      "source": "4:grep",
+      "target": "5:grep",
+      "key": 0
+    },
+    {
+      "label": "3",
+      "type": "exec",
+      "source": "5:grep",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "4",
+      "type": "exec",
+      "source": "6:pytest",
+      "target": "7:str_replace_editor\ncreate",
+      "key": 0
+    },
+    {
+      "label": "5",
+      "type": "exec",
+      "source": "7:str_replace_editor\ncreate",
+      "target": "8:cd",
+      "key": 0
+    },
+    {
+      "label": "5",
+      "type": "exec",
+      "source": "8:cd",
+      "target": "9:python",
+      "key": 0
+    },
+    {
+      "label": "10",
+      "type": "exec",
+      "source": "8:cd",
+      "target": "9:python",
+      "key": 1
+    },
+    {
+      "label": "14",
+      "type": "exec",
+      "source": "8:cd",
+      "target": "9:python",
+      "key": 2
+    },
+    {
+      "label": "17",
+      "type": "exec",
+      "source": "8:cd",
+      "target": "9:python",
+      "key": 3
+    },
+    {
+      "label": "20",
+      "type": "exec",
+      "source": "8:cd",
+      "target": "9:python",
+      "key": 4
+    },
+    {
+      "label": "6",
+      "type": "exec",
+      "source": "9:python",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "15",
+      "type": "exec",
+      "source": "9:python",
+      "target": "1:cd",
+      "key": 1
+    },
+    {
+      "label": "11",
+      "type": "exec",
+      "source": "9:python",
+      "target": "11:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "18",
+      "type": "exec",
+      "source": "9:python",
+      "target": "18:which",
+      "key": 0
+    },
+    {
+      "label": "7",
+      "type": "exec",
+      "source": "10:grep",
+      "target": "11:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "8",
+      "type": "exec",
+      "source": "11:str_replace_editor\nview",
+      "target": "0:empty action",
+      "key": 0
+    },
+    {
+      "label": "12",
+      "type": "exec",
+      "source": "11:str_replace_editor\nview",
+      "target": "13:pip",
+      "key": 0
+    },
+    {
+      "label": "10",
+      "type": "exec",
+      "source": "12:str_replace_editor\nstr_replace",
+      "target": "8:cd",
+      "key": 0
+    },
+    {
+      "label": "12",
+      "type": "exec",
+      "source": "13:pip",
+      "target": "14:\ncd",
+      "key": 0
+    },
+    {
+      "label": "19",
+      "type": "exec",
+      "source": "13:pip",
+      "target": "14:\ncd",
+      "key": 1
+    },
+    {
+      "label": "12",
+      "type": "exec",
+      "source": "14:\ncd",
+      "target": "15:\npip",
+      "key": 0
+    },
+    {
+      "label": "19",
+      "type": "exec",
+      "source": "14:\ncd",
+      "target": "20:\npython",
+      "key": 0
+    },
+    {
+      "label": "13",
+      "type": "exec",
+      "source": "15:\npip",
+      "target": "16:C-c",
+      "key": 0
+    },
+    {
+      "label": "14",
+      "type": "exec",
+      "source": "16:C-c",
+      "target": "8:cd",
+      "key": 0
+    },
+    {
+      "label": "17",
+      "type": "exec",
+      "source": "16:C-c",
+      "target": "8:cd",
+      "key": 1
+    },
+    {
+      "label": "16",
+      "type": "exec",
+      "source": "17:pip",
+      "target": "16:C-c",
+      "key": 0
+    },
+    {
+      "label": "18",
+      "type": "exec",
+      "source": "18:which",
+      "target": "19:python",
+      "key": 0
+    },
+    {
+      "label": "19",
+      "type": "exec",
+      "source": "19:python",
+      "target": "13:pip",
+      "key": 0
+    },
+    {
+      "label": "20",
+      "type": "exec",
+      "source": "20:\npython",
+      "target": "8:cd",
+      "key": 0
+    }
+  ]
+}

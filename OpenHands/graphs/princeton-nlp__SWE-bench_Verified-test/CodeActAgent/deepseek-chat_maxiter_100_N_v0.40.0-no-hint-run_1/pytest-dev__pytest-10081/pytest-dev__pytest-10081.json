@@ -1,0 +1,1670 @@
+{
+  "directed": true,
+  "multigraph": true,
+  "graph": {
+    "resolution_status": "unresolved",
+    "instance_name": "pytest-dev__pytest-10081",
+    "difficulty": "<15 min fix",
+    "golden_patch_difficulty": "medium",
+    "golden_files_change": 1,
+    "patch_difficulty": "medium",
+    "files_change": 1
+  },
+  "nodes": [
+    {
+      "label": "empty action",
+      "args": {},
+      "phase": "general",
+      "step_indices": [
+        0
+      ],
+      "id": "0:empty action"
+    },
+    {
+      "label": "cd",
+      "args": [
+        "/workspace/pytest-dev__pytest__7.2"
+      ],
+      "phase": "general",
+      "step_indices": [
+        1,
+        2,
+        3
+      ],
+      "id": "1:cd"
+    },
+    {
+      "label": "\npytest",
+      "args": [],
+      "phase": "general",
+      "step_indices": [
+        1,
+        2
+      ],
+      "id": "2:\npytest"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py"
+      },
+      "phase": "localization",
+      "step_indices": [
+        4
+      ],
+      "id": "3:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/testing/test_unittest.py"
+      },
+      "phase": "localization",
+      "step_indices": [
+        5
+      ],
+      "id": "4:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "            # When --pdb is given, we want to postpone calling tearDown() otherwise\n            # when entering the pdb prompt, tearDown() would have probably cleaned up\n            # instance variables, which makes it difficult to debug.\n            # Arguably we could always postpone tearDown(), but this changes the moment where the\n            # TestCase instance interacts with the results object, so better to only do it\n            # when absolutely needed.\n            if self.config.getoption(\"usepdb\") and not _is_skipped(self.obj):\n                self._explicit_tearDown = self._testcase.tearDown\n                setattr(self._testcase, \"tearDown\", lambda *args: None)",
+        "new_str": "            # Skip tearDown handling for skipped tests regardless of pdb mode\n            if _is_skipped(self.obj):\n                return\n            \n            # When --pdb is given, we want to postpone calling tearDown() otherwise\n            # when entering the pdb prompt, tearDown() would have probably cleaned up\n            # instance variables, which makes it difficult to debug.\n            if self.config.getoption(\"usepdb\"):\n                self._explicit_tearDown = self._testcase.tearDown\n                setattr(self._testcase, \"tearDown\", lambda *args: None)",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        6
+      ],
+      "id": "5:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\ncreate",
+      "args": {
+        "path": "/workspace/test_skip_teardown.py",
+        "file_text": "\nimport unittest\n\n@unittest.skip(\"hello\")\nclass MyTestCase(unittest.TestCase):\n    def setUp(self):\n        xxx\n    def test_one(self):\n        pass\n    def tearDown(self):\n        xxx\n"
+      },
+      "phase": "verification",
+      "step_indices": [
+        7
+      ],
+      "id": "6:str_replace_editor\ncreate"
+    },
+    {
+      "label": "cd",
+      "args": [
+        "/workspace"
+      ],
+      "phase": "general",
+      "step_indices": [
+        8,
+        9,
+        11,
+        15,
+        16,
+        18,
+        24,
+        30,
+        33,
+        35,
+        38,
+        39,
+        42,
+        52,
+        53,
+        56
+      ],
+      "id": "7:cd"
+    },
+    {
+      "label": "python",
+      "args": [
+        "test_skip_teardown.py"
+      ],
+      "phase": "verification",
+      "step_indices": [
+        8,
+        9,
+        11,
+        15,
+        16,
+        18,
+        24,
+        30,
+        33,
+        35,
+        38,
+        39,
+        42,
+        52,
+        53,
+        56
+      ],
+      "id": "8:python"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n    def runtest(self) -> None:\n        from _pytest.debugging import maybe_wrap_pytest_function_for_tracing\n\n        assert self._testcase is not None\n\n        maybe_wrap_pytest_function_for_tracing(self)\n\n        # Let the unittest framework handle async functions.\n        if is_async_function(self.obj):\n            # Type ignored because self acts as the TestResult, but is not actually one.\n            self._testcase(result=self)  # type: ignore[arg-type]\n        else:\n            # Skip tearDown handling for skipped tests regardless of pdb mode\n            if _is_skipped(self.obj):\n                return\n            \n            # When --pdb is given, we want to postpone calling tearDown() otherwise\n            # when entering the pdb prompt, tearDown() would have probably cleaned up\n            # instance variables, which makes it difficult to debug.\n            if self.config.getoption(\"usepdb\"):\n                self._explicit_tearDown = self._testcase.tearDown\n                setattr(self._testcase, \"tearDown\", lambda *args: None)\n",
+        "new_str": "\n    def runtest(self) -> None:\n        from _pytest.debugging import maybe_wrap_pytest_function_for_tracing\n\n        assert self._testcase is not None\n\n        # Skip entire test execution for skipped tests\n        if _is_skipped(self.obj):\n            raise pytest.skip.Exception(\n                self.obj.__unittest_skip_why__, _use_item_location=True\n            )\n\n        maybe_wrap_pytest_function_for_tracing(self)\n\n        # Let the unittest framework handle async functions.\n        if is_async_function(self.obj):\n            # Type ignored because self acts as the TestResult, but is not actually one.\n            self._testcase(result=self)  # type: ignore[arg-type]\n        else:\n            # When --pdb is given, we want to postpone calling tearDown() otherwise\n            # when entering the pdb prompt, tearDown() would have probably cleaned up\n            # instance variables, which makes it difficult to debug.\n            if self.config.getoption(\"usepdb\"):\n                self._explicit_tearDown = self._testcase.tearDown\n                setattr(self._testcase, \"tearDown\", lambda *args: None)\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        10
+      ],
+      "id": "9:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "C-c",
+      "args": [],
+      "phase": "general",
+      "step_indices": [
+        12
+      ],
+      "id": "10:C-c"
+    },
+    {
+      "label": "C-d",
+      "args": [],
+      "phase": "general",
+      "step_indices": [
+        13,
+        19,
+        31,
+        36,
+        43,
+        57
+      ],
+      "id": "11:C-d"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n    def collect(self) -> Iterable[Union[Item, Collector]]:\n        from unittest import TestLoader\n\n        cls = self.obj\n        if not getattr(cls, \"__test__\", True):\n            return\n\n        skipped = _is_skipped(cls)\n        if not skipped:\n            self._inject_setup_teardown_fixtures(cls)\n            self._inject_setup_class_fixture()\n\n        self.session._fixturemanager.parsefactories(self, unittest=True)\n        loader = TestLoader()\n        foundsomething = False\n        for name in loader.getTestCaseNames(self.obj):\n            x = getattr(self.obj, name)\n            if not getattr(x, \"__test__\", True):\n                continue\n            funcobj = getimfunc(x)\n            yield TestCaseFunction.from_parent(self, name=name, callobj=funcobj)\n            foundsomething = True\n",
+        "new_str": "\n    def collect(self) -> Iterable[Union[Item, Collector]]:\n        from unittest import TestLoader\n\n        cls = self.obj\n        if not getattr(cls, \"__test__\", True):\n            return\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, yield a single dummy item that will raise skip exception\n            def dummy(*args, **kwargs):\n                raise pytest.skip.Exception(cls.__unittest_skip_why__, _use_item_location=True)\n            \n            yield Function.from_parent(\n                self,\n                name=cls.__name__,\n                callobj=dummy,\n                originalname=cls.__name__,\n            )\n            return\n\n        self._inject_setup_teardown_fixtures(cls)\n        self._inject_setup_class_fixture()\n\n        self.session._fixturemanager.parsefactories(self, unittest=True)\n        loader = TestLoader()\n        foundsomething = False\n        for name in loader.getTestCaseNames(self.obj):\n            x = getattr(self.obj, name)\n            if not getattr(x, \"__test__\", True):\n                continue\n            funcobj = getimfunc(x)\n            yield TestCaseFunction.from_parent(self, name=name, callobj=funcobj)\n            foundsomething = True\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        14
+      ],
+      "id": "12:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n    def setup(self) -> None:\n        # A bound method to be called during teardown() if set (see 'runtest()').\n        self._explicit_tearDown: Optional[Callable[[], None]] = None\n        assert self.parent is not None\n        self._testcase = self.parent.obj(self.name)  # type: ignore[attr-defined]\n        self._obj = getattr(self._testcase, self.name)\n        if hasattr(self, \"_request\"):\n            self._request._fillfixtures()\n",
+        "new_str": "\n    def setup(self) -> None:\n        # A bound method to be called during teardown() if set (see 'runtest()').\n        self._explicit_tearDown: Optional[Callable[[], None]] = None\n        assert self.parent is not None\n        \n        # Skip test case instantiation for skipped tests\n        if _is_skipped(self.parent.obj):\n            raise pytest.skip.Exception(\n                self.parent.obj.__unittest_skip_why__, _use_item_location=True\n            )\n            \n        self._testcase = self.parent.obj(self.name)  # type: ignore[attr-defined]\n        self._obj = getattr(self._testcase, self.name)\n        if hasattr(self, \"_request\"):\n            self._request._fillfixtures()\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        17
+      ],
+      "id": "13:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n    def collect(self) -> Iterable[Union[Item, Collector]]:\n        from unittest import TestLoader\n\n        cls = self.obj\n        if not getattr(cls, \"__test__\", True):\n            return\n\n        skipped = _is_skipped(cls)\n        if not skipped:\n            self._inject_setup_teardown_fixtures(cls)\n            self._inject_setup_class_fixture()\n\n        self.session._fixturemanager.parsefactories(self, unittest=True)\n        loader = TestLoader()\n        foundsomething = False\n        for name in loader.getTestCaseNames(self.obj):\n            x = getattr(self.obj, name)\n            if not getattr(x, \"__test__\", True):\n                continue\n            funcobj = getimfunc(x)\n            yield TestCaseFunction.from_parent(self, name=name, callobj=funcobj)\n            foundsomething = True\n",
+        "new_str": "\n    def collect(self) -> Iterable[Union[Item, Collector]]:\n        from unittest import TestLoader\n\n        cls = self.obj\n        if not getattr(cls, \"__test__\", True):\n            return\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't yield any test items\n            # The skip will be handled by pytest_runtest_protocol\n            return\n\n        self._inject_setup_teardown_fixtures(cls)\n        self._inject_setup_class_fixture()\n\n        self.session._fixturemanager.parsefactories(self, unittest=True)\n        loader = TestLoader()\n        foundsomething = False\n        for name in loader.getTestCaseNames(self.obj):\n            x = getattr(self.obj, name)\n            if not getattr(x, \"__test__\", True):\n                continue\n            funcobj = getimfunc(x)\n            yield TestCaseFunction.from_parent(self, name=name, callobj=funcobj)\n            foundsomething = True\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        20
+      ],
+      "id": "14:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n        skipped = _is_skipped(cls)\n        if not skipped:\n            self._inject_setup_teardown_fixtures(cls)\n            self._inject_setup_class_fixture()\n\n        self.session._fixturemanager.parsefactories(self, unittest=True)\n        loader = TestLoader()\n        foundsomething = False\n        for name in loader.getTestCaseNames(self.obj):\n            x = getattr(self.obj, name)\n            if not getattr(x, \"__test__\", True):\n                continue\n            funcobj = getimfunc(x)\n            yield TestCaseFunction.from_parent(self, name=name, callobj=funcobj)\n            foundsomething = True\n",
+        "new_str": "\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't yield any test items\n            # The skip will be handled by pytest_runtest_protocol\n            return\n\n        self._inject_setup_teardown_fixtures(cls)\n        self._inject_setup_class_fixture()\n\n        self.session._fixturemanager.parsefactories(self, unittest=True)\n        loader = TestLoader()\n        foundsomething = False\n        for name in loader.getTestCaseNames(self.obj):\n            x = getattr(self.obj, name)\n            if not getattr(x, \"__test__\", True):\n                continue\n            funcobj = getimfunc(x)\n            yield TestCaseFunction.from_parent(self, name=name, callobj=funcobj)\n            foundsomething = True\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        21
+      ],
+      "id": "15:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "view_range": [
+          60,
+          100
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        22,
+        83
+      ],
+      "id": "16:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, yield a single dummy item that will raise skip exception\n            def dummy(*args, **kwargs):\n                raise pytest.skip.Exception(cls.__unittest_skip_why__, _use_item_location=True)\n            \n            yield Function.from_parent(\n                self,\n                name=cls.__name__,\n                callobj=dummy,\n                originalname=cls.__name__,\n            )\n            return\n",
+        "new_str": "\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't yield any test items at all\n            # The skip will be reported by pytest_runtest_protocol\n            return\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        23
+      ],
+      "id": "17:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't yield any test items at all\n            # The skip will be reported by pytest_runtest_protocol\n            return\n\n",
+        "new_str": "\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # Mark the class as skipped so TestCaseFunction can check it\n            cls.__pytest_skip__ = True\n            cls.__pytest_skip_why__ = cls.__unittest_skip_why__\n            return\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        25
+      ],
+      "id": "18:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n    def setup(self) -> None:\n        # A bound method to be called during teardown() if set (see 'runtest()').\n        self._explicit_tearDown: Optional[Callable[[], None]] = None\n        assert self.parent is not None\n        self._testcase = self.parent.obj(self.name)  # type: ignore[attr-defined]\n        self._obj = getattr(self._testcase, self.name)\n        if hasattr(self, \"_request\"):\n            self._request._fillfixtures()\n\n",
+        "new_str": "\n\n    def setup(self) -> None:\n        # A bound method to be called during teardown() if set (see 'runtest()').\n        self._explicit_tearDown: Optional[Callable[[], None]] = None\n        assert self.parent is not None\n        \n        # Check for skipped class\n        if getattr(self.parent.obj, \"__pytest_skip__\", False):\n            raise pytest.skip.Exception(\n                getattr(self.parent.obj, \"__pytest_skip_why__\", \"Skipped\"),\n                _use_item_location=True\n            )\n            \n        self._testcase = self.parent.obj(self.name)  # type: ignore[attr-defined]\n        self._obj = getattr(self._testcase, self.name)\n        if hasattr(self, \"_request\"):\n            self._request._fillfixtures()\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        26,
+        45
+      ],
+      "id": "19:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "view_range": [
+          200,
+          230
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        27,
+        46,
+        61,
+        69
+      ],
+      "id": "20:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n        # Skip test case instantiation for skipped tests\n        if _is_skipped(self.parent.obj):\n            raise pytest.skip.Exception(\n                self.parent.obj.__unittest_skip_why__, _use_item_location=True\n            )\n\n",
+        "new_str": "\n\n        # Skip test case instantiation for skipped tests\n        if getattr(self.parent.obj, \"__pytest_skip__\", False):\n            raise pytest.skip.Exception(\n                getattr(self.parent.obj, \"__pytest_skip_why__\", \"Skipped\"),\n                _use_item_location=True\n            )\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        28
+      ],
+      "id": "21:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n        # Skip test case instantiation for skipped tests\n        if _is_skipped(self.parent.obj):\n            raise pytest.skip.Exception(\n                self.parent.obj.__unittest_skip_why__, _use_item_location=True\n            )\n",
+        "new_str": "\n        # Skip test case instantiation for skipped tests\n        if getattr(self.parent.obj, \"__pytest_skip__\", False):\n            raise pytest.skip.Exception(\n                getattr(self.parent.obj, \"__pytest_skip_why__\", \"Skipped\"),\n                _use_item_location=True\n            )\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        29
+      ],
+      "id": "22:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n@hookimpl(hookwrapper=True)\ndef pytest_runtest_protocol(item: Item) -> Generator[None, None, None]:\n    if isinstance(item, TestCaseFunction) and \"twisted.trial.unittest\" in sys.modules:\n        ut: Any = sys.modules[\"twisted.python.failure\"]\n        Failure__init__ = ut.Failure.__init__\n        check_testcase_implements_trial_reporter()\n\n        def excstore(\n            self, exc_value=None, exc_type=None, exc_tb=None, captureVars=None\n        ):\n            if exc_value is None:\n                self._rawexcinfo = sys.exc_info()\n            else:\n                if exc_type is None:\n                    exc_type = type(exc_value)\n                self._rawexcinfo = (exc_type, exc_value, exc_tb)\n            try:\n                Failure__init__(\n                    self, exc_value, exc_type, exc_tb, captureVars=captureVars\n                )\n            except TypeError:\n                Failure__init__(self, exc_value, exc_type, exc_tb)\n\n        ut.Failure.__init__ = excstore\n        yield\n        ut.Failure.__init__ = Failure__init__\n    else:\n        yield\n\n",
+        "new_str": "\n\n@hookimpl(hookwrapper=True)\ndef pytest_runtest_protocol(item: Item) -> Generator[None, None, None]:\n    # Handle skipped unittest cases before any execution\n    if isinstance(item, TestCaseFunction):\n        if _is_skipped(item.parent.obj):  # type: ignore[attr-defined]\n            item.addSkip(item.parent.obj.__unittest_skip_why__)  # type: ignore[attr-defined]\n            yield\n            return\n\n    if isinstance(item, TestCaseFunction) and \"twisted.trial.unittest\" in sys.modules:\n        ut: Any = sys.modules[\"twisted.python.failure\"]\n        Failure__init__ = ut.Failure.__init__\n        check_testcase_implements_trial_reporter()\n\n        def excstore(\n            self, exc_value=None, exc_type=None, exc_tb=None, captureVars=None\n        ):\n            if exc_value is None:\n                self._rawexcinfo = sys.exc_info()\n            else:\n                if exc_type is None:\n                    exc_type = type(exc_value)\n                self._rawexcinfo = (exc_type, exc_value, exc_tb)\n            try:\n                Failure__init__(\n                    self, exc_value, exc_type, exc_tb, captureVars=captureVars\n                )\n            except TypeError:\n                Failure__init__(self, exc_value, exc_type, exc_tb)\n\n        ut.Failure.__init__ = excstore\n        yield\n        ut.Failure.__init__ = Failure__init__\n    else:\n        yield\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        32
+      ],
+      "id": "23:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # Mark the class as skipped so TestCaseFunction can check it\n            cls.__pytest_skip__ = True\n            cls.__pytest_skip_why__ = cls.__unittest_skip_why__\n            return\n\n",
+        "new_str": "\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test methods\n            # The skip will be reported during the pytest collection phase\n            return []\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        34
+      ],
+      "id": "24:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test methods\n            # The skip will be reported during the pytest collection phase\n            return []\n\n",
+        "new_str": "\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, report skip at collection time\n            raise pytest.skip.Exception(\n                cls.__unittest_skip_why__,\n                _use_item_location=True\n            )\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        37
+      ],
+      "id": "25:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, report skip at collection time\n            raise pytest.skip.Exception(\n                cls.__unittest_skip_why__,\n                _use_item_location=True\n            )\n\n\n",
+        "new_str": "\n\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test items\n            # The skip will be reported by pytest during collection\n            return\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        40
+      ],
+      "id": "26:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, report skip at collection time\n            raise pytest.skip.Exception(\n                cls.__unittest_skip_why__,\n                _use_item_location=True\n            )\n",
+        "new_str": "\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test items\n            # The skip will be reported by pytest during collection\n            return\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        41
+      ],
+      "id": "27:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test items\n            # The skip will be reported by pytest during collection\n            return\n\n",
+        "new_str": "\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # Mark the entire class as skipped\n            cls.__pytest_skip__ = True\n            cls.__pytest_skip_why__ = cls.__unittest_skip_why__\n            return []\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        44
+      ],
+      "id": "28:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n    def runtest(self) -> None:\n        from _pytest.debugging import maybe_wrap_pytest_function_for_tracing\n\n        assert self._testcase is not None\n\n        maybe_wrap_pytest_function_for_tracing(self)\n\n",
+        "new_str": "\n\n    def runtest(self) -> None:\n        from _pytest.debugging import maybe_wrap_pytest_function_for_tracing\n\n        assert self._testcase is not None\n\n        # Final skip check in case --pdb bypassed previous checks\n        if getattr(self.parent.obj, \"__pytest_skip__\", False):\n            raise pytest.skip.Exception(\n                getattr(self.parent.obj, \"__pytest_skip_why__\", \"Skipped\"),\n                _use_item_location=True\n            )\n\n        maybe_wrap_pytest_function_for_tracing(self)\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        47
+      ],
+      "id": "29:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n    def runtest(self) -> None:\n        from _pytest.debugging import maybe_wrap_pytest_function_for_tracing\n\n        assert self._testcase is not None\n\n        maybe_wrap_pytest_function_for_tracing(self)\n\n        # Let the unittest framework handle async functions.\n        if is_async_function(self.obj):\n            # Type ignored because self acts as the TestResult, but is not actually one.\n            self._testcase(result=self)  # type: ignore[arg-type]\n        else:\n            # When --pdb is given, we want to postpone calling tearDown() otherwise\n            # when entering the pdb prompt, tearDown() would have probably cleaned up\n            # instance variables, which makes it difficult to debug.\n            # Arguably we could always postpone tearDown(), but this changes the moment where the\n            # TestCase instance interacts with the results object, so better to only do it\n            # when absolutely needed.\n            if self.config.getoption(\"usepdb\") and not _is_skipped(self.obj):\n                self._explicit_tearDown = self._testcase.tearDown\n                setattr(self._testcase, \"tearDown\", lambda *args: None)\n\n",
+        "new_str": "\n\n    def runtest(self) -> None:\n        from _pytest.debugging import maybe_wrap_pytest_function_for_tracing\n\n        assert self._testcase is not None\n\n        # Final skip check in case --pdb bypassed previous checks\n        if getattr(self.parent.obj, \"__pytest_skip__\", False):\n            raise pytest.skip.Exception(\n                getattr(self.parent.obj, \"__pytest_skip_why__\", \"Skipped\"),\n                _use_item_location=True\n            )\n\n        maybe_wrap_pytest_function_for_tracing(self)\n\n        # Let the unittest framework handle async functions.\n        if is_async_function(self.obj):\n            # Type ignored because self acts as the TestResult, but is not actually one.\n            self._testcase(result=self)  # type: ignore[arg-type]\n        else:\n            # When --pdb is given, we want to postpone calling tearDown() otherwise\n            # when entering the pdb prompt, tearDown() would have probably cleaned up\n            # instance variables, which makes it difficult to debug.\n            if self.config.getoption(\"usepdb\"):\n                self._explicit_tearDown = self._testcase.tearDown\n                setattr(self._testcase, \"tearDown\", lambda *args: None)\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        48
+      ],
+      "id": "30:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "view_range": [
+          300,
+          330
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        49,
+        64,
+        72
+      ],
+      "id": "31:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n        # Skip entire test execution for skipped tests\n        if _is_skipped(self.obj):\n            raise pytest.skip.Exception(\n                self.obj.__unittest_skip_why__, _use_item_location=True\n            )\n\n\n",
+        "new_str": "\n\n\n        # Skip entire test execution for skipped tests (including --pdb cases)\n        if _is_skipped(self.obj) or getattr(self.parent.obj, \"__pytest_skip__\", False):\n            raise pytest.skip.Exception(\n                getattr(self.parent.obj, \"__pytest_skip_why__\", self.obj.__unittest_skip_why__),\n                _use_item_location=True\n            )\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        50
+      ],
+      "id": "32:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n        # Skip entire test execution for skipped tests\n        if _is_skipped(self.obj):\n            raise pytest.skip.Exception(\n                self.obj.__unittest_skip_why__, _use_item_location=True\n            )\n\n",
+        "new_str": "\n\n        # Skip entire test execution for skipped tests (including --pdb cases)\n        if _is_skipped(self.obj) or getattr(self.parent.obj, \"__pytest_skip__\", False):\n            raise pytest.skip.Exception(\n                getattr(self.parent.obj, \"__pytest_skip_why__\", self.obj.__unittest_skip_why__),\n                _use_item_location=True\n            )\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        51
+      ],
+      "id": "33:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # Mark the entire class as skipped\n            cls.__pytest_skip__ = True\n            cls.__pytest_skip_why__ = cls.__unittest_skip_why__\n            return []\n\n\n",
+        "new_str": "\n\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test items\n            # The skip will be handled by pytest's collection reporting\n            return\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        54
+      ],
+      "id": "34:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # Mark the entire class as skipped\n            cls.__pytest_skip__ = True\n            cls.__pytest_skip_why__ = cls.__unittest_skip_why__\n            return []\n\n",
+        "new_str": "\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test items\n            # The skip will be handled by pytest's collection reporting\n            return\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        55
+      ],
+      "id": "35:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test items\n            # The skip will be handled by pytest's collection reporting\n            return\n\n\n",
+        "new_str": "\n\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # Mark the class as skipped and store the reason\n            cls.__pytest_skip__ = True\n            cls.__pytest_skip_why__ = cls.__unittest_skip_why__\n            # Still return no items to prevent collection\n            return\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        58
+      ],
+      "id": "36:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test items\n            # The skip will be handled by pytest's collection reporting\n            return\n\n",
+        "new_str": "\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # Mark the class as skipped and store the reason\n            cls.__pytest_skip__ = True\n            cls.__pytest_skip_why__ = cls.__unittest_skip_why__\n            # Still return no items to prevent collection\n            return\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        59
+      ],
+      "id": "37:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n    def setup(self) -> None:\n        # A bound method to be called during teardown() if set (see 'runtest()').\n        self._explicit_tearDown: Optional[Callable[[], None]] = None\n        assert self.parent is not None\n        self._testcase = self.parent.obj(self.name)  # type: ignore[attr-defined]\n        self._obj = getattr(self._testcase, self.name)\n        if hasattr(self, \"_request\"):\n            self._request._fillfixtures()\n\n\n",
+        "new_str": "\n\n\n    def setup(self) -> None:\n        # A bound method to be called during teardown() if set (see 'runtest()').\n        self._explicit_tearDown: Optional[Callable[[], None]] = None\n        assert self.parent is not None\n        \n        # Check for skipped class\n        if getattr(self.parent.obj, \"__pytest_skip__\", False):\n            raise pytest.skip.Exception(\n                getattr(self.parent.obj, \"__pytest_skip_why__\", \"Skipped\"),\n                _use_item_location=True\n            )\n            \n        self._testcase = self.parent.obj(self.name)  # type: ignore[attr-defined]\n        self._obj = getattr(self._testcase, self.name)\n        if hasattr(self, \"_request\"):\n            self._request._fillfixtures()\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        60
+      ],
+      "id": "38:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n    def runtest(self) -> None:\n        from _pytest.debugging import maybe_wrap_pytest_function_for_tracing\n\n        assert self._testcase is not None\n\n        maybe_wrap_pytest_function_for_tracing(self)\n\n\n",
+        "new_str": "\n\n\n    def runtest(self) -> None:\n        from _pytest.debugging import maybe_wrap_pytest_function_for_tracing\n\n        assert self._testcase is not None\n\n        # Final skip check in case --pdb bypassed previous checks\n        if getattr(self.parent.obj, \"__pytest_skip__\", False):\n            raise pytest.skip.Exception(\n                getattr(self.parent.obj, \"__pytest_skip_why__\", \"Skipped\"),\n                _use_item_location=True\n            )\n\n        maybe_wrap_pytest_function_for_tracing(self)\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        62,
+        70
+      ],
+      "id": "39:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n    def runtest(self) -> None:\n        from _pytest.debugging import maybe_wrap_pytest_function_for_tracing\n\n        assert self._testcase is not None\n\n        maybe_wrap_pytest_function_for_tracing(self)\n\n        # Let the unittest framework handle async functions.\n        if is_async_function(self.obj):\n            # Type ignored because self acts as the TestResult, but is not actually one.\n            self._testcase(result=self)  # type: ignore[arg-type]\n        else:\n            # When --pdb is given, we want to postpone calling tearDown() otherwise\n            # when entering the pdb prompt, tearDown() would have probably cleaned up\n            # instance variables, which makes it difficult to debug.\n            # Arguably we could always postpone tearDown(), but this changes the moment where the\n            # TestCase instance interacts with the results object, so better to only do it\n            # when absolutely needed.\n            if self.config.getoption(\"usepdb\") and not _is_skipped(self.obj):\n                self._explicit_tearDown = self._testcase.tearDown\n                setattr(self._testcase, \"tearDown\", lambda *args: None)\n\n\n",
+        "new_str": "\n\n\n    def runtest(self) -> None:\n        from _pytest.debugging import maybe_wrap_pytest_function_for_tracing\n\n        assert self._testcase is not None\n\n        # Final skip check in case --pdb bypassed previous checks\n        if getattr(self.parent.obj, \"__pytest_skip__\", False):\n            raise pytest.skip.Exception(\n                getattr(self.parent.obj, \"__pytest_skip_why__\", \"Skipped\"),\n                _use_item_location=True\n            )\n\n        maybe_wrap_pytest_function_for_tracing(self)\n\n        # Let the unittest framework handle async functions.\n        if is_async_function(self.obj):\n            # Type ignored because self acts as the TestResult, but is not actually one.\n            self._testcase(result=self)  # type: ignore[arg-type]\n        else:\n            # When --pdb is given, we want to postpone calling tearDown() otherwise\n            # when entering the pdb prompt, tearDown() would have probably cleaned up\n            # instance variables, which makes it difficult to debug.\n            if self.config.getoption(\"usepdb\"):\n                self._explicit_tearDown = self._testcase.tearDown\n                setattr(self._testcase, \"tearDown\", lambda *args: None)\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        63,
+        71
+      ],
+      "id": "40:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n    def __init__(\n        self,\n        *,\n        parent: \"UnitTestCase\",\n        name: str,\n        callobj: Callable[..., None],\n        **kwargs: Any,\n    ) -> None:\n        super().__init__(parent=parent, name=name, callobj=callobj, **kwargs)\n        self._excinfo: Optional[List[_pytest._code.ExceptionInfo[BaseException]]] = None\n        self._testcase: Optional[\"unittest.TestCase\"] = None\n\n\n",
+        "new_str": "\n\n\n    def __init__(\n        self,\n        *,\n        parent: \"UnitTestCase\",\n        name: str,\n        callobj: Callable[..., None],\n        **kwargs: Any,\n    ) -> None:\n        super().__init__(parent=parent, name=name, callobj=callobj, **kwargs)\n        self._excinfo: Optional[List[_pytest._code.ExceptionInfo[BaseException]]] = None\n        \n        # Prevent test case instantiation for skipped tests\n        if getattr(parent.obj, \"__pytest_skip__\", False):\n            raise pytest.skip.Exception(\n                getattr(parent.obj, \"__pytest_skip_why__\", \"Skipped\"),\n                _use_item_location=True\n            )\n            \n        self._testcase: Optional[\"unittest.TestCase\"] = None\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        65,
+        66,
+        74
+      ],
+      "id": "41:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "view_range": [
+          180,
+          210
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        67
+      ],
+      "id": "42:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n    def setup(self) -> None:\n        # A bound method to be called during teardown() if set (see 'runtest()').\n        self._explicit_tearDown: Optional[Callable[[], None]] = None\n        assert self.parent is not None\n        \n        # Skip test case instantiation for skipped tests\n        if getattr(self.parent.obj, \"__pytest_skip__\", False):\n            raise pytest.skip.Exception(\n                getattr(self.parent.obj, \"__pytest_skip_why__\", \"Skipped\"),\n                _use_item_location=True\n            )\n\n\n",
+        "new_str": "\n\n\n    def setup(self) -> None:\n        # A bound method to be called during teardown() if set (see 'runtest()').\n        self._explicit_tearDown: Optional[Callable[[], None]] = None\n        assert self.parent is not None\n        \n        # Skip test case instantiation for skipped tests (with more comprehensive checks)\n        if (getattr(self.parent.obj, \"__pytest_skip__\", False) or \n            _is_skipped(self.parent.obj)):\n            raise pytest.skip.Exception(\n                getattr(self.parent.obj, \"__pytest_skip_why__\", \n                       getattr(self.parent.obj, \"__unittest_skip_why__\", \"Skipped\")),\n                _use_item_location=True\n            )\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        68
+      ],
+      "id": "43:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "edit_status": "failure: unknown"
+      },
+      "phase": "patch",
+      "step_indices": [
+        73,
+        77,
+        78,
+        79,
+        88,
+        90,
+        91,
+        93,
+        94,
+        95,
+        96,
+        98
+      ],
+      "id": "44:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n@hookimpl(hookwrapper=True)\ndef pytest_runtest_protocol(item: Item) -> Generator[None, None, None]:\n    if isinstance(item, TestCaseFunction) and \"twisted.trial.unittest\" in sys.modules:\n        ut: Any = sys.modules[\"twisted.python.failure\"]\n        Failure__init__ = ut.Failure.__init__\n        check_testcase_implements_trial_reporter()\n\n        def excstore(\n            self, exc_value=None, exc_type=None, exc_tb=None, captureVars=None\n        ):\n            if exc_value is None:\n                self._rawexcinfo = sys.exc_info()\n            else:\n                if exc_type is None:\n                    exc_type = type(exc_value)\n                self._rawexcinfo = (exc_type, exc_value, exc_tb)\n            try:\n                Failure__init__(\n                    self, exc_value, exc_type, exc_tb, captureVars=captureVars\n                )\n            except TypeError:\n                Failure__init__(self, exc_value, exc_type, exc_tb)\n\n        ut.Failure.__init__ = excstore\n        yield\n        ut.Failure.__init__ = Failure__init__\n    else:\n        yield\n\n\n",
+        "new_str": "\n\n\n@hookimpl(hookwrapper=True)\ndef pytest_runtest_protocol(item: Item) -> Generator[None, None, None]:\n    # Handle skipped unittest cases before any execution\n    if isinstance(item, TestCaseFunction):\n        if _is_skipped(item.parent.obj):  # type: ignore[attr-defined]\n            item.addSkip(item.parent.obj.__unittest_skip_why__)  # type: ignore[attr-defined]\n            yield\n            return\n\n    if isinstance(item, TestCaseFunction) and \"twisted.trial.unittest\" in sys.modules:\n        ut: Any = sys.modules[\"twisted.python.failure\"]\n        Failure__init__ = ut.Failure.__init__\n        check_testcase_implements_trial_reporter()\n\n        def excstore(\n            self, exc_value=None, exc_type=None, exc_tb=None, captureVars=None\n        ):\n            if exc_value is None:\n                self._rawexcinfo = sys.exc_info()\n            else:\n                if exc_type is None:\n                    exc_type = type(exc_value)\n                self._rawexcinfo = (exc_type, exc_value, exc_tb)\n            try:\n                Failure__init__(\n                    self, exc_value, exc_type, exc_tb, captureVars=captureVars\n                )\n            except TypeError:\n                Failure__init__(self, exc_value, exc_type, exc_tb)\n\n        ut.Failure.__init__ = excstore\n        yield\n        ut.Failure.__init__ = Failure__init__\n    else:\n        yield\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        75
+      ],
+      "id": "45:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "view_range": [
+          370,
+          410
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        76
+      ],
+      "id": "46:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n    def collect(self) -> Iterable[Union[Item, Collector]]:\n        from unittest import TestLoader\n\n        cls = self.obj\n        if not getattr(cls, \"__test__\", True):\n            return\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test items\n            # The skip will be handled by pytest's collection reporting\n            return\n\n        self._inject_setup_teardown_fixtures(cls)\n        self._inject_setup_class_fixture()\n\n        self.session._fixturemanager.parsefactories(self, unittest=True)\n        loader = TestLoader()\n        foundsomething = False\n        for name in loader.getTestCaseNames(self.obj):\n            x = getattr(self.obj, name)\n            if not getattr(x, \"__test__\", True):\n                continue\n            funcobj = getimfunc(x)\n            yield TestCaseFunction.from_parent(self, name=name, callobj=funcobj)\n            foundsomething = True\n\n        if not foundsomething:\n            runtest = getattr(self.obj, \"runTest\", None)\n            if runtest is not None:\n                ut = sys.modules.get(\"twisted.trial.unittest\", None)\n                # Type ignored because `ut` is an opaque module.\n                if ut is None or runtest != ut.TestCase.runTest:  # type: ignore\n                    yield TestCaseFunction.from_parent(self, name=\"runTest\")\n\n",
+        "new_str": "\n\n    def collect(self) -> Iterable[Union[Item, Collector]]:\n        from unittest import TestLoader\n\n        cls = self.obj\n        if not getattr(cls, \"__test__\", True):\n            return\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test items at all\n            # This prevents any test execution including setUp/tearDown\n            return []\n\n        self._inject_setup_teardown_fixtures(cls)\n        self._inject_setup_class_fixture()\n\n        self.session._fixturemanager.parsefactories(self, unittest=True)\n        loader = TestLoader()\n        foundsomething = False\n        for name in loader.getTestCaseNames(self.obj):\n            x = getattr(self.obj, name)\n            if not getattr(x, \"__test__\", True):\n                continue\n            funcobj = getimfunc(x)\n            yield TestCaseFunction.from_parent(self, name=name, callobj=funcobj)\n            foundsomething = True\n\n        if not foundsomething:\n            runtest = getattr(self.obj, \"runTest\", None)\n            if runtest is not None:\n                ut = sys.modules.get(\"twisted.trial.unittest\", None)\n                # Type ignored because `ut` is an opaque module.\n                if ut is None or runtest != ut.TestCase.runTest:  # type: ignore\n                    yield TestCaseFunction.from_parent(self, name=\"runTest\")\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        80
+      ],
+      "id": "47:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test items\n            # The skip will be handled by pytest's collection reporting\n            return\n\n",
+        "new_str": "\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test items at all\n            # This prevents any test execution including setUp/tearDown\n            return []\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        81
+      ],
+      "id": "48:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\nclass UnitTestCase(Class):\n    # Marker for fixturemanger.getfixtureinfo()\n    # to declare that our children do not support funcargs.\n    nofuncargs = True\n\n    def collect(self) -> Iterable[Union[Item, Collector]]:\n\n\n",
+        "new_str": "\n\n\nclass UnitTestCase(Class):\n    # Marker for fixturemanger.getfixtureinfo()\n    # to declare that our children do not support funcargs.\n    nofuncargs = True\n\n    def _should_skip(self) -> bool:\n        \"\"\"Return True if this test case should be skipped entirely.\"\"\"\n        cls = self.obj\n        if not getattr(cls, \"__test__\", True):\n            return True\n        if _is_skipped(cls):\n            return True\n        return False\n\n    def collect(self) -> Iterable[Union[Item, Collector]]:\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        82
+      ],
+      "id": "49:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # Mark the class as skipped and store the reason\n            cls.__pytest_skip__ = True\n            cls.__pytest_skip_why__ = cls.__unittest_skip_why__\n            # Still return no items to prevent collection\n            return\n\n\n",
+        "new_str": "\n\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, raise skip exception during collection\n            # This prevents any test execution including setUp/tearDown\n            raise pytest.skip.Exception(\n                cls.__unittest_skip_why__,\n                _use_item_location=True\n            )\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        84,
+        85
+      ],
+      "id": "50:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # Mark the class as skipped and store the reason\n            cls.__pytest_skip__ = True\n            cls.__pytest_skip_why__ = cls.__unittest_skip_why__\n            # Still return no items to prevent collection\n            return\n\n\n",
+        "new_str": "\n\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test items\n            # The skip will be reported during collection phase\n            return []\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        86
+      ],
+      "id": "51:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test items\n            # The skip will be handled by pytest's collection reporting\n            return\n\n\n",
+        "new_str": "\n\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, prevent test collection entirely\n            # This ensures no test execution occurs, including setUp/tearDown\n            return []\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        87
+      ],
+      "id": "52:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n    def setup(self) -> None:\n        # A bound method to be called during teardown() if set (see 'runtest()').\n        self._explicit_tearDown: Optional[Callable[[], None]] = None\n        assert self.parent is not None\n        self._testcase = self.parent.obj(self.name)  # type: ignore[attr-defined]\n        self._obj = getattr(self._testcase, self.name)\n        if hasattr(self, \"_request\"):\n            self._request._fillfixtures()\n\n\n",
+        "new_str": "\n\n\n    def setup(self) -> None:\n        # A bound method to be called during teardown() if set (see 'runtest()').\n        self._explicit_tearDown: Optional[Callable[[], None]] = None\n        assert self.parent is not None\n        \n        # Prevent test case instantiation for skipped tests\n        if _is_skipped(self.parent.obj):\n            raise pytest.skip.Exception(\n                self.parent.obj.__unittest_skip_why__,\n                _use_item_location=True\n            )\n            \n        self._testcase = self.parent.obj(self.name)  # type: ignore[attr-defined]\n        self._obj = getattr(self._testcase, self.name)\n        if hasattr(self, \"_request\"):\n            self._request._fillfixtures()\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        89
+      ],
+      "id": "53:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n    def setup(self) -> None:\n        # A bound method to be called during teardown() if set (see 'runtest()').\n        self._explicit_tearDown: Optional[Callable[[], None]] = None\n        assert self.parent is not None\n        self._testcase = self.parent.obj(self.name)  # type: ignore[attr-defined]\n        self._obj = getattr(self._testcase, self.name)\n        if hasattr(self, \"_request\"):\n            self._request._fillfixtures()\n\n\n",
+        "new_str": "\n\n\n    def setup(self) -> None:\n        # A bound method to be called during teardown() if set (see 'runtest()').\n        self._explicit_tearDown: Optional[Callable[[], None]] = None\n        assert self.parent is not None\n        \n        # Skip test case instantiation for skipped tests\n        if _is_skipped(self.parent.obj):\n            raise pytest.skip.Exception(\n                self.parent.obj.__unittest_skip_why__,\n                _use_item_location=True\n            )\n            \n        self._testcase = self.parent.obj(self.name)  # type: ignore[attr-defined]\n        self._obj = getattr(self._testcase, self.name)\n        if hasattr(self, \"_request\"):\n            self._request._fillfixtures()\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        92
+      ],
+      "id": "54:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/pytest-dev__pytest__7.2/src/_pytest/unittest.py",
+        "old_str": "\n\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, don't collect any test items\n            # The skip will be handled by pytest's collection reporting\n            return\n\n\n",
+        "new_str": "\n\n\n        skipped = _is_skipped(cls)\n        if skipped:\n            # For skipped classes, prevent test collection entirely\n            # This ensures no test execution occurs, including setUp/tearDown\n            raise pytest.skip.Exception(\n                cls.__unittest_skip_why__,\n                _use_item_location=True\n            )\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        97
+      ],
+      "id": "55:str_replace_editor\nstr_replace"
+    }
+  ],
+  "edges": [
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "0:empty action",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "2:\npytest",
+      "key": 0
+    },
+    {
+      "label": "2",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "2:\npytest",
+      "key": 1
+    },
+    {
+      "label": "4",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "3:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "2",
+      "type": "exec",
+      "source": "2:\npytest",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "3",
+      "type": "exec",
+      "source": "2:\npytest",
+      "target": "1:cd",
+      "key": 1
+    },
+    {
+      "label": "5",
+      "type": "exec",
+      "source": "3:str_replace_editor\nview",
+      "target": "4:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "3:str_replace_editor\nview",
+      "target": "16:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "3:str_replace_editor\nview",
+      "target": "20:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "3:str_replace_editor\nview",
+      "target": "31:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "3:str_replace_editor\nview",
+      "target": "42:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "3:str_replace_editor\nview",
+      "target": "46:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "6",
+      "type": "exec",
+      "source": "4:str_replace_editor\nview",
+      "target": "5:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "7",
+      "type": "exec",
+      "source": "5:str_replace_editor\nstr_replace",
+      "target": "6:str_replace_editor\ncreate",
+      "key": 0
+    },
+    {
+      "label": "8",
+      "type": "exec",
+      "source": "6:str_replace_editor\ncreate",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "8",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 0
+    },
+    {
+      "label": "9",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 1
+    },
+    {
+      "label": "11",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 2
+    },
+    {
+      "label": "15",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 3
+    },
+    {
+      "label": "16",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 4
+    },
+    {
+      "label": "18",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 5
+    },
+    {
+      "label": "24",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 6
+    },
+    {
+      "label": "30",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 7
+    },
+    {
+      "label": "33",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 8
+    },
+    {
+      "label": "35",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 9
+    },
+    {
+      "label": "38",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 10
+    },
+    {
+      "label": "39",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 11
+    },
+    {
+      "label": "42",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 12
+    },
+    {
+      "label": "52",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 13
+    },
+    {
+      "label": "53",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 14
+    },
+    {
+      "label": "56",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 15
+    },
+    {
+      "label": "9",
+      "type": "exec",
+      "source": "8:python",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "16",
+      "type": "exec",
+      "source": "8:python",
+      "target": "7:cd",
+      "key": 1
+    },
+    {
+      "label": "39",
+      "type": "exec",
+      "source": "8:python",
+      "target": "7:cd",
+      "key": 2
+    },
+    {
+      "label": "53",
+      "type": "exec",
+      "source": "8:python",
+      "target": "7:cd",
+      "key": 3
+    },
+    {
+      "label": "10",
+      "type": "exec",
+      "source": "8:python",
+      "target": "9:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "12",
+      "type": "exec",
+      "source": "8:python",
+      "target": "10:C-c",
+      "key": 0
+    },
+    {
+      "label": "17",
+      "type": "exec",
+      "source": "8:python",
+      "target": "13:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "19",
+      "type": "exec",
+      "source": "8:python",
+      "target": "11:C-d",
+      "key": 0
+    },
+    {
+      "label": "31",
+      "type": "exec",
+      "source": "8:python",
+      "target": "11:C-d",
+      "key": 1
+    },
+    {
+      "label": "36",
+      "type": "exec",
+      "source": "8:python",
+      "target": "11:C-d",
+      "key": 2
+    },
+    {
+      "label": "43",
+      "type": "exec",
+      "source": "8:python",
+      "target": "11:C-d",
+      "key": 3
+    },
+    {
+      "label": "57",
+      "type": "exec",
+      "source": "8:python",
+      "target": "11:C-d",
+      "key": 4
+    },
+    {
+      "label": "25",
+      "type": "exec",
+      "source": "8:python",
+      "target": "18:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "34",
+      "type": "exec",
+      "source": "8:python",
+      "target": "24:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "40",
+      "type": "exec",
+      "source": "8:python",
+      "target": "26:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "54",
+      "type": "exec",
+      "source": "8:python",
+      "target": "34:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "11",
+      "type": "exec",
+      "source": "9:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "13",
+      "type": "exec",
+      "source": "10:C-c",
+      "target": "11:C-d",
+      "key": 0
+    },
+    {
+      "label": "14",
+      "type": "exec",
+      "source": "11:C-d",
+      "target": "12:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "20",
+      "type": "exec",
+      "source": "11:C-d",
+      "target": "14:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "32",
+      "type": "exec",
+      "source": "11:C-d",
+      "target": "23:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "37",
+      "type": "exec",
+      "source": "11:C-d",
+      "target": "25:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "44",
+      "type": "exec",
+      "source": "11:C-d",
+      "target": "28:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "58",
+      "type": "exec",
+      "source": "11:C-d",
+      "target": "36:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "15",
+      "type": "exec",
+      "source": "12:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "18",
+      "type": "exec",
+      "source": "13:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "21",
+      "type": "exec",
+      "source": "14:str_replace_editor\nstr_replace",
+      "target": "15:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "22",
+      "type": "exec",
+      "source": "15:str_replace_editor\nstr_replace",
+      "target": "16:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "23",
+      "type": "exec",
+      "source": "16:str_replace_editor\nview",
+      "target": "17:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "84",
+      "type": "exec",
+      "source": "16:str_replace_editor\nview",
+      "target": "50:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "24",
+      "type": "exec",
+      "source": "17:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "26",
+      "type": "exec",
+      "source": "18:str_replace_editor\nstr_replace",
+      "target": "19:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "27",
+      "type": "exec",
+      "source": "19:str_replace_editor\nstr_replace",
+      "target": "20:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "46",
+      "type": "exec",
+      "source": "19:str_replace_editor\nstr_replace",
+      "target": "20:str_replace_editor\nview",
+      "key": 1
+    },
+    {
+      "label": "28",
+      "type": "exec",
+      "source": "20:str_replace_editor\nview",
+      "target": "21:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "47",
+      "type": "exec",
+      "source": "20:str_replace_editor\nview",
+      "target": "29:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "62",
+      "type": "exec",
+      "source": "20:str_replace_editor\nview",
+      "target": "39:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "70",
+      "type": "exec",
+      "source": "20:str_replace_editor\nview",
+      "target": "39:str_replace_editor\nstr_replace",
+      "key": 1
+    },
+    {
+      "label": "29",
+      "type": "exec",
+      "source": "21:str_replace_editor\nstr_replace",
+      "target": "22:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "30",
+      "type": "exec",
+      "source": "22:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "33",
+      "type": "exec",
+      "source": "23:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "35",
+      "type": "exec",
+      "source": "24:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "38",
+      "type": "exec",
+      "source": "25:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "41",
+      "type": "exec",
+      "source": "26:str_replace_editor\nstr_replace",
+      "target": "27:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "42",
+      "type": "exec",
+      "source": "27:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "45",
+      "type": "exec",
+      "source": "28:str_replace_editor\nstr_replace",
+      "target": "19:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "48",
+      "type": "exec",
+      "source": "29:str_replace_editor\nstr_replace",
+      "target": "30:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "49",
+      "type": "exec",
+      "source": "30:str_replace_editor\nstr_replace",
+      "target": "31:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "50",
+      "type": "exec",
+      "source": "31:str_replace_editor\nview",
+      "target": "32:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "65",
+      "type": "exec",
+      "source": "31:str_replace_editor\nview",
+      "target": "41:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "73",
+      "type": "exec",
+      "source": "31:str_replace_editor\nview",
+      "target": "44:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "51",
+      "type": "exec",
+      "source": "32:str_replace_editor\nstr_replace",
+      "target": "33:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "52",
+      "type": "exec",
+      "source": "33:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "55",
+      "type": "exec",
+      "source": "34:str_replace_editor\nstr_replace",
+      "target": "35:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "56",
+      "type": "exec",
+      "source": "35:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "59",
+      "type": "exec",
+      "source": "36:str_replace_editor\nstr_replace",
+      "target": "37:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "60",
+      "type": "exec",
+      "source": "37:str_replace_editor\nstr_replace",
+      "target": "38:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "61",
+      "type": "exec",
+      "source": "38:str_replace_editor\nstr_replace",
+      "target": "20:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "63",
+      "type": "exec",
+      "source": "39:str_replace_editor\nstr_replace",
+      "target": "40:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "71",
+      "type": "exec",
+      "source": "39:str_replace_editor\nstr_replace",
+      "target": "40:str_replace_editor\nstr_replace",
+      "key": 1
+    },
+    {
+      "label": "64",
+      "type": "exec",
+      "source": "40:str_replace_editor\nstr_replace",
+      "target": "31:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "72",
+      "type": "exec",
+      "source": "40:str_replace_editor\nstr_replace",
+      "target": "31:str_replace_editor\nview",
+      "key": 1
+    },
+    {
+      "label": "66",
+      "type": "exec",
+      "source": "41:str_replace_editor\nstr_replace",
+      "target": "41:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "67",
+      "type": "exec",
+      "source": "41:str_replace_editor\nstr_replace",
+      "target": "42:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "75",
+      "type": "exec",
+      "source": "41:str_replace_editor\nstr_replace",
+      "target": "45:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "68",
+      "type": "exec",
+      "source": "42:str_replace_editor\nview",
+      "target": "43:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "69",
+      "type": "exec",
+      "source": "43:str_replace_editor\nstr_replace",
+      "target": "20:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "74",
+      "type": "exec",
+      "source": "44:str_replace_editor\nstr_replace",
+      "target": "41:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "78",
+      "type": "exec",
+      "source": "44:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "79",
+      "type": "exec",
+      "source": "44:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nstr_replace",
+      "key": 1
+    },
+    {
+      "label": "91",
+      "type": "exec",
+      "source": "44:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nstr_replace",
+      "key": 2
+    },
+    {
+      "label": "94",
+      "type": "exec",
+      "source": "44:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nstr_replace",
+      "key": 3
+    },
+    {
+      "label": "95",
+      "type": "exec",
+      "source": "44:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nstr_replace",
+      "key": 4
+    },
+    {
+      "label": "96",
+      "type": "exec",
+      "source": "44:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nstr_replace",
+      "key": 5
+    },
+    {
+      "label": "80",
+      "type": "exec",
+      "source": "44:str_replace_editor\nstr_replace",
+      "target": "47:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "89",
+      "type": "exec",
+      "source": "44:str_replace_editor\nstr_replace",
+      "target": "53:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "92",
+      "type": "exec",
+      "source": "44:str_replace_editor\nstr_replace",
+      "target": "54:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "97",
+      "type": "exec",
+      "source": "44:str_replace_editor\nstr_replace",
+      "target": "55:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "76",
+      "type": "exec",
+      "source": "45:str_replace_editor\nstr_replace",
+      "target": "46:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "77",
+      "type": "exec",
+      "source": "46:str_replace_editor\nview",
+      "target": "44:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "81",
+      "type": "exec",
+      "source": "47:str_replace_editor\nstr_replace",
+      "target": "48:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "82",
+      "type": "exec",
+      "source": "48:str_replace_editor\nstr_replace",
+      "target": "49:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "83",
+      "type": "exec",
+      "source": "49:str_replace_editor\nstr_replace",
+      "target": "16:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "85",
+      "type": "exec",
+      "source": "50:str_replace_editor\nstr_replace",
+      "target": "50:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "86",
+      "type": "exec",
+      "source": "50:str_replace_editor\nstr_replace",
+      "target": "51:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "87",
+      "type": "exec",
+      "source": "51:str_replace_editor\nstr_replace",
+      "target": "52:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "88",
+      "type": "exec",
+      "source": "52:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "90",
+      "type": "exec",
+      "source": "53:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "93",
+      "type": "exec",
+      "source": "54:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "98",
+      "type": "exec",
+      "source": "55:str_replace_editor\nstr_replace",
+      "target": "44:str_replace_editor\nstr_replace",
+      "key": 0
+    }
+  ]
+}

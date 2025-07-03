@@ -1,0 +1,1334 @@
+{
+  "directed": true,
+  "multigraph": true,
+  "graph": {
+    "resolution_status": "unresolved",
+    "instance_name": "scikit-learn__scikit-learn-14629",
+    "difficulty": "15 min - 1 hour",
+    "golden_patch_difficulty": "medium",
+    "golden_files_change": 1,
+    "patch_difficulty": "very hard",
+    "files_change": 2
+  },
+  "nodes": [
+    {
+      "label": "empty action",
+      "args": {},
+      "phase": "general",
+      "step_indices": [
+        0,
+        6,
+        9
+      ],
+      "id": "0:empty action"
+    },
+    {
+      "label": "cd",
+      "args": [
+        "/workspace/scikit-learn__scikit-learn__0.22"
+      ],
+      "phase": "general",
+      "step_indices": [
+        1
+      ],
+      "id": "1:cd"
+    },
+    {
+      "label": "pytest",
+      "args": [
+        "sklearn/model_selection/tests/test_validation.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        1
+      ],
+      "id": "2:pytest"
+    },
+    {
+      "label": "grep",
+      "args": [
+        "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        2,
+        2
+      ],
+      "id": "3:grep"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "view_range": [
+          850,
+          870
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        3
+      ],
+      "id": "4:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\ncreate",
+      "args": {
+        "path": "/workspace/reproduce_issue.py",
+        "file_text": "\nfrom sklearn.datasets import make_multilabel_classification\nfrom sklearn.multioutput import MultiOutputClassifier\nfrom sklearn.discriminant_analysis import LinearDiscriminantAnalysis\nfrom sklearn.model_selection import cross_val_predict\n\nX, Y = make_multilabel_classification()\nmo_lda = MultiOutputClassifier(LinearDiscriminantAnalysis())\n\n# This should work\npred = cross_val_predict(mo_lda, X, Y, cv=2)\nprint(\"Regular prediction works\")\n\n# This should fail with AttributeError\ntry:\n    pred_proba = cross_val_predict(mo_lda, X, Y, cv=2, method='predict_proba')\nexcept Exception as e:\n    print(f\"predict_proba fails with: {type(e).__name__}: {e}\")\n"
+      },
+      "phase": "verification",
+      "step_indices": [
+        4
+      ],
+      "id": "5:str_replace_editor\ncreate"
+    },
+    {
+      "label": "python",
+      "args": [
+        "/workspace/reproduce_issue.py"
+      ],
+      "phase": "verification",
+      "step_indices": [
+        5,
+        8,
+        11,
+        18,
+        22,
+        29
+      ],
+      "id": "6:python"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "    if method in ['decision_function', 'predict_proba', 'predict_log_proba']:\n        if isinstance(predictions, list):\n            predictions = [_enforce_prediction_order(\n                estimator.classes_[i_label], predictions[i_label],\n                n_classes=len(set(y[:, i_label])), method=method)\n                for i_label in range(len(predictions))]\n        else:\n            # A 2D y array should be a binary label indicator matrix\n            n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n            predictions = _enforce_prediction_order(\n                estimator.classes_, predictions, n_classes, method)",
+        "new_str": "    if method in ['decision_function', 'predict_proba', 'predict_log_proba']:\n        if isinstance(predictions, list):\n            # Handle MultiOutputClassifier case\n            if hasattr(estimator, 'estimators_'):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i_label].classes_, predictions[i_label],\n                    n_classes=len(set(y[:, i_label])), method=method)\n                    for i_label in range(len(predictions))]\n            else:\n                predictions = [_enforce_prediction_order(\n                    estimator.classes_[i_label], predictions[i_label],\n                    n_classes=len(set(y[:, i_label])), method=method)\n                    for i_label in range(len(predictions))]\n        else:\n            # A 2D y array should be a binary label indicator matrix\n            n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n            predictions = _enforce_prediction_order(\n                estimator.classes_, predictions, n_classes, method)",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        7
+      ],
+      "id": "7:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n    if method in ['decision_function', 'predict_proba', 'predict_log_proba']:\n        if isinstance(predictions, list):\n            # Handle MultiOutputClassifier case\n            if hasattr(estimator, 'estimators_'):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i_label].classes_, predictions[i_label],\n                    n_classes=len(set(y[:, i_label])), method=method)\n                    for i_label in range(len(predictions))]\n            else:\n                predictions = [_enforce_prediction_order(\n                    estimator.classes_[i_label], predictions[i_label],\n                    n_classes=len(set(y[:, i_label])), method=method)\n                    for i_label in range(len(predictions))]\n        else:\n            # A 2D y array should be a binary label indicator matrix\n            n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n            predictions = _enforce_prediction_order(\n                estimator.classes_, predictions, n_classes, method)\n",
+        "new_str": "\n    if method in ['decision_function', 'predict_proba', 'predict_log_proba']:\n        # Get appropriate classes_ attribute based on estimator type\n        if hasattr(estimator, 'estimators_'):  # MultiOutputClassifier case\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i_label].classes_, predictions[i_label],\n                    n_classes=len(set(y[:, i_label])), method=method)\n                    for i_label in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n        else:  # Regular estimator case\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.classes_[i_label], predictions[i_label],\n                    n_classes=len(set(y[:, i_label])), method=method)\n                    for i_label in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.classes_, predictions, n_classes, method)\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        10
+      ],
+      "id": "8:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "grep",
+      "args": [
+        "/workspace/scikit-learn__scikit-learn__0.22/sklearn/multioutput.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        12
+      ],
+      "id": "9:grep"
+    },
+    {
+      "label": "python",
+      "args": [],
+      "phase": "verification",
+      "step_indices": [
+        13
+      ],
+      "id": "10:python"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n\n    if method in ['decision_function', 'predict_proba', 'predict_log_proba']:\n        # Get appropriate classes_ attribute based on estimator type\n        if hasattr(estimator, 'estimators_'):  # MultiOutputClassifier case\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i_label].classes_, predictions[i_label],\n                    n_classes=len(set(y[:, i_label])), method=method)\n                    for i_label in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n        else:  # Regular estimator case\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.classes_[i_label], predictions[i_label],\n                    n_classes=len(set(y[:, i_label])), method=method)\n                    for i_label in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.classes_, predictions, n_classes, method)\n",
+        "new_str": "\n\n    if method in ['decision_function', 'predict_proba', 'predict_log_proba']:\n        if isinstance(predictions, list):\n            # Handle both MultiOutputClassifier and regular multi-output cases\n            if hasattr(estimator, 'estimators_'):\n                # MultiOutputClassifier case - use estimators_[i].classes_\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i].classes_, predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n            else:\n                # Regular multi-output case - use classes_[i]\n                predictions = [_enforce_prediction_order(\n                    estimator.classes_[i], predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n        else:\n            # Single output case\n            n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n            if hasattr(estimator, 'estimators_'):\n                # MultiOutputClassifier with single output\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n            else:\n                # Regular single output case\n                predictions = _enforce_prediction_order(\n                    estimator.classes_, predictions, n_classes, method)\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        14
+      ],
+      "id": "11:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n    if method in ['decision_function', 'predict_proba', 'predict_log_proba']:\n        if isinstance(predictions, list):\n            predictions = [_enforce_prediction_order(\n                estimator.classes_[i_label], predictions[i_label],\n                n_classes=len(set(y[:, i_label])), method=method)\n                for i_label in range(len(predictions))]\n        else:\n            # A 2D y array should be a binary label indicator matrix\n            n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n            predictions = _enforce_prediction_order(\n                estimator.classes_, predictions, n_classes, method)\n",
+        "new_str": "\n    if method in ['decision_function', 'predict_proba', 'predict_log_proba']:\n        if isinstance(predictions, list):\n            # Handle both MultiOutputClassifier and regular multi-output cases\n            if hasattr(estimator, 'estimators_'):\n                # MultiOutputClassifier case - use estimators_[i].classes_\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i].classes_, predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n            else:\n                # Regular multi-output case - use classes_[i]\n                predictions = [_enforce_prediction_order(\n                    estimator.classes_[i], predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n        else:\n            # Single output case\n            n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n            if hasattr(estimator, 'estimators_'):\n                # MultiOutputClassifier with single output\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n            else:\n                # Regular single output case\n                predictions = _enforce_prediction_order(\n                    estimator.classes_, predictions, n_classes, method)\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        15
+      ],
+      "id": "12:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "view_range": [
+          850,
+          880
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        16,
+        23,
+        41,
+        58
+      ],
+      "id": "13:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i_label].classes_, predictions[i_label],\n                    n_classes=len(set(y[:, i_label])), method=method)\n                    for i_label in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n",
+        "new_str": "\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i_label].classes_, predictions[i_label],\n                    n_classes=len(set(y[:, i_label])), method=method)\n                    for i_label in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                if len(estimator.estimators_) == 1:\n                    predictions = _enforce_prediction_order(\n                        estimator.estimators_[0].classes_, predictions, n_classes, method)\n                else:\n                    # Handle case where MultiOutputClassifier has multiple estimators\n                    # but returns non-list predictions (shouldn't normally happen)\n                    predictions = _enforce_prediction_order(\n                        estimator.estimators_[0].classes_, predictions, n_classes, method)\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        17
+      ],
+      "id": "14:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n\n    if method in ['decision_function', 'predict_proba', 'predict_log_proba']:\n        # Get appropriate classes_ attribute based on estimator type\n        if hasattr(estimator, 'estimators_'):  # MultiOutputClassifier case\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i_label].classes_, predictions[i_label],\n                    n_classes=len(set(y[:, i_label])), method=method)\n                    for i_label in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                if len(estimator.estimators_) == 1:\n                    predictions = _enforce_prediction_order(\n                        estimator.estimators_[0].classes_, predictions, n_classes, method)\n                else:\n                    # Handle case where MultiOutputClassifier has multiple estimators\n                    # but returns non-list predictions (shouldn't normally happen)\n                    predictions = _enforce_prediction_order(\n                        estimator.estimators_[0].classes_, predictions, n_classes, method)\n        else:  # Regular estimator case\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.classes_[i_label], predictions[i_label],\n                    n_classes=len(set(y[:, i_label])), method=method)\n                    for i_label in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.classes_, predictions, n_classes, method)\n\n",
+        "new_str": "\n\n    if method in ['decision_function', 'predict_proba', 'predict_log_proba']:\n        if hasattr(estimator, 'estimators_'):  # MultiOutputClassifier case\n            # Always get classes from individual estimators\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i].classes_, predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n        else:  # Regular estimator case\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.classes_[i], predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.classes_, predictions, n_classes, method)\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        19
+      ],
+      "id": "15:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "cp",
+      "args": [
+        "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "/workspace/_validation_backup.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        20,
+        48
+      ],
+      "id": "16:cp"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n        if hasattr(estimator, 'estimators_'):  # MultiOutputClassifier case\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i_label].classes_, predictions[i_label],\n                    n_classes=len(set(y[:, i_label])), method=method)\n                    for i_label in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                if len(estimator.estimators_) == 1:\n                    predictions = _enforce_prediction_order(\n                        estimator.estimators_[0].classes_, predictions, n_classes, method)\n                else:\n                    # Handle case where MultiOutputClassifier has multiple estimators\n                    # but returns non-list predictions (shouldn't normally happen)\n                    predictions = _enforce_prediction_order(\n                        estimator.estimators_[0].classes_, predictions, n_classes, method)\n",
+        "new_str": "\n        if hasattr(estimator, 'estimators_'):  # MultiOutputClassifier case\n            # Always get classes from individual estimators\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i].classes_, predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        21
+      ],
+      "id": "17:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n\n    if method in ['decision_function', 'predict_proba', 'predict_log_proba']:\n        # Get appropriate classes_ attribute based on estimator type\n        if hasattr(estimator, 'estimators_'):  # MultiOutputClassifier case\n            # Always get classes from individual estimators\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i].classes_, predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n        else:  # Regular estimator case\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.classes_[i_label], predictions[i_label],\n                    n_classes=len(set(y[:, i_label])), method=method)\n                    for i_label in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.classes_, predictions, n_classes, method)\n\n",
+        "new_str": "\n\n    if method in ['decision_function', 'predict_proba', 'predict_log_proba']:\n        # Handle MultiOutputClassifier case first\n        if hasattr(estimator, 'estimators_'):\n            if isinstance(predictions, list):\n                # Multi-output case - use individual estimators' classes\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i].classes_, predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n            else:\n                # Single output case - use first estimator's classes\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n        else:\n            # Handle regular estimator case\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.classes_[i], predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.classes_, predictions, n_classes, method)\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        24
+      ],
+      "id": "18:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i].classes_, predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n\n",
+        "new_str": "\n\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    getattr(estimator.estimators_[i], 'classes_', None), predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        25
+      ],
+      "id": "19:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n\n                    estimator.estimators_[i].classes_, predictions[i],\n\n",
+        "new_str": "\n\n                    getattr(estimator.estimators_[i], 'classes_', None), predictions[i],\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        26
+      ],
+      "id": "20:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "view_range": [
+          860,
+          865
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        27
+      ],
+      "id": "21:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n                    estimator.estimators_[i].classes_, predictions[i],\n",
+        "new_str": "\n                    getattr(estimator.estimators_[i], 'classes_', None), predictions[i],\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        28
+      ],
+      "id": "22:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "view_range": [
+          840,
+          880
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        30
+      ],
+      "id": "23:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n\n        if hasattr(estimator, 'estimators_'):  # MultiOutputClassifier case\n            # Always get classes from individual estimators\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    getattr(estimator.estimators_[i], 'classes_', None), predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n\n",
+        "new_str": "\n\n        if hasattr(estimator, 'estimators_'):  # MultiOutputClassifier case\n            # Handle both list and non-list predictions\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i].classes_, predictions[i],\n                    n_classes=len(set(y[:, i]) if y is not None else 2, method=method)\n                    for i in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y is not None and y.ndim == 1 else (y.shape[1] if y is not None else 2)\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        31
+      ],
+      "id": "24:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n\n                    getattr(estimator.estimators_[i], 'classes_', None), predictions[i],\n\n",
+        "new_str": "\n\n                    estimator.estimators_[i].classes_, predictions[i],\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        32,
+        43,
+        47,
+        49
+      ],
+      "id": "25:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\ncreate",
+      "args": {
+        "path": "/workspace/test_multioutput.py",
+        "file_text": "\nfrom sklearn.datasets import make_multilabel_classification\nfrom sklearn.multioutput import MultiOutputClassifier\nfrom sklearn.discriminant_analysis import LinearDiscriminantAnalysis\nfrom sklearn.model_selection import cross_val_predict\n\nX, Y = make_multilabel_classification(n_classes=3)\nmo = MultiOutputClassifier(LinearDiscriminantAnalysis())\nmo.fit(X, Y)\n\n# Test predict_proba directly\nprint(\"Direct predict_proba output type:\", type(mo.predict_proba(X)))\nprint(\"First estimator classes:\", mo.estimators_[0].classes_)\n\n# Test cross_val_predict\ntry:\n    proba = cross_val_predict(mo, X, Y, cv=2, method='predict_proba')\n    print(\"Cross val predict_proba succeeded\")\nexcept Exception as e:\n    print(f\"Cross val predict_proba failed: {type(e).__name__}: {e}\")\n"
+      },
+      "phase": "verification",
+      "step_indices": [
+        33
+      ],
+      "id": "26:str_replace_editor\ncreate"
+    },
+    {
+      "label": "python",
+      "args": [
+        "/workspace/test_multioutput.py"
+      ],
+      "phase": "verification",
+      "step_indices": [
+        34,
+        40,
+        57,
+        65
+      ],
+      "id": "27:python"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n\n\n    if method in ['decision_function', 'predict_proba', 'predict_log_proba']:\n        # Get appropriate classes_ attribute based on estimator type\n        if hasattr(estimator, 'estimators_'):  # MultiOutputClassifier case\n\n\n",
+        "new_str": "\n\n\n    if method in ['decision_function', 'predict_proba', 'predict_log_proba']:\n        # Handle MultiOutputClassifier case first\n        if hasattr(estimator, 'estimators_') and not hasattr(estimator, 'classes_'):  # MultiOutputClassifier case\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        35
+      ],
+      "id": "28:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n\n        if hasattr(estimator, 'estimators_'):  # MultiOutputClassifier case\n\n",
+        "new_str": "\n\n        if hasattr(estimator, 'estimators_') and not hasattr(estimator, 'classes_'):  # MultiOutputClassifier case\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        36,
+        38
+      ],
+      "id": "29:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "view_range": [
+          857,
+          859
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        37
+      ],
+      "id": "30:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n        if hasattr(estimator, 'estimators_'):  # MultiOutputClassifier case\n",
+        "new_str": "\n        if hasattr(estimator, 'estimators_') and not hasattr(estimator, 'classes_'):  # MultiOutputClassifier case\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        39
+      ],
+      "id": "31:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n\n\n        if hasattr(estimator, 'estimators_') and not hasattr(estimator, 'classes_'):  # MultiOutputClassifier case\n            # Always get classes from individual estimators\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    getattr(estimator.estimators_[i], 'classes_', None), predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n\n\n",
+        "new_str": "\n\n\n        if hasattr(estimator, 'estimators_'):  # MultiOutputClassifier case\n            # Handle both list and non-list predictions\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i].classes_, predictions[i],\n                    n_classes=len(set(y[:, i]) if y is not None else 2), method=method)\n                    for i in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y is not None and y.ndim == 1 else (y.shape[1] if y is not None else 2)\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        42
+      ],
+      "id": "32:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "view_range": [
+          857,
+          868
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        44
+      ],
+      "id": "33:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n\n\n                    getattr(estimator.estimators_[i], 'classes_', None), predictions[i],\n\n\n",
+        "new_str": "\n\n\n                    estimator.estimators_[i].classes_, predictions[i],\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        45
+      ],
+      "id": "34:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "view_range": [
+          861,
+          863
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        46
+      ],
+      "id": "35:str_replace_editor\nview"
+    },
+    {
+      "label": "echo",
+      "args": [
+        "Backup created successfully"
+      ],
+      "phase": "general",
+      "step_indices": [
+        48
+      ],
+      "id": "36:echo"
+    },
+    {
+      "label": "cat",
+      "args": [
+        "|",
+        "grep",
+        "getattr(estimator.estimators_"
+      ],
+      "phase": "general",
+      "step_indices": [
+        50
+      ],
+      "id": "37:cat"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n\n                      getattr(estimator.estimators_[i], 'classes_', None), predictions[i],\n\n",
+        "new_str": "\n\n                      estimator.estimators_[i].classes_, predictions[i],\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        51
+      ],
+      "id": "38:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\ncreate",
+      "args": {
+        "path": "/workspace/fix_classes.patch",
+        "file_text": "\n--- _validation.py\n+++ _validation.py\n@@ -861,7 +861,7 @@\n                 predictions = [_enforce_prediction_order(\n-                    getattr(estimator.estimators_[i], 'classes_', None), predictions[i],\n+                    estimator.estimators_[i].classes_, predictions[i],\n                     n_classes=len(set(y[:, i])), method=method)\n                     for i in range(len(predictions))]\n"
+      },
+      "phase": "verification",
+      "step_indices": [
+        52
+      ],
+      "id": "39:str_replace_editor\ncreate"
+    },
+    {
+      "label": "cd",
+      "args": [
+        "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection"
+      ],
+      "phase": "general",
+      "step_indices": [
+        53
+      ],
+      "id": "40:cd"
+    },
+    {
+      "label": "patch",
+      "args": [
+        "_validation.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        53
+      ],
+      "id": "41:patch"
+    },
+    {
+      "label": "sed",
+      "args": [
+        "s/getattr(estimator.estimators_\\[i\\], 'classes_', None)/estimator.estimators_[i].classes_/g",
+        "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        ">",
+        "/workspace/_validation_fixed.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        54
+      ],
+      "id": "42:sed"
+    },
+    {
+      "label": "echo",
+      "args": [
+        "Modified file created"
+      ],
+      "phase": "general",
+      "step_indices": [
+        54
+      ],
+      "id": "43:echo"
+    },
+    {
+      "label": "grep",
+      "args": [
+        "/workspace/_validation_fixed.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        55,
+        63,
+        63
+      ],
+      "id": "44:grep"
+    },
+    {
+      "label": "mv",
+      "args": [
+        "/workspace/_validation_fixed.py",
+        "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        56,
+        64
+      ],
+      "id": "45:mv"
+    },
+    {
+      "label": "echo",
+      "args": [
+        "File replaced successfully"
+      ],
+      "phase": "general",
+      "step_indices": [
+        56
+      ],
+      "id": "46:echo"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "old_str": "\n\n\n        if hasattr(estimator, 'estimators_') and not hasattr(estimator, 'classes_'):  # MultiOutputClassifier case\n            # Always get classes from individual estimators\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i].classes_, predictions[i],\n                    n_classes=len(set(y[:, i])), method=method)\n                    for i in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y.ndim == 1 else y.shape[1]\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n\n\n",
+        "new_str": "\n\n\n        if hasattr(estimator, 'estimators_'):  # MultiOutputClassifier case\n            # Handle both list and non-list predictions\n            if isinstance(predictions, list):\n                predictions = [_enforce_prediction_order(\n                    estimator.estimators_[i].classes_, predictions[i],\n                    n_classes=len(set(y[:, i]) if y is not None else 2, method=method)\n                    for i in range(len(predictions))]\n            else:\n                n_classes = len(set(y)) if y is not None and y.ndim == 1 else (y.shape[1] if y is not None else 2)\n                predictions = _enforce_prediction_order(\n                    estimator.estimators_[0].classes_, predictions, n_classes, method)\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        59
+      ],
+      "id": "47:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "execute_bash\n\n\n# Create modified version\ncat /workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py | \\\nsed '/if hasattr(estimator, '\\''estimators_'\\'') and not hasattr(estimator, '\\''classes_'\\''):/,/else:/ {\n    /if isinstance(predictions, list):/,/for i in range(len(predictions))]/ {\n        s/estimator.estimators_\\[i\\].classes_/estimator.estimators_[i].classes_/\n    }\n    /else:/,/estimator.estimators_\\[0\\].classes_/ {\n        s/estimator.estimators_\\[0\\].classes_/estimator.estimators_[0].classes_/\n    }\n}' > /workspace/_validation_fixed.py && \\\necho \"Modified version created successfully\"\n\n",
+      "args": {},
+      "phase": "general",
+      "step_indices": [
+        60
+      ],
+      "id": "48:execute_bash\n\n\n# Create modified version\ncat /workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py | \\\nsed '/if hasattr(estimator, '\\''estimators_'\\'') and not hasattr(estimator, '\\''classes_'\\''):/,/else:/ {\n    /if isinstance(predictions, list):/,/for i in range(len(predictions))]/ {\n        s/estimator.estimators_\\[i\\].classes_/estimator.estimators_[i].classes_/\n    }\n    /else:/,/estimator.estimators_\\[0\\].classes_/ {\n        s/estimator.estimators_\\[0\\].classes_/estimator.estimators_[0].classes_/\n    }\n}' > /workspace/_validation_fixed.py && \\\necho \"Modified version created successfully\"\n\n"
+    },
+    {
+      "label": "cat",
+      "args": [
+        "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        ">",
+        "/workspace/_validation_fixed.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        61
+      ],
+      "id": "49:cat"
+    },
+    {
+      "label": "sed",
+      "args": [
+        "/workspace/_validation_fixed.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        62
+      ],
+      "id": "50:sed"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py",
+        "view_range": [
+          880,
+          900
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        66
+      ],
+      "id": "51:str_replace_editor\nview"
+    }
+  ],
+  "edges": [
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "0:empty action",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "7",
+      "type": "exec",
+      "source": "0:empty action",
+      "target": "7:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "10",
+      "type": "exec",
+      "source": "0:empty action",
+      "target": "8:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "2:pytest",
+      "key": 0
+    },
+    {
+      "label": "2",
+      "type": "exec",
+      "source": "2:pytest",
+      "target": "3:grep",
+      "key": 0
+    },
+    {
+      "label": "2",
+      "type": "exec",
+      "source": "3:grep",
+      "target": "3:grep",
+      "key": 0
+    },
+    {
+      "label": "3",
+      "type": "exec",
+      "source": "3:grep",
+      "target": "4:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "4",
+      "type": "exec",
+      "source": "4:str_replace_editor\nview",
+      "target": "5:str_replace_editor\ncreate",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "4:str_replace_editor\nview",
+      "target": "21:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "4:str_replace_editor\nview",
+      "target": "30:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "4:str_replace_editor\nview",
+      "target": "33:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "4:str_replace_editor\nview",
+      "target": "35:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "5",
+      "type": "exec",
+      "source": "5:str_replace_editor\ncreate",
+      "target": "6:python",
+      "key": 0
+    },
+    {
+      "label": "6",
+      "type": "exec",
+      "source": "6:python",
+      "target": "0:empty action",
+      "key": 0
+    },
+    {
+      "label": "9",
+      "type": "exec",
+      "source": "6:python",
+      "target": "0:empty action",
+      "key": 1
+    },
+    {
+      "label": "12",
+      "type": "exec",
+      "source": "6:python",
+      "target": "9:grep",
+      "key": 0
+    },
+    {
+      "label": "19",
+      "type": "exec",
+      "source": "6:python",
+      "target": "15:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "23",
+      "type": "exec",
+      "source": "6:python",
+      "target": "13:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "30",
+      "type": "exec",
+      "source": "6:python",
+      "target": "23:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "8",
+      "type": "exec",
+      "source": "7:str_replace_editor\nstr_replace",
+      "target": "6:python",
+      "key": 0
+    },
+    {
+      "label": "11",
+      "type": "exec",
+      "source": "8:str_replace_editor\nstr_replace",
+      "target": "6:python",
+      "key": 0
+    },
+    {
+      "label": "13",
+      "type": "exec",
+      "source": "9:grep",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "14",
+      "type": "exec",
+      "source": "10:python",
+      "target": "11:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "15",
+      "type": "exec",
+      "source": "11:str_replace_editor\nstr_replace",
+      "target": "12:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "16",
+      "type": "exec",
+      "source": "12:str_replace_editor\nstr_replace",
+      "target": "13:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "17",
+      "type": "exec",
+      "source": "13:str_replace_editor\nview",
+      "target": "14:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "24",
+      "type": "exec",
+      "source": "13:str_replace_editor\nview",
+      "target": "18:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "42",
+      "type": "exec",
+      "source": "13:str_replace_editor\nview",
+      "target": "32:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "59",
+      "type": "exec",
+      "source": "13:str_replace_editor\nview",
+      "target": "47:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "13:str_replace_editor\nview",
+      "target": "4:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "13:str_replace_editor\nview",
+      "target": "21:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "13:str_replace_editor\nview",
+      "target": "30:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "13:str_replace_editor\nview",
+      "target": "33:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "13:str_replace_editor\nview",
+      "target": "35:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "18",
+      "type": "exec",
+      "source": "14:str_replace_editor\nstr_replace",
+      "target": "6:python",
+      "key": 0
+    },
+    {
+      "label": "20",
+      "type": "exec",
+      "source": "15:str_replace_editor\nstr_replace",
+      "target": "16:cp",
+      "key": 0
+    },
+    {
+      "label": "21",
+      "type": "exec",
+      "source": "16:cp",
+      "target": "17:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "48",
+      "type": "exec",
+      "source": "16:cp",
+      "target": "36:echo",
+      "key": 0
+    },
+    {
+      "label": "22",
+      "type": "exec",
+      "source": "17:str_replace_editor\nstr_replace",
+      "target": "6:python",
+      "key": 0
+    },
+    {
+      "label": "25",
+      "type": "exec",
+      "source": "18:str_replace_editor\nstr_replace",
+      "target": "19:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "26",
+      "type": "exec",
+      "source": "19:str_replace_editor\nstr_replace",
+      "target": "20:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "27",
+      "type": "exec",
+      "source": "20:str_replace_editor\nstr_replace",
+      "target": "21:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "28",
+      "type": "exec",
+      "source": "21:str_replace_editor\nview",
+      "target": "22:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "21:str_replace_editor\nview",
+      "target": "35:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "29",
+      "type": "exec",
+      "source": "22:str_replace_editor\nstr_replace",
+      "target": "6:python",
+      "key": 0
+    },
+    {
+      "label": "31",
+      "type": "exec",
+      "source": "23:str_replace_editor\nview",
+      "target": "24:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "23:str_replace_editor\nview",
+      "target": "4:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "23:str_replace_editor\nview",
+      "target": "13:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "23:str_replace_editor\nview",
+      "target": "21:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "23:str_replace_editor\nview",
+      "target": "30:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "23:str_replace_editor\nview",
+      "target": "33:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "23:str_replace_editor\nview",
+      "target": "35:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "32",
+      "type": "exec",
+      "source": "24:str_replace_editor\nstr_replace",
+      "target": "25:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "33",
+      "type": "exec",
+      "source": "25:str_replace_editor\nstr_replace",
+      "target": "26:str_replace_editor\ncreate",
+      "key": 0
+    },
+    {
+      "label": "44",
+      "type": "exec",
+      "source": "25:str_replace_editor\nstr_replace",
+      "target": "33:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "48",
+      "type": "exec",
+      "source": "25:str_replace_editor\nstr_replace",
+      "target": "16:cp",
+      "key": 0
+    },
+    {
+      "label": "50",
+      "type": "exec",
+      "source": "25:str_replace_editor\nstr_replace",
+      "target": "37:cat",
+      "key": 0
+    },
+    {
+      "label": "34",
+      "type": "exec",
+      "source": "26:str_replace_editor\ncreate",
+      "target": "27:python",
+      "key": 0
+    },
+    {
+      "label": "35",
+      "type": "exec",
+      "source": "27:python",
+      "target": "28:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "41",
+      "type": "exec",
+      "source": "27:python",
+      "target": "13:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "58",
+      "type": "exec",
+      "source": "27:python",
+      "target": "13:str_replace_editor\nview",
+      "key": 1
+    },
+    {
+      "label": "66",
+      "type": "exec",
+      "source": "27:python",
+      "target": "51:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "36",
+      "type": "exec",
+      "source": "28:str_replace_editor\nstr_replace",
+      "target": "29:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "37",
+      "type": "exec",
+      "source": "29:str_replace_editor\nstr_replace",
+      "target": "30:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "39",
+      "type": "exec",
+      "source": "29:str_replace_editor\nstr_replace",
+      "target": "31:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "38",
+      "type": "exec",
+      "source": "30:str_replace_editor\nview",
+      "target": "29:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "40",
+      "type": "exec",
+      "source": "31:str_replace_editor\nstr_replace",
+      "target": "27:python",
+      "key": 0
+    },
+    {
+      "label": "43",
+      "type": "exec",
+      "source": "32:str_replace_editor\nstr_replace",
+      "target": "25:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "45",
+      "type": "exec",
+      "source": "33:str_replace_editor\nview",
+      "target": "34:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "33:str_replace_editor\nview",
+      "target": "21:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "33:str_replace_editor\nview",
+      "target": "30:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "33:str_replace_editor\nview",
+      "target": "35:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "46",
+      "type": "exec",
+      "source": "34:str_replace_editor\nstr_replace",
+      "target": "35:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "47",
+      "type": "exec",
+      "source": "35:str_replace_editor\nview",
+      "target": "25:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "49",
+      "type": "exec",
+      "source": "36:echo",
+      "target": "25:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "51",
+      "type": "exec",
+      "source": "37:cat",
+      "target": "38:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "52",
+      "type": "exec",
+      "source": "38:str_replace_editor\nstr_replace",
+      "target": "39:str_replace_editor\ncreate",
+      "key": 0
+    },
+    {
+      "label": "53",
+      "type": "exec",
+      "source": "39:str_replace_editor\ncreate",
+      "target": "40:cd",
+      "key": 0
+    },
+    {
+      "label": "53",
+      "type": "exec",
+      "source": "40:cd",
+      "target": "41:patch",
+      "key": 0
+    },
+    {
+      "label": "54",
+      "type": "exec",
+      "source": "41:patch",
+      "target": "42:sed",
+      "key": 0
+    },
+    {
+      "label": "54",
+      "type": "exec",
+      "source": "42:sed",
+      "target": "43:echo",
+      "key": 0
+    },
+    {
+      "label": "55",
+      "type": "exec",
+      "source": "43:echo",
+      "target": "44:grep",
+      "key": 0
+    },
+    {
+      "label": "56",
+      "type": "exec",
+      "source": "44:grep",
+      "target": "45:mv",
+      "key": 0
+    },
+    {
+      "label": "64",
+      "type": "exec",
+      "source": "44:grep",
+      "target": "45:mv",
+      "key": 1
+    },
+    {
+      "label": "63",
+      "type": "exec",
+      "source": "44:grep",
+      "target": "44:grep",
+      "key": 0
+    },
+    {
+      "label": "56",
+      "type": "exec",
+      "source": "45:mv",
+      "target": "46:echo",
+      "key": 0
+    },
+    {
+      "label": "65",
+      "type": "exec",
+      "source": "45:mv",
+      "target": "27:python",
+      "key": 0
+    },
+    {
+      "label": "57",
+      "type": "exec",
+      "source": "46:echo",
+      "target": "27:python",
+      "key": 0
+    },
+    {
+      "label": "60",
+      "type": "exec",
+      "source": "47:str_replace_editor\nstr_replace",
+      "target": "48:execute_bash\n\n\n# Create modified version\ncat /workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py | \\\nsed '/if hasattr(estimator, '\\''estimators_'\\'') and not hasattr(estimator, '\\''classes_'\\''):/,/else:/ {\n    /if isinstance(predictions, list):/,/for i in range(len(predictions))]/ {\n        s/estimator.estimators_\\[i\\].classes_/estimator.estimators_[i].classes_/\n    }\n    /else:/,/estimator.estimators_\\[0\\].classes_/ {\n        s/estimator.estimators_\\[0\\].classes_/estimator.estimators_[0].classes_/\n    }\n}' > /workspace/_validation_fixed.py && \\\necho \"Modified version created successfully\"\n\n",
+      "key": 0
+    },
+    {
+      "label": "61",
+      "type": "exec",
+      "source": "48:execute_bash\n\n\n# Create modified version\ncat /workspace/scikit-learn__scikit-learn__0.22/sklearn/model_selection/_validation.py | \\\nsed '/if hasattr(estimator, '\\''estimators_'\\'') and not hasattr(estimator, '\\''classes_'\\''):/,/else:/ {\n    /if isinstance(predictions, list):/,/for i in range(len(predictions))]/ {\n        s/estimator.estimators_\\[i\\].classes_/estimator.estimators_[i].classes_/\n    }\n    /else:/,/estimator.estimators_\\[0\\].classes_/ {\n        s/estimator.estimators_\\[0\\].classes_/estimator.estimators_[0].classes_/\n    }\n}' > /workspace/_validation_fixed.py && \\\necho \"Modified version created successfully\"\n\n",
+      "target": "49:cat",
+      "key": 0
+    },
+    {
+      "label": "62",
+      "type": "exec",
+      "source": "49:cat",
+      "target": "50:sed",
+      "key": 0
+    },
+    {
+      "label": "63",
+      "type": "exec",
+      "source": "50:sed",
+      "target": "44:grep",
+      "key": 0
+    }
+  ]
+}

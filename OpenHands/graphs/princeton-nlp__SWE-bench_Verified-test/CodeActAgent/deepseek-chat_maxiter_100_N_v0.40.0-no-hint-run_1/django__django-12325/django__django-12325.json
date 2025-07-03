@@ -1,0 +1,538 @@
+{
+  "directed": true,
+  "multigraph": true,
+  "graph": {
+    "resolution_status": "unresolved",
+    "instance_name": "django__django-12325",
+    "difficulty": "1-4 hours",
+    "golden_patch_difficulty": "medium",
+    "golden_files_change": 2,
+    "patch_difficulty": "medium",
+    "files_change": 2
+  },
+  "nodes": [
+    {
+      "label": "empty action",
+      "args": {},
+      "phase": "general",
+      "step_indices": [
+        0
+      ],
+      "id": "0:empty action"
+    },
+    {
+      "label": "cd",
+      "args": [
+        "/workspace/django__django__3.1"
+      ],
+      "phase": "general",
+      "step_indices": [
+        1,
+        9,
+        11,
+        15,
+        19,
+        24
+      ],
+      "id": "1:cd"
+    },
+    {
+      "label": "find",
+      "args": [
+        ".",
+        "*.py",
+        "|",
+        "xargs",
+        "grep",
+        "|",
+        "grep"
+      ],
+      "phase": "general",
+      "step_indices": [
+        1
+      ],
+      "id": "2:find"
+    },
+    {
+      "label": "cat",
+      "args": [
+        "./tests/model_inheritance_regress/models.py",
+        "./tests/model_inheritance/models.py",
+        "|",
+        "grep",
+        "parent_link=True"
+      ],
+      "phase": "general",
+      "step_indices": [
+        2
+      ],
+      "id": "3:cat"
+    },
+    {
+      "label": "find",
+      "args": [
+        "django/db/models/",
+        "*.py",
+        "|",
+        "xargs",
+        "grep",
+        "|",
+        "grep"
+      ],
+      "phase": "general",
+      "step_indices": [
+        3
+      ],
+      "id": "4:find"
+    },
+    {
+      "label": "grep",
+      "args": [
+        "parent_link",
+        "django/db/models/options.py",
+        "django/db/models/base.py",
+        "|",
+        "grep",
+        "|",
+        "head"
+      ],
+      "phase": "general",
+      "step_indices": [
+        4
+      ],
+      "id": "5:grep"
+    },
+    {
+      "label": "cat",
+      "args": [
+        "django/db/models/options.py",
+        "|",
+        "grep",
+        "parent_link=True"
+      ],
+      "phase": "general",
+      "step_indices": [
+        5
+      ],
+      "id": "6:cat"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/django__django__3.1/django/db/models/options.py",
+        "view_range": [
+          240,
+          260
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        6,
+        13
+      ],
+      "id": "7:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/django__django__3.1/django/db/models/options.py",
+        "old_str": "        if self.pk is None:\n            if self.parents:\n                # Promote the first parent link in lieu of adding yet another\n                # field.\n                field = next(iter(self.parents.values()))\n                # Look for a local field with the same name as the\n                # first parent link. If a local field has already been\n                # created, use it instead of promoting the parent\n                already_created = [fld for fld in self.local_fields if fld.name == field.name]\n                if already_created:\n                    field = already_created[0]\n                field.primary_key = True\n                self.setup_pk(field)\n                if not field.remote_field.parent_link:\n                    raise ImproperlyConfigured(\n                        'Add parent_link=True to %s.' % field,\n                    )",
+        "new_str": "        if self.pk is None:\n            if self.parents:\n                # First look for an explicitly marked parent_link field\n                parent_link_fields = [f for f in self.parents.values() \n                                   if getattr(f.remote_field, 'parent_link', False)]\n                if parent_link_fields:\n                    field = parent_link_fields[0]\n                else:\n                    # Fall back to first parent field if no explicit parent_link\n                    field = next(iter(self.parents.values()))\n                # Look for a local field with the same name\n                already_created = [fld for fld in self.local_fields if fld.name == field.name]\n                if already_created:\n                    field = already_created[0]\n                field.primary_key = True\n                self.setup_pk(field)\n                if not parent_link_fields and not field.remote_field.parent_link:\n                    raise ImproperlyConfigured(\n                        'Add parent_link=True to %s.' % field,\n                    )",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        7
+      ],
+      "id": "8:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\ncreate",
+      "args": {
+        "path": "/workspace/django__django__3.1/tests/model_inheritance/test_parent_link_order.py",
+        "file_text": "\nfrom django.db import models\nfrom django.test import TestCase\n\nclass Document(models.Model):\n    pass\n\nclass PickingWorkingOrder(Document):\n    document_ptr = models.OneToOneField(\n        Document, \n        on_delete=models.CASCADE, \n        parent_link=True, \n        related_name='+'\n    )\n    origin = models.OneToOneField(\n        Document, \n        related_name='picking', \n        on_delete=models.PROTECT\n    )\n\nclass PickingOriginalOrder(Document):\n    origin = models.OneToOneField(\n        Document, \n        related_name='picking', \n        on_delete=models.PROTECT\n    )\n    document_ptr = models.OneToOneField(\n        Document, \n        on_delete=models.CASCADE, \n        parent_link=True, \n        related_name='+'\n    )\n\nclass ParentLinkOrderTest(TestCase):\n    def test_both_orderings_work(self):\n        \"\"\"Test that parent_link works regardless of field order\"\"\"\n        # Both models should create successfully\n        doc = Document.objects.create()\n        PickingWorkingOrder.objects.create(document_ptr=doc, origin=doc)\n        PickingOriginalOrder.objects.create(document_ptr=doc, origin=doc)\n"
+      },
+      "phase": "verification",
+      "step_indices": [
+        8
+      ],
+      "id": "9:str_replace_editor\ncreate"
+    },
+    {
+      "label": "python",
+      "args": [
+        "test",
+        "tests.model_inheritance.test_parent_link_order"
+      ],
+      "phase": "verification",
+      "step_indices": [
+        9
+      ],
+      "id": "10:python"
+    },
+    {
+      "label": "str_replace_editor\ncreate",
+      "args": {
+        "path": "/workspace/django__django__3.1/test_settings.py",
+        "file_text": "\nDATABASES = {\n    'default': {\n        'ENGINE': 'django.db.backends.sqlite3',\n        'NAME': ':memory:',\n    }\n}\nSECRET_KEY = 'test-key'\nINSTALLED_APPS = [\n    'django.contrib.contenttypes',\n    'django.contrib.auth',\n    'tests.model_inheritance',\n]\n"
+      },
+      "phase": "verification",
+      "step_indices": [
+        10
+      ],
+      "id": "11:str_replace_editor\ncreate"
+    },
+    {
+      "label": "\nDJANGO_SETTINGS_MODULE=test_settings",
+      "args": [
+        "python",
+        "test",
+        "tests.model_inheritance.test_parent_link_order"
+      ],
+      "phase": "general",
+      "step_indices": [
+        11,
+        15,
+        19,
+        24
+      ],
+      "id": "12:\nDJANGO_SETTINGS_MODULE=test_settings"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/django__django__3.1/tests/model_inheritance/test_parent_link_order.py"
+      },
+      "phase": "localization",
+      "step_indices": [
+        12
+      ],
+      "id": "13:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/django__django__3.1/django/db/models/options.py",
+        "old_str": "\n        if self.pk is None:\n            if self.parents:\n                # First look for an explicitly marked parent_link field\n                parent_link_fields = [f for f in self.parents.values() \n                                   if getattr(f.remote_field, 'parent_link', False)]\n                if parent_link_fields:\n                    field = parent_link_fields[0]\n                else:\n                    # Fall back to first parent field if no explicit parent_link\n                    field = next(iter(self.parents.values()))\n                # Look for a local field with the same name\n                already_created = [fld for fld in self.local_fields if fld.name == field.name]\n                if already_created:\n                    field = already_created[0]\n                field.primary_key = True\n                self.setup_pk(field)\n                if not parent_link_fields and not field.remote_field.parent_link:\n                    raise ImproperlyConfigured(\n                        'Add parent_link=True to %s.' % field,\n                    )\n",
+        "new_str": "\n        if self.pk is None:\n            if self.parents:\n                # First check all local fields for parent_link\n                parent_link_fields = [f for f in self.local_fields \n                                    if getattr(f.remote_field, 'parent_link', False)]\n                # Then check parent fields if no local parent_link found\n                if not parent_link_fields:\n                    parent_link_fields = [f for f in self.parents.values()\n                                       if getattr(f.remote_field, 'parent_link', False)]\n                \n                if parent_link_fields:\n                    field = parent_link_fields[0]\n                    # Ensure we have the local field instance\n                    if field not in self.local_fields:\n                        field = next((f for f in self.local_fields if f.name == field.name), field)\n                else:\n                    # Fall back to first parent field if no parent_link found\n                    field = next(iter(self.parents.values()))\n                    # Get local field instance if it exists\n                    already_created = [fld for fld in self.local_fields if fld.name == field.name]\n                    if already_created:\n                        field = already_created[0]\n                \n                field.primary_key = True\n                self.setup_pk(field)\n                \n                if not any(getattr(f.remote_field, 'parent_link', False) \n                         for f in chain(self.local_fields, self.parents.values())):\n                    raise ImproperlyConfigured(\n                        'Add parent_link=True to a OneToOneField to serve as parent link.'\n                    )\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        14
+      ],
+      "id": "14:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/django__django__3.1/django/db/models/options.py",
+        "view_range": [
+          1,
+          20
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        16
+      ],
+      "id": "15:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/django__django__3.1/django/db/models/options.py",
+        "old_str": "\nimport bisect\nimport copy\nimport inspect\nfrom collections import defaultdict\n",
+        "new_str": "\nimport bisect\nimport copy\nimport inspect\nfrom collections import defaultdict\nfrom itertools import chain\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        17
+      ],
+      "id": "16:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/django__django__3.1/django/db/models/options.py",
+        "old_str": "import bisect\nimport copy\nimport inspect\nfrom collections import defaultdict",
+        "new_str": "import bisect\nimport copy\nimport inspect\nfrom collections import defaultdict\nfrom itertools import chain",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        18
+      ],
+      "id": "17:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/django__django__3.1/tests/model_inheritance/test_parent_link_order.py",
+        "old_str": "\n    origin = models.OneToOneField(\n        Document, \n        related_name='picking', \n        on_delete=models.PROTECT\n    )\n",
+        "new_str": "\n    origin = models.OneToOneField(\n        Document, \n        related_name='%(class)s_origin', \n        on_delete=models.PROTECT\n    )\n",
+        "edit_status": "failure: multiple occurrences"
+      },
+      "phase": "patch",
+      "step_indices": [
+        20
+      ],
+      "id": "18:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/django__django__3.1/tests/model_inheritance/test_parent_link_order.py",
+        "old_str": "\n    origin = models.OneToOneField(\n        Document, \n        related_name='picking', \n        on_delete=models.PROTECT\n    )\n",
+        "new_str": "\n    origin = models.OneToOneField(\n        Document, \n        related_name='working_order_origin', \n        on_delete=models.PROTECT\n    )\n",
+        "edit_status": "failure: multiple occurrences"
+      },
+      "phase": "patch",
+      "step_indices": [
+        21
+      ],
+      "id": "19:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/django__django__3.1/tests/model_inheritance/test_parent_link_order.py",
+        "old_str": "\nclass PickingWorkingOrder(Document):\n    document_ptr = models.OneToOneField(\n        Document, \n        on_delete=models.CASCADE, \n        parent_link=True, \n        related_name='+'\n    )\n    origin = models.OneToOneField(\n        Document, \n        related_name='picking', \n        on_delete=models.PROTECT\n    )\n",
+        "new_str": "\nclass PickingWorkingOrder(Document):\n    document_ptr = models.OneToOneField(\n        Document, \n        on_delete=models.CASCADE, \n        parent_link=True, \n        related_name='+'\n    )\n    origin = models.OneToOneField(\n        Document, \n        related_name='working_order_origin', \n        on_delete=models.PROTECT\n    )\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        22
+      ],
+      "id": "20:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/django__django__3.1/tests/model_inheritance/test_parent_link_order.py",
+        "old_str": "\n\nclass PickingOriginalOrder(Document):\n    origin = models.OneToOneField(\n        Document, \n        related_name='picking', \n        on_delete=models.PROTECT\n    )\n    document_ptr = models.OneToOneField(\n        Document, \n        on_delete=models.CASCADE, \n        parent_link=True, \n        related_name='+'\n    )\n\n",
+        "new_str": "\n\nclass PickingOriginalOrder(Document):\n    origin = models.OneToOneField(\n        Document, \n        related_name='original_order_origin', \n        on_delete=models.PROTECT\n    )\n    document_ptr = models.OneToOneField(\n        Document, \n        on_delete=models.CASCADE, \n        parent_link=True, \n        related_name='+'\n    )\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        23
+      ],
+      "id": "21:str_replace_editor\nstr_replace"
+    }
+  ],
+  "edges": [
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "0:empty action",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "2:find",
+      "key": 0
+    },
+    {
+      "label": "9",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "10:python",
+      "key": 0
+    },
+    {
+      "label": "11",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "12:\nDJANGO_SETTINGS_MODULE=test_settings",
+      "key": 0
+    },
+    {
+      "label": "15",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "12:\nDJANGO_SETTINGS_MODULE=test_settings",
+      "key": 1
+    },
+    {
+      "label": "19",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "12:\nDJANGO_SETTINGS_MODULE=test_settings",
+      "key": 2
+    },
+    {
+      "label": "24",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "12:\nDJANGO_SETTINGS_MODULE=test_settings",
+      "key": 3
+    },
+    {
+      "label": "2",
+      "type": "exec",
+      "source": "2:find",
+      "target": "3:cat",
+      "key": 0
+    },
+    {
+      "label": "3",
+      "type": "exec",
+      "source": "3:cat",
+      "target": "4:find",
+      "key": 0
+    },
+    {
+      "label": "4",
+      "type": "exec",
+      "source": "4:find",
+      "target": "5:grep",
+      "key": 0
+    },
+    {
+      "label": "5",
+      "type": "exec",
+      "source": "5:grep",
+      "target": "6:cat",
+      "key": 0
+    },
+    {
+      "label": "6",
+      "type": "exec",
+      "source": "6:cat",
+      "target": "7:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "7",
+      "type": "exec",
+      "source": "7:str_replace_editor\nview",
+      "target": "8:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "14",
+      "type": "exec",
+      "source": "7:str_replace_editor\nview",
+      "target": "14:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "8",
+      "type": "exec",
+      "source": "8:str_replace_editor\nstr_replace",
+      "target": "9:str_replace_editor\ncreate",
+      "key": 0
+    },
+    {
+      "label": "9",
+      "type": "exec",
+      "source": "9:str_replace_editor\ncreate",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "10",
+      "type": "exec",
+      "source": "10:python",
+      "target": "11:str_replace_editor\ncreate",
+      "key": 0
+    },
+    {
+      "label": "11",
+      "type": "exec",
+      "source": "11:str_replace_editor\ncreate",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "12",
+      "type": "exec",
+      "source": "12:\nDJANGO_SETTINGS_MODULE=test_settings",
+      "target": "13:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "16",
+      "type": "exec",
+      "source": "12:\nDJANGO_SETTINGS_MODULE=test_settings",
+      "target": "15:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "20",
+      "type": "exec",
+      "source": "12:\nDJANGO_SETTINGS_MODULE=test_settings",
+      "target": "18:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "13",
+      "type": "exec",
+      "source": "13:str_replace_editor\nview",
+      "target": "7:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "15",
+      "type": "exec",
+      "source": "14:str_replace_editor\nstr_replace",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "17",
+      "type": "exec",
+      "source": "15:str_replace_editor\nview",
+      "target": "16:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "18",
+      "type": "exec",
+      "source": "16:str_replace_editor\nstr_replace",
+      "target": "17:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "19",
+      "type": "exec",
+      "source": "17:str_replace_editor\nstr_replace",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "21",
+      "type": "exec",
+      "source": "18:str_replace_editor\nstr_replace",
+      "target": "19:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "22",
+      "type": "exec",
+      "source": "19:str_replace_editor\nstr_replace",
+      "target": "20:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "23",
+      "type": "exec",
+      "source": "20:str_replace_editor\nstr_replace",
+      "target": "21:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "24",
+      "type": "exec",
+      "source": "21:str_replace_editor\nstr_replace",
+      "target": "1:cd",
+      "key": 0
+    }
+  ]
+}

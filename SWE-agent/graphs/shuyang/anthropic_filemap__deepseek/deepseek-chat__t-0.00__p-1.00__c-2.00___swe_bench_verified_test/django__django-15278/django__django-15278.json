@@ -4,7 +4,11 @@
   "graph": {
     "resolution_status": "unresolved",
     "instance_name": "django__django-15278",
-    "difficulty": "15 min - 1 hour"
+    "difficulty": "15 min - 1 hour",
+    "golden_patch_difficulty": "medium",
+    "golden_files_change": 1,
+    "patch_difficulty": "hard",
+    "files_change": 4
   },
   "nodes": [
     {
@@ -769,26 +773,126 @@
       "id": "34:str_replace_editor\nstr_replace"
     },
     {
-      "label": "str_replace_editor\nstr_replace",
+      "label": "skipping",
       "execution_time": [
-        0.24096895079128444,
-        0.19839753187261522
+        0.06024223769782111,
+        0.049599382968153805,
+        0.04295877376571298,
+        0.05041948282159865,
+        0.04247369822114706,
+        0.04659906602464616,
+        0.04758058800362051
       ],
       "state": {
         "working_dir": "/testbed"
       },
-      "args": {
-        "path": "/testbed/django/db/migrations/executor.py",
-        "old_str": "    def detect_soft_applied(self, project_state, migration):\n        \"\"\"\n        Test whether a migration has been implicitly applied - that the tables\n        or columns it would create exist. This is intended only for use\n        on initial migrations (as it only looks for CreateModel and AddField).\n        \"\"\"\n        def should_skip_detecting_soft_applied(op):\n            \"\"\"\n            Return True if `op` should skip `detect_soft_applied()`.\n            \"\"\"\n            return isinstance(op, migrations.RunSQL) or op.reduces_to_sql()\n\n        if migration.initial is None:\n            # Bail if the migration isn't the first one in its app\n            if any(app == migration.app_label for app, name in migration.dependencies):\n                return False, project_state\n        # Build the project state up to the migration to apply\n        for app_label, name in migration.dependencies:\n            # If dependencies are missing, skip soft-applied detection.\n            try:\n                dependency = self.loader.get_migration(app_label, name)\n            except (KeyError, ImportError):\n                return False, project_state\n            if dependency.migration_class is None:\n                return False, project_state\n            project_state = dependency.mutate_state(project_state, preserve=False)\n        # Now, check to see if the operations are all noops\n        all_ops = (op for op in migration.operations if not should_skip_detecting_soft_applied(op))\n        for op in all_ops:\n            if isinstance(op, migrations.CreateModel):\n                model = op.model_name\n                model_state = project_state.models[migration.app_label, model]\n                if model_state.options.get(\"proxy\"):\n                    continue\n                # If we can't find the model in the app cache, it's not been\n                # created.\n                try:\n                    apps = project_state.apps\n                    apps.get_model(migration.app_label, model)\n                except LookupError:\n                    return False, project_state\n            elif isinstance(op, migrations.AddField):\n                model = op.model_name\n                field = op.field\n                model_state = project_state.models[migration.app_label, model]\n                # The field isn't in the model state yet.\n                if field.name not in [n for n, f in model_state.fields]:\n                    return False, project_state\n                # The field might already exist in the database (e.g. because it was\n                # added by a later migration than the one we're faking).\n                try:\n                    apps = project_state.apps\n                    model = apps.get_model(migration.app_label, model)\n                    field = model._meta.get_field(field.name)\n                except LookupError:\n                    return False, project_state\n                # The field might exist in the database but not in the model state\n                # (e.g. because it was added by a later migration than the one\n                # we're faking).\n                if field.column not in [f.column for f in model._meta.local_concrete_fields]:\n                    return False, project_state\n            else:\n                return False, project_state\n        return True, project_state",
-        "new_str": "    def detect_soft_applied(self, project_state, migration):\n        \"\"\"\n        Test whether a migration has been implicitly applied - that the tables\n        or columns it would create exist. This is intended only for use\n        on initial migrations (as it only looks for CreateModel and AddField).\n        \"\"\"\n        print(f\"Detecting soft-applied for migration: {migration.app_label}.{migration.name}\")\n        def should_skip_detecting_soft_applied(op):\n            \"\"\"\n            Return True if `op` should skip `detect_soft_applied()`.\n            \"\"\"\n            return isinstance(op, migrations.RunSQL) or op.reduces_to_sql()\n\n        if migration.initial is None:\n            # Bail if the migration isn't the first one in its app\n            if any(app == migration.app_label for app, name in migration.dependencies):\n                print(\"Migration is not initial; skipping soft-applied detection\")\n                return False, project_state\n        # Build the project state up to the migration to apply\n        for app_label, name in migration.dependencies:\n            # If dependencies are missing, skip soft-applied detection.\n            try:\n                dependency = self.loader.get_migration(app_label, name)\n            except (KeyError, ImportError):\n                print(f\"Dependency {app_label}.{name} not found; skipping soft-applied detection\")\n                return False, project_state\n            if dependency.migration_class is None:\n                print(f\"Dependency {app_label}.{name} has no migration class; skipping soft-applied detection\")\n                return False, project_state\n            project_state = dependency.mutate_state(project_state, preserve=False)\n        # Now, check to see if the operations are all noops\n        all_ops = (op for op in migration.operations if not should_skip_detecting_soft_applied(op))\n        for op in all_ops:\n            if isinstance(op, migrations.CreateModel):\n                model = op.model_name\n                model_state = project_state.models[migration.app_label, model]\n                if model_state.options.get(\"proxy\"):\n                    continue\n                # If we can't find the model in the app cache, it's not been\n                # created.\n                try:\n                    apps = project_state.apps\n                    apps.get_model(migration.app_label, model)\n                except LookupError:\n                    print(f\"Model {migration.app_label}.{model} not found; migration not soft-applied\")\n                    return False, project_state\n            elif isinstance(op, migrations.AddField):\n                model = op.model_name\n                field = op.field\n                model_state = project_state.models[migration.app_label, model]\n                # The field isn't in the model state yet.\n                if field.name not in [n for n, f in model_state.fields]:\n                    print(f\"Field {field.name} not in model state; migration not soft-applied\")\n                    return False, project_state\n                # The field might already exist in the database (e.g. because it was\n                # added by a later migration than the one we're faking).\n                try:\n                    apps = project_state.apps\n                    model = apps.get_model(migration.app_label, model)\n                    field = model._meta.get_field(field.name)\n                except LookupError:\n                    print(f\"Field {field.name} not found in model; migration not soft-applied\")\n                    return False, project_state\n                # The field might exist in the database but not in the model state\n                # (e.g. because it was added by a later migration than the one\n                # we're faking).\n                if field.column not in [f.column for f in model._meta.local_concrete_fields]:\n                    print(f\"Field {field.name} not in database; migration not soft-applied\")\n                    return False, project_state\n            else:\n                print(f\"Unsupported operation type: {type(op)}; migration not soft-applied\")\n                return False, project_state\n        print(\"Migration is soft-applied\")\n        return True, project_state",
-        "edit_status": "failure: not found"
+      "args": [
+        "soft-applied",
+        "detection)\n                return False, project_state\n        # Build the project state up to the migration to apply\n        for app_label, name in migration.dependencies:\n            # If dependencies are missing, skip soft-applied detection.\n            try:\n                dependency = self.loader.get_migration(app_label, name)\n            except (KeyError, ImportError):\n                print(fDependency",
+        "{app_label}.{name}",
+        "not",
+        "found"
+      ],
+      "phase": "general",
+      "step_indices": [
+        52,
+        55,
+        57,
+        59,
+        61,
+        63,
+        65
+      ],
+      "id": "35:skipping"
+    },
+    {
+      "label": "skipping",
+      "execution_time": [
+        0.06024223769782111,
+        0.049599382968153805,
+        0.04295877376571298,
+        0.05041948282159865,
+        0.04247369822114706,
+        0.04659906602464616,
+        0.04758058800362051
+      ],
+      "state": {
+        "working_dir": "/testbed"
       },
-      "phase": "patch",
+      "args": [
+        "soft-applied",
+        "detection)\n                return False, project_state\n            if dependency.migration_class is None:\n                print(fDependency",
+        "{app_label}.{name}",
+        "has",
+        "no",
+        "migration",
+        "class"
+      ],
+      "phase": "general",
+      "step_indices": [
+        52,
+        55,
+        57,
+        59,
+        61,
+        63,
+        65
+      ],
+      "id": "36:skipping"
+    },
+    {
+      "label": "skipping",
+      "execution_time": [
+        0.06024223769782111,
+        0.049599382968153805
+      ],
+      "state": {
+        "working_dir": "/testbed"
+      },
+      "args": [
+        "soft-applied",
+        "detection)\n                return False, project_state\n            project_state = dependency.mutate_state(project_state, preserve=False)\n        # Now, check to see if the operations are all noops\n        all_ops = (op for op in migration.operations if not should_skip_detecting_soft_applied(op))\n        for op in all_ops:\n            if isinstance(op, migrations.CreateModel):\n                model = op.model_name\n                model_state = project_state.models[migration.app_label, model]\n                if model_state.options.get(proxy):\n                    continue\n                # If we can'\"t",
+        "find",
+        "the",
+        "model",
+        "in",
+        "the",
+        "app",
+        "cache,",
+        "it\"'s not been\n                # created.\n                try:\n                    apps = project_state.apps\n                    apps.get_model(migration.app_label, model)\n                except LookupError:\n                    print(fModel",
+        "{migration.app_label}.{model}",
+        "not",
+        "found"
+      ],
+      "phase": "general",
       "step_indices": [
         52,
         55
       ],
-      "id": "35:str_replace_editor\nstr_replace"
+      "id": "37:skipping"
+    },
+    {
+      "label": "migration",
+      "execution_time": [
+        0.06024223769782111,
+        0.049599382968153805
+      ],
+      "state": {
+        "working_dir": "/testbed"
+      },
+      "args": [
+        "not",
+        "soft-applied)\n                    return False, project_state\n            else:\n                print(fUnsupported",
+        "operation",
+        "type:",
+        "{type(op)}"
+      ],
+      "phase": "general",
+      "step_indices": [
+        52,
+        55
+      ],
+      "id": "38:migration"
     },
     {
       "label": "str_replace_editor\nview",
@@ -809,7 +913,7 @@
       "step_indices": [
         53
       ],
-      "id": "36:str_replace_editor\nview"
+      "id": "39:str_replace_editor\nview"
     },
     {
       "label": "str_replace_editor\nview",
@@ -840,27 +944,36 @@
         64,
         66
       ],
-      "id": "37:str_replace_editor\nview"
+      "id": "40:str_replace_editor\nview"
     },
     {
-      "label": "str_replace_editor\nstr_replace",
+      "label": "skipping",
       "execution_time": [
-        0.21479386882856488,
-        0.25209741410799325,
-        0.2123684911057353,
-        0.23299533012323081,
-        0.23790294001810253
+        0.04295877376571298,
+        0.05041948282159865,
+        0.04247369822114706,
+        0.04659906602464616,
+        0.04758058800362051
       ],
       "state": {
         "working_dir": "/testbed"
       },
-      "args": {
-        "path": "/testbed/django/db/migrations/executor.py",
-        "old_str": "    def detect_soft_applied(self, project_state, migration):\n        \"\"\"\n        Test whether a migration has been implicitly applied - that the\n        tables or columns it would create exist. This is intended only for use\n        on initial migrations (as it only looks for CreateModel and AddField).\n        \"\"\"\n        def should_skip_detecting_model(migration, model):\n            \"\"\"\n            No need to detect tables for proxy models, unmanaged models, or\n            models that can't be migrated on the current database.\n            \"\"\"\n            return (\n                model._meta.proxy or not model._meta.managed or not\n                router.allow_migrate(\n                    self.connection.alias, migration.app_label,\n                    model_name=model._meta.model_name,\n                )\n            )\n\n        if migration.initial is None:\n            # Bail if the migration isn't the first one in its app\n            if any(app == migration.app_label for app, name in migration.dependencies):\n                return False, project_state\n        # Build the project state up to the migration to apply\n        for app_label, name in migration.dependencies:\n            # If dependencies are missing, skip soft-applied detection.\n            try:\n                dependency = self.loader.get_migration(app_label, name)\n            except (KeyError, ImportError):\n                return False, project_state\n            if dependency.migration_class is None:\n                return False, project_state\n            project_state = dependency.mutate_state(project_state, preserve=False)\n        # Now, check to see if the operations are all noops\n        for op in migration.operations:\n            if isinstance(op, migrations.CreateModel):\n                model = op.model_name\n                model_state = project_state.models[migration.app_label, model]\n                if model_state.options.get(\"proxy\"):\n                    continue\n                # If we can't find the model in the app cache, it's not been\n                # created.\n                try:\n                    apps = project_state.apps\n                    model = apps.get_model(migration.app_label, model)\n                except LookupError:\n                    return False, project_state\n                if should_skip_detecting_model(migration, model):\n                    continue\n                # Check that all model fields already exist in the database.\n                for field in model._meta.local_fields:\n                    if field.column not in [f.column for f in model._meta.local_concrete_fields]:\n                        return False, project_state\n            elif isinstance(op, migrations.AddField):\n                model = op.model_name\n                field = op.field\n                model_state = project_state.models[migration.app_label, model]\n                # The field isn't in the model state yet.\n                if field.name not in [n for n, f in model_state.fields]:\n                    return False, project_state\n                # The field might already exist in the database (e.g. because it was\n                # added by a later migration than the one we're faking).\n                try:\n                    apps = project_state.apps\n                    model = apps.get_model(migration.app_label, model)\n                    field = model._meta.get_field(field.name)\n                except LookupError:\n                    return False, project_state\n                # The field might exist in the database but not in the model state\n                # (e.g. because it was added by a later migration than the one\n                # we're faking).\n                if field.column not in [f.column for f in model._meta.local_concrete_fields]:\n                    return False, project_state\n            elif not isinstance(op, migrations.RunSQL) and not op.reduces_to_sql():\n                return False, project_state\n        return True, project_state",
-        "new_str": "    def detect_soft_applied(self, project_state, migration):\n        \"\"\"\n        Test whether a migration has been implicitly applied - that the\n        tables or columns it would create exist. This is intended only for use\n        on initial migrations (as it only looks for CreateModel and AddField).\n        \"\"\"\n        print(f\"Detecting soft-applied for migration: {migration.app_label}.{migration.name}\")\n        def should_skip_detecting_model(migration, model):\n            \"\"\"\n            No need to detect tables for proxy models, unmanaged models, or\n            models that can't be migrated on the current database.\n            \"\"\"\n            return (\n                model._meta.proxy or not model._meta.managed or not\n                router.allow_migrate(\n                    self.connection.alias, migration.app_label,\n                    model_name=model._meta.model_name,\n                )\n            )\n\n        if migration.initial is None:\n            # Bail if the migration isn't the first one in its app\n            if any(app == migration.app_label for app, name in migration.dependencies):\n                print(\"Migration is not initial; skipping soft-applied detection\")\n                return False, project_state\n        # Build the project state up to the migration to apply\n        for app_label, name in migration.dependencies:\n            # If dependencies are missing, skip soft-applied detection.\n            try:\n                dependency = self.loader.get_migration(app_label, name)\n            except (KeyError, ImportError):\n                print(f\"Dependency {app_label}.{name} not found; skipping soft-applied detection\")\n                return False, project_state\n            if dependency.migration_class is None:\n                print(f\"Dependency {app_label}.{name} has no migration class; skipping soft-applied detection\")\n                return False, project_state\n            project_state = dependency.mutate_state(project_state, preserve=False)\n        # Now, check to see if the operations are all noops\n        for op in migration.operations:\n            if isinstance(op, migrations.CreateModel):\n                model = op.model_name\n                model_state = project_state.models[migration.app_label, model]\n                if model_state.options.get(\"proxy\"):\n                    continue\n                # If we can't find the model in the app cache, it's not been\n                # created.\n                try:\n                    apps = project_state.apps\n                    model = apps.get_model(migration.app_label, model)\n                except LookupError:\n                    print(f\"Model {migration.app_label}.{model} not found; migration not soft-applied\")\n                    return False, project_state\n                if should_skip_detecting_model(migration, model):\n                    continue\n                # Check that all model fields already exist in the database.\n                for field in model._meta.local_fields:\n                    if field.column not in [f.column for f in model._meta.local_concrete_fields]:\n                        print(f\"Field {field.name} not in database; migration not soft-applied\")\n                        return False, project_state\n            elif isinstance(op, migrations.AddField):\n                model = op.model_name\n                field = op.field\n                model_state = project_state.models[migration.app_label, model]\n                # The field isn't in the model state yet.\n                if field.name not in [n for n, f in model_state.fields]:\n                    print(f\"Field {field.name} not in model state; migration not soft-applied\")\n                    return False, project_state\n                # The field might already exist in the database (e.g. because it was\n                # added by a later migration than the one we're faking).\n                try:\n                    apps = project_state.apps\n                    model = apps.get_model(migration.app_label, model)\n                    field = model._meta.get_field(field.name)\n                except LookupError:\n                    print(f\"Field {field.name} not found in model; migration not soft-applied\")\n                    return False, project_state\n                # The field might exist in the database but not in the model state\n                # (e.g. because it was added by a later migration than the one\n                # we're faking).\n                if field.column not in [f.column for f in model._meta.local_concrete_fields]:\n                    print(f\"Field {field.name} not in database; migration not soft-applied\")\n                    return False, project_state\n            elif not isinstance(op, migrations.RunSQL) and not op.reduces_to_sql():\n                print(f\"Unsupported operation type: {type(op)}; migration not soft-applied\")\n                return False, project_state\n        print(\"Migration is soft-applied\")\n        return True, project_state",
-        "edit_status": "failure: not found"
-      },
-      "phase": "patch",
+      "args": [
+        "soft-applied",
+        "detection)\n                return False, project_state\n            project_state = dependency.mutate_state(project_state, preserve=False)\n        # Now, check to see if the operations are all noops\n        for op in migration.operations:\n            if isinstance(op, migrations.CreateModel):\n                model = op.model_name\n                model_state = project_state.models[migration.app_label, model]\n                if model_state.options.get(proxy):\n                    continue\n                # If we can'\"t",
+        "find",
+        "the",
+        "model",
+        "in",
+        "the",
+        "app",
+        "cache,",
+        "it\"'s not been\n                # created.\n                try:\n                    apps = project_state.apps\n                    model = apps.get_model(migration.app_label, model)\n                except LookupError:\n                    print(fModel",
+        "{migration.app_label}.{model}",
+        "not",
+        "found"
+      ],
+      "phase": "general",
       "step_indices": [
         57,
         59,
@@ -868,7 +981,66 @@
         63,
         65
       ],
-      "id": "38:str_replace_editor\nstr_replace"
+      "id": "41:skipping"
+    },
+    {
+      "label": "migration",
+      "execution_time": [
+        0.04295877376571298,
+        0.05041948282159865,
+        0.04247369822114706,
+        0.04659906602464616,
+        0.04758058800362051
+      ],
+      "state": {
+        "working_dir": "/testbed"
+      },
+      "args": [
+        "not",
+        "soft-applied)\n                    return False, project_state\n                if should_skip_detecting_model(migration, model):\n                    continue\n                # Check that all model fields already exist in the database.\n                for field in model._meta.local_fields:\n                    if field.column not in [f.column for f in model._meta.local_concrete_fields]:\n                        print(fField",
+        "{field.name}",
+        "not",
+        "in",
+        "database"
+      ],
+      "phase": "general",
+      "step_indices": [
+        57,
+        59,
+        61,
+        63,
+        65
+      ],
+      "id": "42:migration"
+    },
+    {
+      "label": "migration",
+      "execution_time": [
+        0.04295877376571298,
+        0.05041948282159865,
+        0.04247369822114706,
+        0.04659906602464616,
+        0.04758058800362051
+      ],
+      "state": {
+        "working_dir": "/testbed"
+      },
+      "args": [
+        "not",
+        "soft-applied)\n                    return False, project_state\n            elif not isinstance(op, migrations.RunSQL) and not op.reduces_to_sql():\n                print(fUnsupported",
+        "operation",
+        "type:",
+        "{type(op)}"
+      ],
+      "phase": "general",
+      "step_indices": [
+        57,
+        59,
+        61,
+        63,
+        65
+      ],
+      "id": "43:migration"
     },
     {
       "label": "empty action",
@@ -881,7 +1053,7 @@
       "step_indices": [
         67
       ],
-      "id": "39:empty action"
+      "id": "44:empty action"
     }
   ],
   "edges": [
@@ -961,13 +1133,13 @@
     {
       "type": "hier",
       "source": "0:str_replace_editor\nview",
-      "target": "36:str_replace_editor\nview",
+      "target": "39:str_replace_editor\nview",
       "key": 0
     },
     {
       "type": "hier",
       "source": "0:str_replace_editor\nview",
-      "target": "37:str_replace_editor\nview",
+      "target": "40:str_replace_editor\nview",
       "key": 0
     },
     {
@@ -1238,7 +1410,7 @@
       "label": "52",
       "type": "exec",
       "source": "5:python",
-      "target": "35:str_replace_editor\nstr_replace",
+      "target": "35:skipping",
       "key": 0
     },
     {
@@ -1448,7 +1620,7 @@
       "label": "55",
       "type": "exec",
       "source": "32:grep",
-      "target": "35:str_replace_editor\nstr_replace",
+      "target": "35:skipping",
       "key": 0
     },
     {
@@ -1466,122 +1638,304 @@
       "key": 0
     },
     {
+      "label": "52",
+      "type": "exec",
+      "source": "35:skipping",
+      "target": "36:skipping",
+      "key": 0
+    },
+    {
+      "label": "55",
+      "type": "exec",
+      "source": "35:skipping",
+      "target": "36:skipping",
+      "key": 1
+    },
+    {
+      "label": "57",
+      "type": "exec",
+      "source": "35:skipping",
+      "target": "36:skipping",
+      "key": 2
+    },
+    {
+      "label": "59",
+      "type": "exec",
+      "source": "35:skipping",
+      "target": "36:skipping",
+      "key": 3
+    },
+    {
+      "label": "61",
+      "type": "exec",
+      "source": "35:skipping",
+      "target": "36:skipping",
+      "key": 4
+    },
+    {
+      "label": "63",
+      "type": "exec",
+      "source": "35:skipping",
+      "target": "36:skipping",
+      "key": 5
+    },
+    {
+      "label": "65",
+      "type": "exec",
+      "source": "35:skipping",
+      "target": "36:skipping",
+      "key": 6
+    },
+    {
+      "label": "52",
+      "type": "exec",
+      "source": "36:skipping",
+      "target": "37:skipping",
+      "key": 0
+    },
+    {
+      "label": "55",
+      "type": "exec",
+      "source": "36:skipping",
+      "target": "37:skipping",
+      "key": 1
+    },
+    {
+      "label": "57",
+      "type": "exec",
+      "source": "36:skipping",
+      "target": "41:skipping",
+      "key": 0
+    },
+    {
+      "label": "59",
+      "type": "exec",
+      "source": "36:skipping",
+      "target": "41:skipping",
+      "key": 1
+    },
+    {
+      "label": "61",
+      "type": "exec",
+      "source": "36:skipping",
+      "target": "41:skipping",
+      "key": 2
+    },
+    {
+      "label": "63",
+      "type": "exec",
+      "source": "36:skipping",
+      "target": "41:skipping",
+      "key": 3
+    },
+    {
+      "label": "65",
+      "type": "exec",
+      "source": "36:skipping",
+      "target": "41:skipping",
+      "key": 4
+    },
+    {
+      "label": "52",
+      "type": "exec",
+      "source": "37:skipping",
+      "target": "38:migration",
+      "key": 0
+    },
+    {
+      "label": "55",
+      "type": "exec",
+      "source": "37:skipping",
+      "target": "38:migration",
+      "key": 1
+    },
+    {
       "label": "53",
       "type": "exec",
-      "source": "35:str_replace_editor\nstr_replace",
-      "target": "36:str_replace_editor\nview",
+      "source": "38:migration",
+      "target": "39:str_replace_editor\nview",
       "key": 0
     },
     {
       "label": "56",
       "type": "exec",
-      "source": "35:str_replace_editor\nstr_replace",
-      "target": "37:str_replace_editor\nview",
+      "source": "38:migration",
+      "target": "40:str_replace_editor\nview",
       "key": 0
     },
     {
       "label": "54",
       "type": "exec",
-      "source": "36:str_replace_editor\nview",
+      "source": "39:str_replace_editor\nview",
       "target": "32:grep",
       "key": 0
     },
     {
       "label": "57",
       "type": "exec",
-      "source": "37:str_replace_editor\nview",
-      "target": "38:str_replace_editor\nstr_replace",
+      "source": "40:str_replace_editor\nview",
+      "target": "35:skipping",
       "key": 0
     },
     {
       "label": "59",
       "type": "exec",
-      "source": "37:str_replace_editor\nview",
-      "target": "38:str_replace_editor\nstr_replace",
+      "source": "40:str_replace_editor\nview",
+      "target": "35:skipping",
       "key": 1
     },
     {
       "label": "61",
       "type": "exec",
-      "source": "37:str_replace_editor\nview",
-      "target": "38:str_replace_editor\nstr_replace",
+      "source": "40:str_replace_editor\nview",
+      "target": "35:skipping",
       "key": 2
     },
     {
       "label": "63",
       "type": "exec",
-      "source": "37:str_replace_editor\nview",
-      "target": "38:str_replace_editor\nstr_replace",
+      "source": "40:str_replace_editor\nview",
+      "target": "35:skipping",
       "key": 3
     },
     {
       "label": "65",
       "type": "exec",
-      "source": "37:str_replace_editor\nview",
-      "target": "38:str_replace_editor\nstr_replace",
+      "source": "40:str_replace_editor\nview",
+      "target": "35:skipping",
       "key": 4
     },
     {
       "label": "67",
       "type": "exec",
-      "source": "37:str_replace_editor\nview",
-      "target": "39:empty action",
+      "source": "40:str_replace_editor\nview",
+      "target": "44:empty action",
       "key": 0
+    },
+    {
+      "label": "57",
+      "type": "exec",
+      "source": "41:skipping",
+      "target": "42:migration",
+      "key": 0
+    },
+    {
+      "label": "59",
+      "type": "exec",
+      "source": "41:skipping",
+      "target": "42:migration",
+      "key": 1
+    },
+    {
+      "label": "61",
+      "type": "exec",
+      "source": "41:skipping",
+      "target": "42:migration",
+      "key": 2
+    },
+    {
+      "label": "63",
+      "type": "exec",
+      "source": "41:skipping",
+      "target": "42:migration",
+      "key": 3
+    },
+    {
+      "label": "65",
+      "type": "exec",
+      "source": "41:skipping",
+      "target": "42:migration",
+      "key": 4
+    },
+    {
+      "label": "57",
+      "type": "exec",
+      "source": "42:migration",
+      "target": "43:migration",
+      "key": 0
+    },
+    {
+      "label": "59",
+      "type": "exec",
+      "source": "42:migration",
+      "target": "43:migration",
+      "key": 1
+    },
+    {
+      "label": "61",
+      "type": "exec",
+      "source": "42:migration",
+      "target": "43:migration",
+      "key": 2
+    },
+    {
+      "label": "63",
+      "type": "exec",
+      "source": "42:migration",
+      "target": "43:migration",
+      "key": 3
+    },
+    {
+      "label": "65",
+      "type": "exec",
+      "source": "42:migration",
+      "target": "43:migration",
+      "key": 4
     },
     {
       "label": "58",
       "type": "exec",
-      "source": "38:str_replace_editor\nstr_replace",
-      "target": "37:str_replace_editor\nview",
+      "source": "43:migration",
+      "target": "40:str_replace_editor\nview",
       "key": 0
     },
     {
       "label": "60",
       "type": "exec",
-      "source": "38:str_replace_editor\nstr_replace",
-      "target": "37:str_replace_editor\nview",
+      "source": "43:migration",
+      "target": "40:str_replace_editor\nview",
       "key": 1
     },
     {
       "label": "62",
       "type": "exec",
-      "source": "38:str_replace_editor\nstr_replace",
-      "target": "37:str_replace_editor\nview",
+      "source": "43:migration",
+      "target": "40:str_replace_editor\nview",
       "key": 2
     },
     {
       "label": "64",
       "type": "exec",
-      "source": "38:str_replace_editor\nstr_replace",
-      "target": "37:str_replace_editor\nview",
+      "source": "43:migration",
+      "target": "40:str_replace_editor\nview",
       "key": 3
     },
     {
       "label": "66",
       "type": "exec",
-      "source": "38:str_replace_editor\nstr_replace",
-      "target": "37:str_replace_editor\nview",
+      "source": "43:migration",
+      "target": "40:str_replace_editor\nview",
       "key": 4
     },
     {
       "label": "68",
       "type": "exec",
-      "source": "39:empty action",
-      "target": "39:empty action",
+      "source": "44:empty action",
+      "target": "44:empty action",
       "key": 0
     },
     {
       "label": "69",
       "type": "exec",
-      "source": "39:empty action",
-      "target": "39:empty action",
+      "source": "44:empty action",
+      "target": "44:empty action",
       "key": 1
     },
     {
       "label": "70",
       "type": "exec",
-      "source": "39:empty action",
-      "target": "39:empty action",
+      "source": "44:empty action",
+      "target": "44:empty action",
       "key": 2
     }
   ]

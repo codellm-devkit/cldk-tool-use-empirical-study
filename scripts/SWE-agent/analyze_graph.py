@@ -225,7 +225,7 @@ class SequentialPatternMiner:
 # --------------------------- Main Analysis ---------------------------
 if __name__ == "__main__":
     user = getpass.getuser()
-    instance_dir = f"graphs/{user}"
+    instance_dir = f"../../SWE-agent/graphs/{user}"
     out_dir = os.path.join(instance_dir, "analysis")
     os.makedirs(out_dir, exist_ok=True)
 
@@ -263,6 +263,7 @@ if __name__ == "__main__":
             resolution = data.get("graph", {}).get("resolution_status", "unknown")
             difficulty_raw = data.get("graph", {}).get("difficulty", "unknown")
             difficulty = difficulty_rename.get(difficulty_raw, difficulty_raw)
+            patch_difficulty = data.get("graph", {}).get("patch_difficulty", "unknown")
 
             inst_id = data.get("graph", {}).get("instance_name")
             avg_loc_freq = metrics["loc_avg_node_freq"]
@@ -280,6 +281,7 @@ if __name__ == "__main__":
                     categories[k]["top_loc_info"].append((inst_id, avg_loc_freq, loc_focus_ratio, dominant))
 
             metrics["difficulty"] = difficulty
+            metrics["patch_difficulty"] = patch_difficulty
             metrics["resolution"] = resolution
             metrics["instance"] = inst_id
             rows.append(metrics)
@@ -304,6 +306,8 @@ if __name__ == "__main__":
                          "loc_cluster_num", "loc_avg_node_freq"]
             general_avg = df_k.drop(columns=drop_cols).mean(numeric_only=True).round(2)
             fout.write(general_avg.to_string())
+            # for _, val in general_avg.items():
+            #     fout.write(f"{val}\n")
 
             # ---------- Localization Focus & Clusters ----------
             fout.write("\n\n-- Localization Focus & Clusters --\n")

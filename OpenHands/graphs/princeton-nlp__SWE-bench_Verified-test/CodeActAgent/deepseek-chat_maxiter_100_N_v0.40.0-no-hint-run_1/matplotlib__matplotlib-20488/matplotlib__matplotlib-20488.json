@@ -1,0 +1,443 @@
+{
+  "directed": true,
+  "multigraph": true,
+  "graph": {
+    "resolution_status": "resolved",
+    "instance_name": "matplotlib__matplotlib-20488",
+    "difficulty": "15 min - 1 hour",
+    "golden_patch_difficulty": "medium",
+    "golden_files_change": 1,
+    "patch_difficulty": "medium",
+    "files_change": 2
+  },
+  "nodes": [
+    {
+      "label": "cd",
+      "args": [
+        "/workspace/matplotlib__matplotlib__3.4"
+      ],
+      "phase": "general",
+      "step_indices": [
+        0,
+        7,
+        9,
+        11,
+        19
+      ],
+      "id": "0:cd"
+    },
+    {
+      "label": "find",
+      "args": [
+        ".",
+        "colors.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        0
+      ],
+      "id": "1:find"
+    },
+    {
+      "label": "find",
+      "args": [
+        ".",
+        "test_image.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        0
+      ],
+      "id": "2:find"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/matplotlib__matplotlib__3.4/lib/matplotlib/colors.py",
+        "view_range": [
+          1470,
+          1480
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        1
+      ],
+      "id": "3:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/matplotlib__matplotlib__3.4/lib/matplotlib/colors.py",
+        "view_range": [
+          1400,
+          1450
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        2
+      ],
+      "id": "4:str_replace_editor\nview"
+    },
+    {
+      "label": "grep",
+      "args": [
+        "/workspace/matplotlib__matplotlib__3.4/lib/matplotlib/colors.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        3
+      ],
+      "id": "5:grep"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/matplotlib__matplotlib__3.4/lib/matplotlib/colors.py",
+        "view_range": [
+          1543,
+          1580
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        4
+      ],
+      "id": "6:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/matplotlib__matplotlib__3.4/lib/matplotlib/colors.py",
+        "view_range": [
+          1300,
+          1400
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        5
+      ],
+      "id": "7:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/matplotlib__matplotlib__3.4/lib/matplotlib/colors.py",
+        "old_str": "class LogNorm(Normalize):\n    \"\"\"Normalize a given value to the 0-1 range on a log scale.\"\"\"\n\n    def autoscale(self, A):\n        # docstring inherited.\n        super().autoscale(np.ma.masked_less_equal(A, 0, copy=False))\n\n    def autoscale_None(self, A):\n        # docstring inherited.\n        super().autoscale_None(np.ma.masked_less_equal(A, 0, copy=False))",
+        "new_str": "class LogNorm(Normalize):\n    \"\"\"Normalize a given value to the 0-1 range on a log scale.\"\"\"\n\n    def __call__(self, value, clip=None):\n        if self.vmin is not None and self.vmin <= 0:\n            raise ValueError(\"vmin must be positive for log scaling\")\n        if self.vmax is not None and self.vmax <= 0:\n            raise ValueError(\"vmax must be positive for log scaling\")\n        return super().__call__(value, clip=clip)\n\n    def autoscale(self, A):\n        # docstring inherited.\n        super().autoscale(np.ma.masked_less_equal(A, 0, copy=False))\n\n    def autoscale_None(self, A):\n        # docstring inherited.\n        super().autoscale_None(np.ma.masked_less_equal(A, 0, copy=False))",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        6
+      ],
+      "id": "8:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "python",
+      "args": [
+        "lib/matplotlib/tests/test_image.py::test_huge_range_log"
+      ],
+      "phase": "verification",
+      "step_indices": [
+        7,
+        9,
+        11,
+        19
+      ],
+      "id": "9:python"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/matplotlib__matplotlib__3.4/lib/matplotlib/colors.py",
+        "old_str": "\n    def __call__(self, value, clip=None):\n        if self.vmin is not None and self.vmin <= 0:\n            raise ValueError(\"vmin must be positive for log scaling\")\n        if self.vmax is not None and self.vmax <= 0:\n            raise ValueError(\"vmax must be positive for log scaling\")\n        return super().__call__(value, clip=clip)\n",
+        "new_str": "\n    def __call__(self, value, clip=None):\n        MAX_LOG_VALUE = 1e15  # Empirical upper bound where log transform remains stable\n        \n        if self.vmin is not None:\n            if self.vmin <= 0:\n                raise ValueError(\"vmin must be positive for log scaling\")\n            if self.vmin > MAX_LOG_VALUE:\n                raise ValueError(f\"vmin must be less than {MAX_LOG_VALUE} for log scaling\")\n                \n        if self.vmax is not None:\n            if self.vmax <= 0:\n                raise ValueError(\"vmax must be positive for log scaling\")\n            if self.vmax > MAX_LOG_VALUE:\n                raise ValueError(f\"vmax must be less than {MAX_LOG_VALUE} for log scaling\")\n                \n        # Handle masked arrays by filling with reasonable values\n        if np.ma.is_masked(value):\n            value = value.filled(1.0)\n            \n        return super().__call__(value, clip=clip)\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        8
+      ],
+      "id": "10:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/matplotlib__matplotlib__3.4/lib/matplotlib/colors.py",
+        "old_str": "\n\n    def __call__(self, value, clip=None):\n        MAX_LOG_VALUE = 1e15  # Empirical upper bound where log transform remains stable\n        \n        if self.vmin is not None:\n            if self.vmin <= 0:\n                raise ValueError(\"vmin must be positive for log scaling\")\n            if self.vmin > MAX_LOG_VALUE:\n                raise ValueError(f\"vmin must be less than {MAX_LOG_VALUE} for log scaling\")\n                \n        if self.vmax is not None:\n            if self.vmax <= 0:\n                raise ValueError(\"vmax must be positive for log scaling\")\n            if self.vmax > MAX_LOG_VALUE:\n                raise ValueError(f\"vmax must be less than {MAX_LOG_VALUE} for log scaling\")\n                \n        # Handle masked arrays by filling with reasonable values\n        if np.ma.is_masked(value):\n            value = value.filled(1.0)\n            \n        return super().__call__(value, clip=clip)\n\n",
+        "new_str": "\n\n    def __call__(self, value, clip=None):\n        # First validate basic requirements\n        if self.vmin is not None and self.vmin <= 0:\n            raise ValueError(\"vmin must be positive for log scaling\")\n        if self.vmax is not None and self.vmax <= 0:\n            raise ValueError(\"vmax must be positive for log scaling\")\n            \n        # Handle masked arrays by filling with reasonable values\n        if np.ma.is_masked(value):\n            value = value.filled(1.0)\n            \n        # Process values through parent class\n        value, is_scalar = self.process_value(value)\n        self.autoscale_None(value)\n        \n        # Ensure vmin/vmax are set\n        if self.vmin is None:\n            self.vmin = value.min()\n        if self.vmax is None:\n            self.vmax = value.max()\n            \n        # Apply logarithmic scaling with safety checks\n        try:\n            t_vmin = self._trf.transform(self.vmin)\n            t_vmax = self._trf.transform(self.vmax)\n            if not np.isfinite([t_vmin, t_vmax]).all():\n                # If transform fails, adjust bounds to safe values\n                safe_min = max(self.vmin, 1e-100)\n                safe_max = min(self.vmax, 1e100)\n                t_vmin = self._trf.transform(safe_min)\n                t_vmax = self._trf.transform(safe_max)\n                \n            if clip:\n                value = np.clip(value, self.vmin, self.vmax)\n                \n            t_value = self._trf.transform(value).reshape(np.shape(value))\n            t_value = (t_value - t_vmin) / (t_vmax - t_vmin)\n            return np.ma.masked_invalid(t_value, copy=False)\n            \n        except ValueError:\n            # Fallback to linear scaling if log fails\n            return (value - self.vmin) / (self.vmax - self.vmin)\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        10
+      ],
+      "id": "11:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/matplotlib__matplotlib__3.4/lib/matplotlib/scale.py",
+        "old_str": "\n    def transform(self, a):\n        \"\"\"Inplace transformation.\"\"\"\n        with np.errstate(divide=\"ignore\", invalid=\"ignore\"):\n            a = np.log10(a)\n            if self._linthresh is not None:\n                a = np.where(np.abs(a) < self._linthresh, a / self._linthresh, a)\n            return a\n",
+        "new_str": "\n    def transform(self, a):\n        \"\"\"Inplace transformation with overflow protection.\"\"\"\n        MAX_LOG_VALUE = 300  # log10(1e300) is about 300, near float64 limit\n        with np.errstate(divide=\"ignore\", invalid=\"ignore\"):\n            # Clip extremely large values before log transform\n            a = np.clip(a, 1e-300, 1e300)\n            a = np.log10(a)\n            if self._linthresh is not None:\n                a = np.where(np.abs(a) < self._linthresh, a / self._linthresh, a)\n            # Clip any remaining extreme results\n            return np.clip(a, -MAX_LOG_VALUE, MAX_LOG_VALUE)\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        12
+      ],
+      "id": "12:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/matplotlib__matplotlib__3.4/lib/matplotlib/scale.py",
+        "view_range": [
+          500,
+          550
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        13
+      ],
+      "id": "13:str_replace_editor\nview"
+    },
+    {
+      "label": "grep",
+      "args": [
+        "/workspace/matplotlib__matplotlib__3.4/lib/matplotlib/scale.py"
+      ],
+      "phase": "general",
+      "step_indices": [
+        14,
+        16
+      ],
+      "id": "14:grep"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/matplotlib__matplotlib__3.4/lib/matplotlib/scale.py",
+        "view_range": [
+          260,
+          300
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        15
+      ],
+      "id": "15:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/matplotlib__matplotlib__3.4/lib/matplotlib/scale.py",
+        "view_range": [
+          202,
+          240
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        17
+      ],
+      "id": "16:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/matplotlib__matplotlib__3.4/lib/matplotlib/scale.py",
+        "old_str": "\n    def transform_non_affine(self, a):\n        # Ignore invalid values due to nans being passed to the transform.\n        with np.errstate(divide=\"ignore\", invalid=\"ignore\"):\n            log = {np.e: np.log, 2: np.log2, 10: np.log10}.get(self.base)\n            if log:  # If possible, do everything in a single call to NumPy.\n                out = log(a)\n            else:\n                out = np.log(a)\n                out /= np.log(self.base)\n            if self._clip:\n                # SVG spec says that conforming viewers must support values up\n                # to 3.4e38 (C float); however experiments suggest that\n                # Inkscape (which uses cairo for rendering) runs into cairo's\n                # 24-bit limit (which is apparently shared by Agg).\n                # Ghostscript (used for pdf rendering appears to overflow even\n                # earlier, with the max value around 2 ** 15 for the tests to\n                # pass. On the other hand, in practice, we want to clip beyond\n                #     np.log10(np.nextafter(0, 1)) ~ -323\n                # so 1000 seems safe.\n                out[a <= 0] = -1000\n        return out\n",
+        "new_str": "\n    def transform_non_affine(self, a):\n        # Ignore invalid values due to nans being passed to the transform.\n        with np.errstate(divide=\"ignore\", invalid=\"ignore\"):\n            # Clip extremely large values to prevent overflow\n            MAX_LOG_VALUE = 1e300\n            a = np.clip(a, 1e-300, MAX_LOG_VALUE)\n            \n            log = {np.e: np.log, 2: np.log2, 10: np.log10}.get(self.base)\n            if log:  # If possible, do everything in a single call to NumPy.\n                out = log(a)\n            else:\n                out = np.log(a)\n                out /= np.log(self.base)\n            if self._clip:\n                # SVG spec says that conforming viewers must support values up\n                # to 3.4e38 (C float); however experiments suggest that\n                # Inkscape (which uses cairo for rendering) runs into cairo's\n                # 24-bit limit (which is apparently shared by Agg).\n                # Ghostscript (used for pdf rendering appears to overflow even\n                # earlier, with the max value around 2 ** 15 for the tests to\n                # pass. On the other hand, in practice, we want to clip beyond\n                #     np.log10(np.nextafter(0, 1)) ~ -323\n                # so 1000 seems safe.\n                out[a <= 0] = -1000\n        return out\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        18
+      ],
+      "id": "17:str_replace_editor\nstr_replace"
+    }
+  ],
+  "edges": [
+    {
+      "label": "0",
+      "type": "exec",
+      "source": "0:cd",
+      "target": "1:find",
+      "key": 0
+    },
+    {
+      "label": "7",
+      "type": "exec",
+      "source": "0:cd",
+      "target": "9:python",
+      "key": 0
+    },
+    {
+      "label": "9",
+      "type": "exec",
+      "source": "0:cd",
+      "target": "9:python",
+      "key": 1
+    },
+    {
+      "label": "11",
+      "type": "exec",
+      "source": "0:cd",
+      "target": "9:python",
+      "key": 2
+    },
+    {
+      "label": "19",
+      "type": "exec",
+      "source": "0:cd",
+      "target": "9:python",
+      "key": 3
+    },
+    {
+      "label": "0",
+      "type": "exec",
+      "source": "1:find",
+      "target": "2:find",
+      "key": 0
+    },
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "2:find",
+      "target": "3:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "2",
+      "type": "exec",
+      "source": "3:str_replace_editor\nview",
+      "target": "4:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "3",
+      "type": "exec",
+      "source": "4:str_replace_editor\nview",
+      "target": "5:grep",
+      "key": 0
+    },
+    {
+      "label": "4",
+      "type": "exec",
+      "source": "5:grep",
+      "target": "6:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "5",
+      "type": "exec",
+      "source": "6:str_replace_editor\nview",
+      "target": "7:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "6",
+      "type": "exec",
+      "source": "7:str_replace_editor\nview",
+      "target": "8:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "7",
+      "type": "exec",
+      "source": "8:str_replace_editor\nstr_replace",
+      "target": "0:cd",
+      "key": 0
+    },
+    {
+      "label": "8",
+      "type": "exec",
+      "source": "9:python",
+      "target": "10:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "10",
+      "type": "exec",
+      "source": "9:python",
+      "target": "11:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "12",
+      "type": "exec",
+      "source": "9:python",
+      "target": "12:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "9",
+      "type": "exec",
+      "source": "10:str_replace_editor\nstr_replace",
+      "target": "0:cd",
+      "key": 0
+    },
+    {
+      "label": "11",
+      "type": "exec",
+      "source": "11:str_replace_editor\nstr_replace",
+      "target": "0:cd",
+      "key": 0
+    },
+    {
+      "label": "13",
+      "type": "exec",
+      "source": "12:str_replace_editor\nstr_replace",
+      "target": "13:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "14",
+      "type": "exec",
+      "source": "13:str_replace_editor\nview",
+      "target": "14:grep",
+      "key": 0
+    },
+    {
+      "label": "15",
+      "type": "exec",
+      "source": "14:grep",
+      "target": "15:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "17",
+      "type": "exec",
+      "source": "14:grep",
+      "target": "16:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "16",
+      "type": "exec",
+      "source": "15:str_replace_editor\nview",
+      "target": "14:grep",
+      "key": 0
+    },
+    {
+      "label": "18",
+      "type": "exec",
+      "source": "16:str_replace_editor\nview",
+      "target": "17:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "19",
+      "type": "exec",
+      "source": "17:str_replace_editor\nstr_replace",
+      "target": "0:cd",
+      "key": 0
+    }
+  ]
+}

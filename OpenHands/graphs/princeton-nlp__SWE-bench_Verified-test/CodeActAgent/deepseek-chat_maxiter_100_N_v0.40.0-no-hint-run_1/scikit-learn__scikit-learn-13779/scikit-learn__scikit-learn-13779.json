@@ -1,0 +1,1965 @@
+{
+  "directed": true,
+  "multigraph": true,
+  "graph": {
+    "resolution_status": "unresolved",
+    "instance_name": "scikit-learn__scikit-learn-13779",
+    "difficulty": "<15 min fix",
+    "golden_patch_difficulty": "easy",
+    "golden_files_change": 1,
+    "patch_difficulty": "medium",
+    "files_change": 1
+  },
+  "nodes": [
+    {
+      "label": "cd",
+      "args": [
+        "/workspace/scikit-learn__scikit-learn__0.22"
+      ],
+      "phase": "general",
+      "step_indices": [
+        0,
+        1,
+        3
+      ],
+      "id": "0:cd"
+    },
+    {
+      "label": "ls",
+      "args": [],
+      "phase": "general",
+      "step_indices": [
+        0
+      ],
+      "id": "1:ls"
+    },
+    {
+      "label": "grep",
+      "args": [
+        "."
+      ],
+      "phase": "general",
+      "step_indices": [
+        1
+      ],
+      "id": "2:grep"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py"
+      },
+      "phase": "localization",
+      "step_indices": [
+        2
+      ],
+      "id": "3:str_replace_editor\nview"
+    },
+    {
+      "label": "grep",
+      "args": [
+        "sklearn/ensemble/voting.py",
+        "|",
+        "grep",
+        "fit"
+      ],
+      "phase": "general",
+      "step_indices": [
+        3
+      ],
+      "id": "4:grep"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "        if sample_weight is not None:\n            for name, step in self.estimators:\n                if not has_fit_parameter(step, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                     ' support sample weights.' % name)",
+        "new_str": "        if sample_weight is not None:\n            for name, step in self.estimators:\n                if step is not None and not has_fit_parameter(step, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                     ' support sample weights.' % name)",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        4
+      ],
+      "id": "5:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\ncreate",
+      "args": {
+        "path": "/workspace/test_voting.py",
+        "file_text": "\nimport numpy as np\nfrom sklearn.datasets import load_iris\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.ensemble import RandomForestClassifier, VotingClassifier\n\nX, y = load_iris(return_X_y=True)\nvoter = VotingClassifier(\n    estimators=[('lr', LogisticRegression()),\n                ('rf', RandomForestClassifier())]\n)\n# First fit should work\nvoter.fit(X, y, sample_weight=np.ones(y.shape))\n# Set one estimator to None\nvoter.set_params(lr=None)\n# Second fit should now work with the fix\nvoter.fit(X, y, sample_weight=np.ones(y.shape))\nprint(\"Success! The fix works.\")\n"
+      },
+      "phase": "verification",
+      "step_indices": [
+        5
+      ],
+      "id": "6:str_replace_editor\ncreate"
+    },
+    {
+      "label": "cd",
+      "args": [
+        "/workspace"
+      ],
+      "phase": "general",
+      "step_indices": [
+        6,
+        8,
+        10,
+        12,
+        14,
+        17,
+        19,
+        24,
+        28,
+        35,
+        43,
+        46,
+        63,
+        68,
+        97
+      ],
+      "id": "7:cd"
+    },
+    {
+      "label": "python",
+      "args": [
+        "test_voting.py"
+      ],
+      "phase": "verification",
+      "step_indices": [
+        6,
+        8,
+        10,
+        12,
+        14,
+        17,
+        19,
+        24,
+        28,
+        35,
+        43,
+        46,
+        63,
+        68,
+        97
+      ],
+      "id": "8:python"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n                if step is not None and not has_fit_parameter(step, 'sample_weight'):\n",
+        "new_str": "\n                if step is None:\n                    continue\n                if not has_fit_parameter(step, 'sample_weight'):\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        7
+      ],
+      "id": "9:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n        if sample_weight is not None:\n            for name, step in self.estimators:\n                if step is None:\n                    continue\n                if not has_fit_parameter(step, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                     ' support sample weights.' % name)\n\n        names, clfs = zip(*self.estimators)\n        self._validate_names(names)\n\n        n_isnone = np.sum([clf is None for _, clf in self.estimators])\n        if n_isnone == len(self.estimators):\n            raise ValueError('All estimators are None. At least one is '\n                             'required!')\n\n        self.estimators_ = Parallel(n_jobs=self.n_jobs)(\n                delayed(_parallel_fit_estimator)(clone(clf), X, y,\n                                                 sample_weight=sample_weight)\n                for clf in clfs if clf is not None)\n",
+        "new_str": "\n        names, clfs = zip(*self.estimators) if self.estimators else ([], [])\n        self._validate_names(names)\n\n        n_isnone = np.sum([clf is None for _, clf in self.estimators])\n        if n_isnone == len(self.estimators):\n            raise ValueError('All estimators are None. At least one is '\n                             'required!')\n\n        if sample_weight is not None:\n            for name, step in self.estimators:\n                if step is None:\n                    continue\n                if not has_fit_parameter(step, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                     ' support sample weights.' % name)\n\n        self.estimators_ = Parallel(n_jobs=self.n_jobs)(\n                delayed(_parallel_fit_estimator)(clone(clf), X, y,\n                                                 sample_weight=sample_weight)\n                for clf in clfs if clf is not None)\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        9
+      ],
+      "id": "10:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n        names, clfs = zip(*self.estimators) if self.estimators else ([], [])\n        self._validate_names(names)\n\n        n_isnone = np.sum([clf is None for _, clf in self.estimators])\n        if n_isnone == len(self.estimators):\n            raise ValueError('All estimators are None. At least one is '\n                             'required!')\n\n        if sample_weight is not None:\n            for name, step in self.estimators:\n                if step is None:\n                    continue\n                if not has_fit_parameter(step, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                     ' support sample weights.' % name)\n\n        self.estimators_ = Parallel(n_jobs=self.n_jobs)(\n                delayed(_parallel_fit_estimator)(clone(clf), X, y,\n                                                 sample_weight=sample_weight)\n                for clf in clfs if clf is not None)\n\n",
+        "new_str": "\n\n        # First filter out None estimators\n        active_estimators = [(name, est) for name, est in self.estimators \n                           if est is not None]\n        if not active_estimators:\n            raise ValueError('All estimators are None. At least one is '\n                           'required!')\n\n        names, clfs = zip(*active_estimators) if active_estimators else ([], [])\n        self._validate_names(names)\n\n        if sample_weight is not None:\n            for name, step in active_estimators:\n                if not has_fit_parameter(step, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                   ' support sample weights.' % name)\n\n        self.estimators_ = Parallel(n_jobs=self.n_jobs)(\n                delayed(_parallel_fit_estimator)(clone(clf), X, y,\n                                               sample_weight=sample_weight)\n                for clf in clfs)\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        11
+      ],
+      "id": "11:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n        # First filter out None estimators\n        active_estimators = [(name, est) for name, est in self.estimators \n                           if est is not None]\n        if not active_estimators:\n            raise ValueError('All estimators are None. At least one is '\n                           'required!')\n\n        names, clfs = zip(*active_estimators) if active_estimators else ([], [])\n        self._validate_names(names)\n\n        if sample_weight is not None:\n            for name, step in active_estimators:\n                if not has_fit_parameter(step, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                   ' support sample weights.' % name)\n\n        self.estimators_ = Parallel(n_jobs=self.n_jobs)(\n                delayed(_parallel_fit_estimator)(clone(clf), X, y,\n                                               sample_weight=sample_weight)\n                for clf in clfs)\n\n        self.named_estimators_ = Bunch()\n        for k, e in zip(self.estimators, self.estimators_):\n            self.named_estimators_[k[0]] = e\n        return self\n\n",
+        "new_str": "\n\n        # First filter out None estimators and validate\n        active_estimators = [(name, est) for name, est in self.estimators \n                           if est is not None]\n        if not active_estimators:\n            raise ValueError('All estimators are None. At least one is '\n                           'required!')\n\n        names, clfs = zip(*active_estimators) if active_estimators else ([], [])\n        self._validate_names(names)\n\n        # Clear any previous estimators_\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n            del self.named_estimators_\n\n        if sample_weight is not None:\n            for name, step in active_estimators:\n                if not has_fit_parameter(step, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                   ' support sample weights.' % name)\n\n        self.estimators_ = Parallel(n_jobs=self.n_jobs)(\n                delayed(_parallel_fit_estimator)(clone(clf), X, y,\n                                               sample_weight=sample_weight)\n                for clf in clfs)\n\n        # Only store references to active estimators\n        self.named_estimators_ = Bunch()\n        for name, est in active_estimators:\n            idx = names.index(name)\n            self.named_estimators_[name] = self.estimators_[idx]\n            \n        return self\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        13
+      ],
+      "id": "12:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n        # First filter out None estimators and validate\n        active_estimators = [(name, est) for name, est in self.estimators \n                           if est is not None]\n        if not active_estimators:\n            raise ValueError('All estimators are None. At least one is '\n                           'required!')\n\n        names, clfs = zip(*active_estimators) if active_estimators else ([], [])\n        self._validate_names(names)\n\n        # Clear any previous estimators_\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n            del self.named_estimators_\n\n        if sample_weight is not None:\n            for name, step in active_estimators:\n                if not has_fit_parameter(step, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                   ' support sample weights.' % name)\n\n",
+        "new_str": "\n\n\n        # Create filtered list of non-None estimators\n        active_estimators = [(name, est) for name, est in self.estimators \n                           if est is not None]\n        if not active_estimators:\n            raise ValueError('All estimators are None. At least one is '\n                           'required!')\n\n        names, clfs = zip(*active_estimators) if active_estimators else ([], [])\n        self._validate_names(names)\n\n        # Clear previous state\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n\n        # Sample weight validation only on active estimators\n        if sample_weight is not None:\n            for name, est in active_estimators:\n                try:\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError('Underlying estimator \\'%s\\' does not'\n                                       ' support sample weights.' % name)\n                except (TypeError, AttributeError):\n                    continue\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        15
+      ],
+      "id": "13:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n        if sample_weight is not None:\n            for name, step in active_estimators:\n                if not has_fit_parameter(step, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                   ' support sample weights.' % name)\n",
+        "new_str": "\n        if sample_weight is not None:\n            for name, est in active_estimators:\n                try:\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError('Underlying estimator \\'%s\\' does not'\n                                       ' support sample weights.' % name)\n                except (TypeError, AttributeError):\n                    continue\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        16
+      ],
+      "id": "14:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n    def set_params(self, **params):\n        \"\"\" Setting the parameters for the ensemble estimator\n\n        Valid parameter keys can be listed with get_params().\n\n        Parameters\n        ----------\n        **params : keyword arguments\n            Specific parameters using e.g. set_params(parameter_name=new_value)\n            In addition, to setting the parameters of the ensemble estimator,\n            the individual estimators of the ensemble estimator can also be\n            set or replaced by setting them to None.\n\n        Examples\n        --------\n        # In this example, the RandomForestClassifier is removed\n        clf1 = LogisticRegression()\n        clf2 = RandomForestClassifier()\n        eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)]\n        eclf.set_params(rf=None)\n        \"\"\"\n        return self._set_params('estimators', **params)\n\n",
+        "new_str": "\n\n    def set_params(self, **params):\n        \"\"\" Setting the parameters for the ensemble estimator\n\n        Valid parameter keys can be listed with get_params().\n\n        Parameters\n        ----------\n        **params : keyword arguments\n            Specific parameters using e.g. set_params(parameter_name=new_value)\n            In addition, to setting the parameters of the ensemble estimator,\n            the individual estimators of the ensemble estimator can also be\n            set or replaced by setting them to None.\n\n        Examples\n        --------\n        # In this example, the RandomForestClassifier is removed\n        clf1 = LogisticRegression()\n        clf2 = RandomForestClassifier()\n        eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)]\n        eclf.set_params(rf=None)\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n        return self._set_params('estimators', **params)\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        18
+      ],
+      "id": "15:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n        names, clfs = zip(*self.estimators) if self.estimators else ([], [])\n        self._validate_names(names)\n\n        n_isnone = np.sum([clf is None for _, clf in self.estimators])\n        if n_isnone == len(self.estimators):\n            raise ValueError('All estimators are None. At least one is '\n                             'required!')\n\n        if sample_weight is not None:\n            for name, step in self.estimators:\n                if step is None:\n                    continue\n                if not has_fit_parameter(step, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                     ' support sample weights.' % name)\n\n        self.estimators_ = Parallel(n_jobs=self.n_jobs)(\n                delayed(_parallel_fit_estimator)(clone(clf), X, y,\n                                                 sample_weight=sample_weight)\n                for clf in clfs if clf is not None)\n\n",
+        "new_str": "\n\n        # Create filtered list of non-None estimators\n        active_estimators = [(name, est) for name, est in self.estimators \n                           if est is not None]\n        if not active_estimators:\n            raise ValueError('All estimators are None. At least one is '\n                           'required!')\n\n        names, clfs = zip(*active_estimators) if active_estimators else ([], [])\n        self._validate_names(names)\n\n        # Clear previous state\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n\n        # Sample weight validation only on active estimators\n        if sample_weight is not None:\n            for name, est in active_estimators:\n                if not has_fit_parameter(est, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                   ' support sample weights.' % name)\n\n        self.estimators_ = Parallel(n_jobs=self.n_jobs)(\n                delayed(_parallel_fit_estimator)(clone(clf), X, y,\n                                               sample_weight=sample_weight)\n                for clf in clfs)\n\n        # Only store references to active estimators\n        self.named_estimators_ = Bunch()\n        for name, est in active_estimators:\n            idx = names.index(name)\n            self.named_estimators_[name] = self.estimators_[idx]\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        20
+      ],
+      "id": "16:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n        if sample_weight is not None:\n            for name, est in active_estimators:\n                if not has_fit_parameter(est, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                   ' support sample weights.' % name)\n\n",
+        "new_str": "\n\n        if sample_weight is not None:\n            for name, est in active_estimators:\n                try:\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError('Underlying estimator \\'%s\\' does not'\n                                       ' support sample weights.' % name)\n                except (TypeError, AttributeError):\n                    continue\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        21
+      ],
+      "id": "17:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "view_range": [
+          75,
+          105
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        22,
+        26
+      ],
+      "id": "18:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n        # First filter out None estimators and validate\n        active_estimators = [(name, est) for name, est in self.estimators \n                           if est is not None]\n        if not active_estimators:\n            raise ValueError('All estimators are None. At least one is '\n                           'required!')\n\n        names, clfs = zip(*active_estimators) if active_estimators else ([], [])\n        self._validate_names(names)\n\n",
+        "new_str": "\n\n        # Create deep copy of estimators list and filter out Nones\n        active_estimators = []\n        for name, est in self.estimators:\n            if est is None:\n                continue\n            try:\n                # Verify estimator is valid before adding to active list\n                if hasattr(est, 'fit'):\n                    active_estimators.append((name, est))\n            except (TypeError, AttributeError):\n                continue\n                \n        if not active_estimators:\n            raise ValueError('All estimators are None or invalid. At least one valid estimator is required!')\n\n        names, clfs = zip(*active_estimators) if active_estimators else ([], [])\n        self._validate_names(names)\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        23
+      ],
+      "id": "19:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n        # Create deep copy of estimators list and filter out Nones\n        active_estimators = []\n        for name, est in self.estimators:\n            if est is None:\n                continue\n            try:\n                # Verify estimator is valid before adding to active list\n                if hasattr(est, 'fit'):\n                    active_estimators.append((name, est))\n            except (TypeError, AttributeError):\n                continue\n                \n        if not active_estimators:\n            raise ValueError('All estimators are None or invalid. At least one valid estimator is required!')\n\n        names, clfs = zip(*active_estimators) if active_estimators else ([], [])\n        self._validate_names(names)\n\n        # Clear any previous estimators_\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n            del self.named_estimators_\n\n        if sample_weight is not None:\n            for name, est in active_estimators:\n                try:\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError('Underlying estimator \\'%s\\' does not'\n                                       ' support sample weights.' % name)\n                except (TypeError, AttributeError):\n                    continue\n\n\n",
+        "new_str": "\n\n\n        # Clear previous state to ensure clean slate\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n\n        # Process estimators with comprehensive validation\n        active_estimators = []\n        valid_names = []\n        valid_clfs = []\n        \n        for name, est in self.estimators:\n            if est is None:\n                continue\n            try:\n                if (hasattr(est, 'fit') and \n                    (sample_weight is None or has_fit_parameter(est, 'sample_weight'))):\n                    active_estimators.append((name, est))\n                    valid_names.append(name)\n                    valid_clfs.append(est)\n            except (TypeError, AttributeError):\n                continue\n                \n        if not active_estimators:\n            raise ValueError('All estimators are None or invalid. At least one valid estimator is required!')\n\n        self._validate_names(valid_names)\n\n        # Only proceed with validated estimators\n        self.estimators_ = Parallel(n_jobs=self.n_jobs)(\n                delayed(_parallel_fit_estimator)(clone(clf), X, y,\n                                               sample_weight=sample_weight)\n                for clf in valid_clfs)\n\n        self.named_estimators_ = Bunch(**{name: est \n                                         for name, est in zip(valid_names, self.estimators_)})\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        25
+      ],
+      "id": "20:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n        if sample_weight is not None:\n            for name, est in active_estimators:\n                try:\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError('Underlying estimator \\'%s\\' does not'\n                                       ' support sample weights.' % name)\n                except (TypeError, AttributeError):\n                    continue\n\n",
+        "new_str": "\n\n        if sample_weight is not None:\n            # Skip sample weight validation for None estimators (already filtered out)\n            for name, est in active_estimators:\n                try:\n                    if est is not None and not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError('Underlying estimator \\'%s\\' does not'\n                                       ' support sample weights.' % name)\n                except (TypeError, AttributeError) as e:\n                    if est is None:\n                        continue\n                    raise ValueError(f'Error checking sample weight support for estimator \\'{name}\\': {str(e)}')\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        27
+      ],
+      "id": "21:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "view_range": [
+          60,
+          120
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        29,
+        36,
+        44,
+        78
+      ],
+      "id": "22:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n        if self.estimators is None or len(self.estimators) == 0:\n            raise AttributeError('Invalid `estimators` attribute, `estimators`'\n                                 ' should be a list of (string, estimator)'\n                                 ' tuples')\n\n        if (self.weights is not None and\n                len(self.weights) != len(self.estimators)):\n            raise ValueError('Number of `estimators` and weights must be equal'\n                             '; got %d weights, %d estimators'\n                             % (len(self.weights), len(self.estimators)))\n\n        # Create deep copy of estimators list and filter out Nones\n        active_estimators = []\n        for name, est in self.estimators:\n            if est is None:\n                continue\n            try:\n                # Verify estimator is valid before adding to active list\n                if hasattr(est, 'fit'):\n                    active_estimators.append((name, est))\n            except (TypeError, AttributeError):\n                continue\n                \n        if not active_estimators:\n            raise ValueError('All estimators are None or invalid. At least one valid estimator is required!')\n\n        names, clfs = zip(*active_estimators) if active_estimators else ([], [])\n        self._validate_names(names)\n\n        # Clear any previous estimators_\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n            del self.named_estimators_\n\n        if sample_weight is not None:\n            # Skip sample weight validation for None estimators (already filtered out)\n            for name, est in active_estimators:\n                try:\n                    if est is not None and not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError('Underlying estimator \\'%s\\' does not'\n                                       ' support sample weights.' % name)\n                except (TypeError, AttributeError) as e:\n                    if est is None:\n                        continue\n                    raise ValueError(f'Error checking sample weight support for estimator \\'{name}\\': {str(e)}')\n\n\n",
+        "new_str": "\n\n\n        # Clear previous state first\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n\n        # Validate estimators list structure\n        if self.estimators is None or len(self.estimators) == 0:\n            raise AttributeError('Invalid `estimators` attribute, `estimators`'\n                               ' should be a list of (string, estimator) tuples')\n\n        # Process and validate estimators\n        active_estimators = []\n        valid_names = []\n        valid_clfs = []\n        \n        for name, est in self.estimators:\n            if est is None:\n                continue\n            try:\n                if hasattr(est, 'fit'):\n                    # Check sample weight support if needed\n                    if sample_weight is None or has_fit_parameter(est, 'sample_weight'):\n                        active_estimators.append((name, est))\n                        valid_names.append(name)\n                        valid_clfs.append(est)\n            except (TypeError, AttributeError):\n                continue\n                \n        if not active_estimators:\n            raise ValueError('All estimators are None or invalid. At least one valid estimator is required!')\n\n        # Validate weights length against original estimators list\n        if (self.weights is not None and\n                len(self.weights) != len(self.estimators)):\n            raise ValueError('Number of `estimators` and weights must be equal'\n                           '; got %d weights, %d estimators'\n                           % (len(self.weights), len(self.estimators)))\n\n        self._validate_names(valid_names)\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        30
+      ],
+      "id": "23:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "view_range": [
+          95,
+          115
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        31
+      ],
+      "id": "24:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n        if sample_weight is not None:\n            # Skip sample weight validation for None estimators (already filtered out)\n            for name, est in active_estimators:\n                try:\n                    if est is not None and not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError('Underlying estimator \\'%s\\' does not'\n                                       ' support sample weights.' % name)\n                except (TypeError, AttributeError) as e:\n                    if est is None:\n                        continue\n                    raise ValueError(f'Error checking sample weight support for estimator \\'{name}\\': {str(e)}')\n\n\n",
+        "new_str": "\n\n\n        if sample_weight is not None:\n            # active_estimators should only contain valid estimators at this point\n            for name, est in active_estimators:\n                try:\n                    # First verify estimator is still valid\n                    if not hasattr(est, 'fit'):\n                        continue\n                    # Then check sample weight support\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError(f'Estimator \\'{name}\\' does not support sample weights')\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        32
+      ],
+      "id": "25:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "view_range": [
+          100,
+          115
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        33,
+        65
+      ],
+      "id": "26:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n            # Skip sample weight validation for None estimators (already filtered out)\n            for name, est in active_estimators:\n                try:\n                    if est is not None and not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError('Underlying estimator \\'%s\\' does not'\n                                       ' support sample weights.' % name)\n                except (TypeError, AttributeError) as e:\n                    if est is None:\n                        continue\n                    raise ValueError(f'Error checking sample weight support for estimator \\'{name}\\': {str(e)}')\n",
+        "new_str": "\n            # active_estimators should only contain non-None estimators at this point\n            for name, est in active_estimators:\n                try:\n                    # First verify the estimator is still valid\n                    if est is None or not hasattr(est, 'fit'):\n                        continue\n                    # Then check sample weight support\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError('Underlying estimator \\'%s\\' does not'\n                                       ' support sample weights.' % name)\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        34
+      ],
+      "id": "27:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n    @abstractmethod\n    def fit(self, X, y, sample_weight=None):\n        \"\"\"\n        common fit operations.\n        \"\"\"\n        if self.estimators is None or len(self.estimators) == 0:\n            raise AttributeError('Invalid `estimators` attribute, `estimators`'\n                                 ' should be a list of (string, estimator)'\n                                 ' tuples')\n\n        if (self.weights is not None and\n                len(self.weights) != len(self.estimators)):\n            raise ValueError('Number of `estimators` and weights must be equal'\n                             '; got %d weights, %d estimators'\n                             % (len(self.weights), len(self.estimators)))\n\n        # Create deep copy of estimators list and filter out Nones\n        active_estimators = []\n        for name, est in self.estimators:\n            if est is None:\n                continue\n            try:\n                # Verify estimator is valid before adding to active list\n                if hasattr(est, 'fit'):\n                    active_estimators.append((name, est))\n            except (TypeError, AttributeError):\n                continue\n                \n        if not active_estimators:\n            raise ValueError('All estimators are None or invalid. At least one valid estimator is required!')\n\n        names, clfs = zip(*active_estimators) if active_estimators else ([], [])\n        self._validate_names(names)\n\n        # Clear any previous estimators_\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n            del self.named_estimators_\n\n        if sample_weight is not None:\n            # active_estimators should only contain non-None estimators at this point\n            for name, est in active_estimators:\n                try:\n                    # First verify the estimator is still valid\n                    if est is None or not hasattr(est, 'fit'):\n                        continue\n                    # Then check sample weight support\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError('Underlying estimator \\'%s\\' does not'\n                                       ' support sample weights.' % name)\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n\n        self.estimators_ = Parallel(n_jobs=self.n_jobs)(\n                delayed(_parallel_fit_estimator)(clone(clf), X, y,\n                                               sample_weight=sample_weight)\n                for clf in clfs)\n\n",
+        "new_str": "\n\n    @abstractmethod\n    def fit(self, X, y, sample_weight=None):\n        \"\"\"\n        common fit operations.\n        \"\"\"\n        # Clear previous state first\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n\n        # Validate estimators list structure\n        if self.estimators is None or len(self.estimators) == 0:\n            raise AttributeError('Invalid `estimators` attribute, `estimators`'\n                               ' should be a list of (string, estimator) tuples')\n\n        # Validate weights length against original estimators list\n        if (self.weights is not None and\n                len(self.weights) != len(self.estimators)):\n            raise ValueError('Number of `estimators` and weights must be equal'\n                           '; got %d weights, %d estimators'\n                           % (len(self.weights), len(self.estimators)))\n\n        # Process and validate estimators\n        active_estimators = []\n        valid_names = []\n        valid_clfs = []\n        \n        for name, est in self.estimators:\n            if est is None:\n                continue\n            try:\n                # Check if estimator is valid and supports sample weights if needed\n                if hasattr(est, 'fit'):\n                    if sample_weight is None or has_fit_parameter(est, 'sample_weight'):\n                        active_estimators.append((name, est))\n                        valid_names.append(name)\n                        valid_clfs.append(est)\n            except Exception:\n                continue\n                \n        if not active_estimators:\n            raise ValueError('All estimators are None or invalid. At least one valid estimator is required!')\n\n        self._validate_names(valid_names)\n\n        # Fit only valid estimators\n        self.estimators_ = Parallel(n_jobs=self.n_jobs)(\n                delayed(_parallel_fit_estimator)(clone(clf), X, y,\n                                               sample_weight=sample_weight)\n                for clf in valid_clfs)\n\n        # Store references to active estimators\n        self.named_estimators_ = Bunch(**{name: est \n                                         for name, est in zip(valid_names, self.estimators_)})\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        37
+      ],
+      "id": "28:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n        # Store references to active estimators\n        self.named_estimators_ = Bunch(**{name: est \n                                         for name, est in zip(valid_names, self.estimators_)})\n\n        # Only store references to active estimators\n        self.named_estimators_ = Bunch()\n        for name, est in active_estimators:\n            idx = names.index(name)\n            self.named_estimators_[name] = self.estimators_[idx]\n\n",
+        "new_str": "\n\n        # Store references to active estimators\n        self.named_estimators_ = Bunch(**{name: est \n                                         for name, est in zip(valid_names, self.estimators_)})\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        38
+      ],
+      "id": "29:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n        # Only store references to active estimators\n        self.named_estimators_ = Bunch()\n        for name, est in active_estimators:\n            idx = names.index(name)\n            self.named_estimators_[name] = self.estimators_[idx]\n\n",
+        "new_str": "\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        39
+      ],
+      "id": "30:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "view_range": [
+          115,
+          125
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        40
+      ],
+      "id": "31:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n        # Only store references to active estimators\n        self.named_estimators_ = Bunch()\n        for name, est in active_estimators:\n            idx = names.index(name)\n            self.named_estimators_[name] = self.estimators_[idx]\n            \n",
+        "new_str": "\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        41
+      ],
+      "id": "32:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n        # Only store references to active estimators\n        self.named_estimators_ = Bunch()\n        for name, est in active_estimators:\n            idx = names.index(name)\n            self.named_estimators_[name] = self.estimators_[idx]\n",
+        "new_str": "\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        42
+      ],
+      "id": "33:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n        # Process and validate estimators\n        active_estimators = []\n        valid_names = []\n        valid_clfs = []\n        \n        for name, est in self.estimators:\n            if est is None:\n                continue\n            try:\n                # Check if estimator is valid and supports sample weights if needed\n                if hasattr(est, 'fit'):\n                    if sample_weight is None or has_fit_parameter(est, 'sample_weight'):\n                        active_estimators.append((name, est))\n                        valid_names.append(name)\n                        valid_clfs.append(est)\n            except Exception:\n                continue\n",
+        "new_str": "\n\n        # Process and validate estimators with comprehensive checks\n        active_estimators = []\n        valid_names = []\n        valid_clfs = []\n        \n        for name, est in self.estimators:\n            # Skip None estimators immediately\n            if est is None:\n                continue\n                \n            # Validate estimator has required interface\n            if not hasattr(est, 'fit') or not callable(est.fit):\n                continue\n                \n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception:\n                    continue\n                    \n            # Only include fully validated estimators\n            active_estimators.append((name, est))\n            valid_names.append(name)\n            valid_clfs.append(est)\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        45
+      ],
+      "id": "34:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n    def set_params(self, **params):\n        \"\"\" Setting the parameters for the ensemble estimator\n\n        Valid parameter keys can be listed with get_params().\n\n        Parameters\n        ----------\n        **params : keyword arguments\n            Specific parameters using e.g. set_params(parameter_name=new_value)\n            In addition, to setting the parameters of the ensemble estimator,\n            the individual estimators of the ensemble estimator can also be\n            set or replaced by setting them to None.\n        \"\"\"\n        return self._set_params('estimators', **params)\n\n",
+        "new_str": "\n\n    def set_params(self, **params):\n        \"\"\" Setting the parameters for the ensemble estimator\n\n        Valid parameter keys can be listed with get_params().\n\n        Parameters\n        ----------\n        **params : keyword arguments\n            Specific parameters using e.g. set_params(parameter_name=new_value)\n            In addition, to setting the parameters of the ensemble estimator,\n            the individual estimators of the ensemble estimator can also be\n            set or replaced by setting them to None.\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n        return self._set_params('estimators', **params)\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        47,
+        86
+      ],
+      "id": "35:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n    def set_params(self, **params):\n        \"\"\" Setting the parameters for the ensemble estimator\n\n        Valid parameter keys can be listed with get_params().\n\n        Parameters\n        ----------\n        **params : keyword arguments\n            Specific parameters using e.g. set_params(parameter_name=new_value)\n            In addition, to setting the parameters of the ensemble estimator,\n            the individual estimators of the ensemble estimator can also be\n            set or replaced by setting them to None.\n\n        Examples\n        --------\n        # In this example, the RandomForestClassifier is removed\n        clf1 = LogisticRegression()\n        clf2 = RandomForestClassifier()\n        eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)]\n        eclf.set_params(rf=None)\n        \"\"\"\n        return self._set_params('estimators', **params)\n",
+        "new_str": "\n    def set_params(self, **params):\n        \"\"\" Setting the parameters for the ensemble estimator\n\n        Valid parameter keys can be listed with get_params().\n\n        Parameters\n        ----------\n        **params : keyword arguments\n            Specific parameters using e.g. set_params(parameter_name=new_value)\n            In addition, to setting the parameters of the ensemble estimator,\n            the individual estimators of the ensemble estimator can also be\n            set or replaced by setting them to None.\n\n        Examples\n        --------\n        # In this example, the RandomForestClassifier is removed\n        clf1 = LogisticRegression()\n        clf2 = RandomForestClassifier()\n        eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)]\n        eclf.set_params(rf=None)\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n        return self._set_params('estimators', **params)\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        48
+      ],
+      "id": "36:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "view_range": [
+          120,
+          140
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        49
+      ],
+      "id": "37:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n    def set_params(self, **params):\n        \"\"\" Setting the parameters for the ensemble estimator\n\n        Valid parameter keys can be listed with get_params().\n\n        Parameters\n        ----------\n        **params : keyword arguments\n            Specific parameters using e.g. set_params(parameter_name=new_value)\n            In addition, to setting the parameters of the ensemble estimator,\n            the individual estimators of the ensemble estimator can also be\n            set or replaced by setting them to None.\n",
+        "new_str": "\n\n    def set_params(self, **params):\n        \"\"\" Setting the parameters for the ensemble estimator\n\n        Valid parameter keys can be listed with get_params().\n\n        Parameters\n        ----------\n        **params : keyword arguments\n            Specific parameters using e.g. set_params(parameter_name=new_value)\n            In addition, to setting the parameters of the ensemble estimator,\n            the individual estimators of the ensemble estimator can also be\n            set or replaced by setting them to None.\n\n        Notes\n        -----\n        This method clears any previously fitted estimators when called.\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        50
+      ],
+      "id": "38:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n    def set_params(self, **params):\n        \"\"\" Setting the parameters for the ensemble estimator\n\n        Valid parameter keys can be listed with get_params().\n\n        Parameters\n        ----------\n        **params : keyword arguments\n            Specific parameters using e.g. set_params(parameter_name=new_value)\n            In addition, to setting the parameters of the ensemble estimator,\n            the individual estimators of the ensemble estimator can also be\n            set or replaced by setting them to None.\n\n        Notes\n        -----\n        This method clears any previously fitted estimators when called.\n\n        Examples\n        --------\n        # In this example, the RandomForestClassifier is removed\n        clf1 = LogisticRegression()\n        clf2 = RandomForestClassifier()\n        eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)]\n        eclf.set_params(rf=None)\n        \"\"\"\n        return self._set_params('estimators', **params)\n\n\n",
+        "new_str": "\n\n\n    def set_params(self, **params):\n        \"\"\" Setting the parameters for the ensemble estimator\n\n        Valid parameter keys can be listed with get_params().\n\n        Parameters\n        ----------\n        **params : keyword arguments\n            Specific parameters using e.g. set_params(parameter_name=new_value)\n            In addition, to setting the parameters of the ensemble estimator,\n            the individual estimators of the ensemble estimator can also be\n            set or replaced by setting them to None.\n\n        Notes\n        -----\n        This method clears any previously fitted estimators when called.\n\n        Examples\n        --------\n        # In this example, the RandomForestClassifier is removed\n        clf1 = LogisticRegression()\n        clf2 = RandomForestClassifier()\n        eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)]\n        eclf.set_params(rf=None)\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n        return self._set_params('estimators', **params)\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        51
+      ],
+      "id": "39:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "view_range": [
+          130,
+          150
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        52,
+        87
+      ],
+      "id": "40:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n        Examples\n        --------\n        # In this example, the RandomForestClassifier is removed\n",
+        "new_str": "\n\n        Examples\n        --------\n        # In this example, the RandomForestClassifier is removed\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n            \n        return self._set_params('estimators', **params)\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        53
+      ],
+      "id": "41:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n        Examples\n        --------\n        # In this example, the RandomForestClassifier is removed\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n            \n        return self._set_params('estimators', **params)\n\n\n        clf1 = LogisticRegression()\n        clf2 = RandomForestClassifier()\n        eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)]\n        eclf.set_params(rf=None)\n        \"\"\"\n\n",
+        "new_str": "\n\n\n        Examples\n        --------\n        # In this example, the RandomForestClassifier is removed\n        clf1 = LogisticRegression()\n        clf2 = RandomForestClassifier()\n        eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)]\n        eclf.set_params(rf=None)\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n            \n        return self._set_params('estimators', **params)\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        54
+      ],
+      "id": "42:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "view_range": [
+          130,
+          170
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        55,
+        59,
+        90
+      ],
+      "id": "43:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n        clf1 = LogisticRegression()\n        clf2 = RandomForestClassifier()\n        eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)]\n        eclf.set_params(rf=None)\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n        return self._set_params('estimators', **params)\n\n",
+        "new_str": "\n\n\n        clf1 = LogisticRegression()\n        clf2 = RandomForestClassifier()\n        eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)]\n        eclf.set_params(rf=None)\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n            \n        return self._set_params('estimators', **params)\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        56
+      ],
+      "id": "44:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n    def set_params(self, **params):\n        \"\"\" Setting the parameters for the ensemble estimator\n\n        Valid parameter keys can be listed with get_params().\n\n        Parameters\n        ----------\n        **params : keyword arguments\n            Specific parameters using e.g. set_params(parameter_name=new_value)\n            In addition, to setting the parameters of the ensemble estimator,\n            the individual estimators of the ensemble estimator can also be\n            set or replaced by setting them to None.\n\n        Notes\n        -----\n        This method clears any previously fitted estimators when called.\n\n        Examples\n        --------\n        # In this example, the RandomForestClassifier is removed\n        clf1 = LogisticRegression()\n        clf2 = RandomForestClassifier()\n        eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)]\n        eclf.set_params(rf=None)\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n            \n        return self._set_params('estimators', **params)\n\n",
+        "new_str": "\n\n    def set_params(self, **params):\n        \"\"\"Setting the parameters for the ensemble estimator.\n\n        Valid parameter keys can be listed with get_params().\n\n        Parameters\n        ----------\n        **params : keyword arguments\n            Specific parameters using e.g. set_params(parameter_name=new_value)\n            In addition, to setting the parameters of the ensemble estimator,\n            the individual estimators of the ensemble estimator can also be\n            set or replaced by setting them to None.\n\n        Notes\n        -----\n        This method clears any previously fitted estimators when called.\n\n        Examples\n        --------\n        >>> from sklearn.linear_model import LogisticRegression\n        >>> from sklearn.ensemble import RandomForestClassifier, VotingClassifier\n        >>> clf1 = LogisticRegression()\n        >>> clf2 = RandomForestClassifier()\n        >>> eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)])\n        >>> eclf.set_params(rf=None)  # Removes the RandomForest estimator\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n            \n        return self._set_params('estimators', **params)\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        57
+      ],
+      "id": "45:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n        return self._set_params('estimators', **params)\n\n",
+        "new_str": "\n\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n        return self._set_params('estimators', **params)\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        58
+      ],
+      "id": "46:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n        clf1 = LogisticRegression()\n        clf2 = RandomForestClassifier()\n        eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)]\n        eclf.set_params(rf=None)\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n        return self._set_params('estimators', **params)\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        60
+      ],
+      "id": "47:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "view_range": [
+          150,
+          170
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        61
+      ],
+      "id": "48:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n        clf1 = LogisticRegression()\n        clf2 = RandomForestClassifier()\n        eclf = VotingClassifier(estimators=[('lr', clf1), ('rf', clf2)]\n        eclf.set_params(rf=None)\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n        return self._set_params('estimators', **params)\n\n",
+        "new_str": "\n\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        62
+      ],
+      "id": "49:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n        if sample_weight is not None:\n            for name, est in active_estimators:\n                try:\n                    if est is not None and not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError('Underlying estimator \\'%s\\' does not'\n                                       ' support sample weights.' % name)\n                except (TypeError, AttributeError) as e:\n                    if est is None:\n                        continue\n                    raise ValueError(f'Error checking sample weight support for estimator \\'{name}\\': {str(e)}')\n\n\n",
+        "new_str": "\n\n\n        if sample_weight is not None:\n            # active_estimators should only contain non-None estimators at this point\n            for name, est in active_estimators:\n                if est is None:  # Should never happen due to prior filtering\n                    continue\n                try:\n                    if not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError(f'Estimator \\'{name}\\' does not support sample weights')\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        64
+      ],
+      "id": "50:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception:\n                    continue\n\n",
+        "new_str": "\n\n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    if not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        66
+      ],
+      "id": "51:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n            if sample_weight is not None:\n                try:\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception:\n                    continue\n",
+        "new_str": "\n            if sample_weight is not None:\n                try:\n                    if not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        67
+      ],
+      "id": "52:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "view_range": [
+          85,
+          115
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        69
+      ],
+      "id": "53:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n        # Process and validate estimators with comprehensive checks\n        active_estimators = []\n        valid_names = []\n        valid_clfs = []\n        \n        for name, est in self.estimators:\n            # Skip None estimators immediately\n            if est is None:\n                continue\n                \n            # Validate estimator has required interface\n            if not hasattr(est, 'fit') or not callable(est.fit):\n                continue\n                \n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    if not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n                    \n            # Only include fully validated estimators\n            active_estimators.append((name, est))\n            valid_names.append(name)\n            valid_clfs.append(est)\n\n\n",
+        "new_str": "\n\n\n        # Process and validate estimators with comprehensive checks\n        active_estimators = []\n        valid_names = []\n        valid_clfs = []\n        \n        for name, est in self.estimators:\n            # Skip None estimators immediately\n            if est is None:\n                continue\n                \n            try:\n                # Validate estimator has required interface\n                if not hasattr(est, 'fit') or not callable(est.fit):\n                    continue\n                    \n                # Check sample weight support if needed\n                if sample_weight is not None and not has_fit_parameter(est, 'sample_weight'):\n                    continue\n                    \n                # Only include fully validated estimators\n                active_estimators.append((name, est))\n                valid_names.append(name)\n                valid_clfs.append(est)\n                \n            except Exception as e:\n                raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        70
+      ],
+      "id": "54:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    if not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n\n",
+        "new_str": "\n\n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    # First verify the estimator is still valid\n                    if est is None or not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    # Then check sample weight support\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        71
+      ],
+      "id": "55:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "view_range": [
+          100,
+          110
+        ]
+      },
+      "phase": "localization",
+      "step_indices": [
+        72,
+        75,
+        82,
+        93
+      ],
+      "id": "56:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    if not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n\n",
+        "new_str": "\n\n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    # First verify estimator is valid\n                    if est is None or not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    # Then check sample weight support\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError(f'Estimator \\'{name}\\' does not support sample weights')\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        73
+      ],
+      "id": "57:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n                    if not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n\n",
+        "new_str": "\n\n                    if est is None or not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        74
+      ],
+      "id": "58:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    if not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n\n\n",
+        "new_str": "\n\n\n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    # First validate estimator exists and has required methods\n                    if est is None or not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    # Then validate sample weight support\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        76,
+        83
+      ],
+      "id": "59:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n                    if not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n\n",
+        "new_str": "\n\n                    if est is None or not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        77
+      ],
+      "id": "60:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n        # Process and validate estimators with comprehensive checks\n        active_estimators = []\n        valid_names = []\n        valid_clfs = []\n        \n        for name, est in self.estimators:\n            # Skip None estimators immediately\n            if est is None:\n                continue\n                \n            # Validate estimator has required interface\n            if not hasattr(est, 'fit') or not callable(est.fit):\n                continue\n                \n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    if not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n                    \n            # Only include fully validated estimators\n            active_estimators.append((name, est))\n            valid_names.append(name)\n            valid_clfs.append(est)\n\n\n",
+        "new_str": "\n\n\n        # Process and validate estimators with comprehensive checks\n        active_estimators = []\n        valid_names = []\n        valid_clfs = []\n        \n        for name, est in self.estimators:\n            try:\n                # Skip None estimators immediately\n                if est is None:\n                    continue\n                    \n                # Validate estimator has required interface\n                if not hasattr(est, 'fit') or not callable(est.fit):\n                    continue\n                    \n                # Check sample weight support if needed\n                if sample_weight is not None and not has_fit_parameter(est, 'sample_weight'):\n                    continue\n                    \n                # Only include fully validated estimators\n                active_estimators.append((name, est))\n                valid_names.append(name)\n                valid_clfs.append(est)\n                \n            except Exception as e:\n                raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        79
+      ],
+      "id": "61:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    if not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n\n\n",
+        "new_str": "\n\n\n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    # First verify the estimator is still valid\n                    if est is None or not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    # Then check sample weight support\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        raise ValueError(f'Estimator \\'{name}\\' does not support sample weights')\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        80
+      ],
+      "id": "62:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n                    if not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n\n\n",
+        "new_str": "\n\n\n                    if est is None or not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        81,
+        84
+      ],
+      "id": "63:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n    def set_params(self, **params):\n        \"\"\" Setting the parameters for the ensemble estimator\n\n        Valid parameter keys can be listed with get_params().\n\n        Parameters\n        ----------\n        **params : keyword arguments\n            Specific parameters using e.g. set_params(parameter_name=new_value)\n            In addition, to setting the parameters of the ensemble estimator,\n            the individual estimators of the ensemble estimator can also be\n            set or replaced by setting them to None.\n        \"\"\"\n        return self._set_params('estimators', **params)\n\n\n",
+        "new_str": "\n\n\n    def set_params(self, **params):\n        \"\"\" Setting the parameters for the ensemble estimator\n\n        Valid parameter keys can be listed with get_params().\n\n        Parameters\n        ----------\n        **params : keyword arguments\n            Specific parameters using e.g. set_params(parameter_name=new_value)\n            In addition, to setting the parameters of the ensemble estimator,\n            the individual estimators of the ensemble estimator can also be\n            set or replaced by setting them to None.\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n        return self._set_params('estimators', **params)\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        85
+      ],
+      "id": "64:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n        Examples\n        --------\n        # In this example, the RandomForestClassifier is removed\n\n",
+        "new_str": "\n\n\n        Examples\n        --------\n        # In this example, the RandomForestClassifier is removed\n        \"\"\"\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n            \n        return self._set_params('estimators', **params)\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        88
+      ],
+      "id": "65:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n        return self._set_params('estimators', **params)\n\n\n",
+        "new_str": "\n\n\n        # Clear existing estimators before setting new ones\n        if hasattr(self, 'estimators_'):\n            del self.estimators_\n        if hasattr(self, 'named_estimators_'):\n            del self.named_estimators_\n        return self._set_params('estimators', **params)\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        89
+      ],
+      "id": "66:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "edit_status": "failure: unknown"
+      },
+      "phase": "patch",
+      "step_indices": [
+        91,
+        94,
+        95
+      ],
+      "id": "67:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n\n        if sample_weight is not None:\n            for name, step in self.estimators:\n                if not has_fit_parameter(step, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                     ' support sample weights.' % name)\n\n\n",
+        "new_str": "\n\n\n        if sample_weight is not None:\n            for name, step in self.estimators:\n                if step is None:\n                    continue\n                try:\n                    if not has_fit_parameter(step, 'sample_weight'):\n                        raise ValueError('Underlying estimator \\'%s\\' does not'\n                                     ' support sample weights.' % name)\n                except (TypeError, AttributeError):\n                    continue\n\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        92,
+        99
+      ],
+      "id": "68:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    if not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n",
+        "new_str": "\n            # Check sample weight support if needed\n            if sample_weight is not None:\n                try:\n                    # First validate estimator exists and has required methods\n                    if est is None or not hasattr(est, 'fit') or not callable(est.fit):\n                        continue\n                    # Then validate sample weight support\n                    if not has_fit_parameter(est, 'sample_weight'):\n                        continue\n                except Exception as e:\n                    raise ValueError(f'Error validating estimator \\'{name}\\': {str(e)}')\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        96
+      ],
+      "id": "69:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/scikit-learn__scikit-learn__0.22/sklearn/ensemble/voting.py",
+        "old_str": "\n\n        if sample_weight is not None:\n            for name, step in self.estimators:\n                if not has_fit_parameter(step, 'sample_weight'):\n                    raise ValueError('Underlying estimator \\'%s\\' does not'\n                                     ' support sample weights.' % name)\n\n",
+        "new_str": "\n\n        if sample_weight is not None:\n            for name, step in self.estimators:\n                if step is None:\n                    continue\n                try:\n                    if not has_fit_parameter(step, 'sample_weight'):\n                        raise ValueError('Underlying estimator \\'%s\\' does not'\n                                     ' support sample weights.' % name)\n                except (TypeError, AttributeError):\n                    continue\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        98
+      ],
+      "id": "70:str_replace_editor\nstr_replace"
+    }
+  ],
+  "edges": [
+    {
+      "label": "0",
+      "type": "exec",
+      "source": "0:cd",
+      "target": "1:ls",
+      "key": 0
+    },
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "0:cd",
+      "target": "2:grep",
+      "key": 0
+    },
+    {
+      "label": "3",
+      "type": "exec",
+      "source": "0:cd",
+      "target": "4:grep",
+      "key": 0
+    },
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "1:ls",
+      "target": "0:cd",
+      "key": 0
+    },
+    {
+      "label": "2",
+      "type": "exec",
+      "source": "2:grep",
+      "target": "3:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "3",
+      "type": "exec",
+      "source": "3:str_replace_editor\nview",
+      "target": "0:cd",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "3:str_replace_editor\nview",
+      "target": "22:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "3:str_replace_editor\nview",
+      "target": "31:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "3:str_replace_editor\nview",
+      "target": "37:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "3:str_replace_editor\nview",
+      "target": "43:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "4",
+      "type": "exec",
+      "source": "4:grep",
+      "target": "5:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "5",
+      "type": "exec",
+      "source": "5:str_replace_editor\nstr_replace",
+      "target": "6:str_replace_editor\ncreate",
+      "key": 0
+    },
+    {
+      "label": "6",
+      "type": "exec",
+      "source": "6:str_replace_editor\ncreate",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "6",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 0
+    },
+    {
+      "label": "8",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 1
+    },
+    {
+      "label": "10",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 2
+    },
+    {
+      "label": "12",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 3
+    },
+    {
+      "label": "14",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 4
+    },
+    {
+      "label": "17",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 5
+    },
+    {
+      "label": "19",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 6
+    },
+    {
+      "label": "24",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 7
+    },
+    {
+      "label": "28",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 8
+    },
+    {
+      "label": "35",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 9
+    },
+    {
+      "label": "43",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 10
+    },
+    {
+      "label": "46",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 11
+    },
+    {
+      "label": "63",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 12
+    },
+    {
+      "label": "68",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 13
+    },
+    {
+      "label": "97",
+      "type": "exec",
+      "source": "7:cd",
+      "target": "8:python",
+      "key": 14
+    },
+    {
+      "label": "7",
+      "type": "exec",
+      "source": "8:python",
+      "target": "9:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "9",
+      "type": "exec",
+      "source": "8:python",
+      "target": "10:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "11",
+      "type": "exec",
+      "source": "8:python",
+      "target": "11:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "13",
+      "type": "exec",
+      "source": "8:python",
+      "target": "12:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "15",
+      "type": "exec",
+      "source": "8:python",
+      "target": "13:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "18",
+      "type": "exec",
+      "source": "8:python",
+      "target": "15:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "20",
+      "type": "exec",
+      "source": "8:python",
+      "target": "16:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "25",
+      "type": "exec",
+      "source": "8:python",
+      "target": "20:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "29",
+      "type": "exec",
+      "source": "8:python",
+      "target": "22:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "36",
+      "type": "exec",
+      "source": "8:python",
+      "target": "22:str_replace_editor\nview",
+      "key": 1
+    },
+    {
+      "label": "44",
+      "type": "exec",
+      "source": "8:python",
+      "target": "22:str_replace_editor\nview",
+      "key": 2
+    },
+    {
+      "label": "47",
+      "type": "exec",
+      "source": "8:python",
+      "target": "35:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "64",
+      "type": "exec",
+      "source": "8:python",
+      "target": "50:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "69",
+      "type": "exec",
+      "source": "8:python",
+      "target": "53:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "98",
+      "type": "exec",
+      "source": "8:python",
+      "target": "70:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "8",
+      "type": "exec",
+      "source": "9:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "10",
+      "type": "exec",
+      "source": "10:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "12",
+      "type": "exec",
+      "source": "11:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "14",
+      "type": "exec",
+      "source": "12:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "16",
+      "type": "exec",
+      "source": "13:str_replace_editor\nstr_replace",
+      "target": "14:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "17",
+      "type": "exec",
+      "source": "14:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "19",
+      "type": "exec",
+      "source": "15:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "21",
+      "type": "exec",
+      "source": "16:str_replace_editor\nstr_replace",
+      "target": "17:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "22",
+      "type": "exec",
+      "source": "17:str_replace_editor\nstr_replace",
+      "target": "18:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "23",
+      "type": "exec",
+      "source": "18:str_replace_editor\nview",
+      "target": "19:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "27",
+      "type": "exec",
+      "source": "18:str_replace_editor\nview",
+      "target": "21:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "24",
+      "type": "exec",
+      "source": "19:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "26",
+      "type": "exec",
+      "source": "20:str_replace_editor\nstr_replace",
+      "target": "18:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "28",
+      "type": "exec",
+      "source": "21:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "30",
+      "type": "exec",
+      "source": "22:str_replace_editor\nview",
+      "target": "23:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "37",
+      "type": "exec",
+      "source": "22:str_replace_editor\nview",
+      "target": "28:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "45",
+      "type": "exec",
+      "source": "22:str_replace_editor\nview",
+      "target": "34:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "79",
+      "type": "exec",
+      "source": "22:str_replace_editor\nview",
+      "target": "61:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "22:str_replace_editor\nview",
+      "target": "18:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "22:str_replace_editor\nview",
+      "target": "24:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "22:str_replace_editor\nview",
+      "target": "26:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "22:str_replace_editor\nview",
+      "target": "53:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "22:str_replace_editor\nview",
+      "target": "56:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "31",
+      "type": "exec",
+      "source": "23:str_replace_editor\nstr_replace",
+      "target": "24:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "32",
+      "type": "exec",
+      "source": "24:str_replace_editor\nview",
+      "target": "25:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "24:str_replace_editor\nview",
+      "target": "26:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "24:str_replace_editor\nview",
+      "target": "56:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "33",
+      "type": "exec",
+      "source": "25:str_replace_editor\nstr_replace",
+      "target": "26:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "34",
+      "type": "exec",
+      "source": "26:str_replace_editor\nview",
+      "target": "27:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "66",
+      "type": "exec",
+      "source": "26:str_replace_editor\nview",
+      "target": "51:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "26:str_replace_editor\nview",
+      "target": "56:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "35",
+      "type": "exec",
+      "source": "27:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "38",
+      "type": "exec",
+      "source": "28:str_replace_editor\nstr_replace",
+      "target": "29:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "39",
+      "type": "exec",
+      "source": "29:str_replace_editor\nstr_replace",
+      "target": "30:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "40",
+      "type": "exec",
+      "source": "30:str_replace_editor\nstr_replace",
+      "target": "31:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "41",
+      "type": "exec",
+      "source": "31:str_replace_editor\nview",
+      "target": "32:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "42",
+      "type": "exec",
+      "source": "32:str_replace_editor\nstr_replace",
+      "target": "33:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "43",
+      "type": "exec",
+      "source": "33:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "46",
+      "type": "exec",
+      "source": "34:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "48",
+      "type": "exec",
+      "source": "35:str_replace_editor\nstr_replace",
+      "target": "36:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "87",
+      "type": "exec",
+      "source": "35:str_replace_editor\nstr_replace",
+      "target": "40:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "49",
+      "type": "exec",
+      "source": "36:str_replace_editor\nstr_replace",
+      "target": "37:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "50",
+      "type": "exec",
+      "source": "37:str_replace_editor\nview",
+      "target": "38:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "51",
+      "type": "exec",
+      "source": "38:str_replace_editor\nstr_replace",
+      "target": "39:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "52",
+      "type": "exec",
+      "source": "39:str_replace_editor\nstr_replace",
+      "target": "40:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "53",
+      "type": "exec",
+      "source": "40:str_replace_editor\nview",
+      "target": "41:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "88",
+      "type": "exec",
+      "source": "40:str_replace_editor\nview",
+      "target": "65:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "54",
+      "type": "exec",
+      "source": "41:str_replace_editor\nstr_replace",
+      "target": "42:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "55",
+      "type": "exec",
+      "source": "42:str_replace_editor\nstr_replace",
+      "target": "43:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "56",
+      "type": "exec",
+      "source": "43:str_replace_editor\nview",
+      "target": "44:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "60",
+      "type": "exec",
+      "source": "43:str_replace_editor\nview",
+      "target": "47:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "91",
+      "type": "exec",
+      "source": "43:str_replace_editor\nview",
+      "target": "67:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "43:str_replace_editor\nview",
+      "target": "40:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "43:str_replace_editor\nview",
+      "target": "48:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "57",
+      "type": "exec",
+      "source": "44:str_replace_editor\nstr_replace",
+      "target": "45:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "58",
+      "type": "exec",
+      "source": "45:str_replace_editor\nstr_replace",
+      "target": "46:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "59",
+      "type": "exec",
+      "source": "46:str_replace_editor\nstr_replace",
+      "target": "43:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "61",
+      "type": "exec",
+      "source": "47:str_replace_editor\nstr_replace",
+      "target": "48:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "62",
+      "type": "exec",
+      "source": "48:str_replace_editor\nview",
+      "target": "49:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "63",
+      "type": "exec",
+      "source": "49:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "65",
+      "type": "exec",
+      "source": "50:str_replace_editor\nstr_replace",
+      "target": "26:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "67",
+      "type": "exec",
+      "source": "51:str_replace_editor\nstr_replace",
+      "target": "52:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "68",
+      "type": "exec",
+      "source": "52:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "70",
+      "type": "exec",
+      "source": "53:str_replace_editor\nview",
+      "target": "54:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "53:str_replace_editor\nview",
+      "target": "24:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "53:str_replace_editor\nview",
+      "target": "26:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "type": "hier",
+      "source": "53:str_replace_editor\nview",
+      "target": "56:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "71",
+      "type": "exec",
+      "source": "54:str_replace_editor\nstr_replace",
+      "target": "55:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "72",
+      "type": "exec",
+      "source": "55:str_replace_editor\nstr_replace",
+      "target": "56:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "73",
+      "type": "exec",
+      "source": "56:str_replace_editor\nview",
+      "target": "57:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "76",
+      "type": "exec",
+      "source": "56:str_replace_editor\nview",
+      "target": "59:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "83",
+      "type": "exec",
+      "source": "56:str_replace_editor\nview",
+      "target": "59:str_replace_editor\nstr_replace",
+      "key": 1
+    },
+    {
+      "label": "94",
+      "type": "exec",
+      "source": "56:str_replace_editor\nview",
+      "target": "67:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "74",
+      "type": "exec",
+      "source": "57:str_replace_editor\nstr_replace",
+      "target": "58:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "75",
+      "type": "exec",
+      "source": "58:str_replace_editor\nstr_replace",
+      "target": "56:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "77",
+      "type": "exec",
+      "source": "59:str_replace_editor\nstr_replace",
+      "target": "60:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "84",
+      "type": "exec",
+      "source": "59:str_replace_editor\nstr_replace",
+      "target": "63:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "78",
+      "type": "exec",
+      "source": "60:str_replace_editor\nstr_replace",
+      "target": "22:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "80",
+      "type": "exec",
+      "source": "61:str_replace_editor\nstr_replace",
+      "target": "62:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "81",
+      "type": "exec",
+      "source": "62:str_replace_editor\nstr_replace",
+      "target": "63:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "82",
+      "type": "exec",
+      "source": "63:str_replace_editor\nstr_replace",
+      "target": "56:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "85",
+      "type": "exec",
+      "source": "63:str_replace_editor\nstr_replace",
+      "target": "64:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "86",
+      "type": "exec",
+      "source": "64:str_replace_editor\nstr_replace",
+      "target": "35:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "89",
+      "type": "exec",
+      "source": "65:str_replace_editor\nstr_replace",
+      "target": "66:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "90",
+      "type": "exec",
+      "source": "66:str_replace_editor\nstr_replace",
+      "target": "43:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "92",
+      "type": "exec",
+      "source": "67:str_replace_editor\nstr_replace",
+      "target": "68:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "95",
+      "type": "exec",
+      "source": "67:str_replace_editor\nstr_replace",
+      "target": "67:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "96",
+      "type": "exec",
+      "source": "67:str_replace_editor\nstr_replace",
+      "target": "69:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "93",
+      "type": "exec",
+      "source": "68:str_replace_editor\nstr_replace",
+      "target": "56:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "97",
+      "type": "exec",
+      "source": "69:str_replace_editor\nstr_replace",
+      "target": "7:cd",
+      "key": 0
+    },
+    {
+      "label": "99",
+      "type": "exec",
+      "source": "70:str_replace_editor\nstr_replace",
+      "target": "68:str_replace_editor\nstr_replace",
+      "key": 0
+    }
+  ]
+}

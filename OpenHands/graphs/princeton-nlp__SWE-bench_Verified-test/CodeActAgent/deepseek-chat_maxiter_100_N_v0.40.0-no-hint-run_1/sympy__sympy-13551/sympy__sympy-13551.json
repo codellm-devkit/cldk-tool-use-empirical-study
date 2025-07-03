@@ -1,0 +1,347 @@
+{
+  "directed": true,
+  "multigraph": true,
+  "graph": {
+    "resolution_status": "unresolved",
+    "instance_name": "sympy__sympy-13551",
+    "difficulty": "15 min - 1 hour",
+    "golden_patch_difficulty": "medium",
+    "golden_files_change": 1,
+    "patch_difficulty": "medium",
+    "files_change": 2
+  },
+  "nodes": [
+    {
+      "label": "empty action",
+      "args": {},
+      "phase": "general",
+      "step_indices": [
+        0
+      ],
+      "id": "0:empty action"
+    },
+    {
+      "label": "cd",
+      "args": [
+        "/workspace/sympy__sympy__1.1"
+      ],
+      "phase": "general",
+      "step_indices": [
+        1,
+        3,
+        6,
+        8,
+        10,
+        15
+      ],
+      "id": "1:cd"
+    },
+    {
+      "label": "find",
+      "args": [
+        ".",
+        "test_*.py",
+        "|",
+        "grep"
+      ],
+      "phase": "general",
+      "step_indices": [
+        1
+      ],
+      "id": "2:find"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/sympy__sympy__1.1/sympy/concrete/tests/test_products.py"
+      },
+      "phase": "localization",
+      "step_indices": [
+        2
+      ],
+      "id": "3:str_replace_editor\nview"
+    },
+    {
+      "label": "find",
+      "args": [
+        ".",
+        "*.py",
+        "|",
+        "xargs",
+        "grep"
+      ],
+      "phase": "general",
+      "step_indices": [
+        3
+      ],
+      "id": "4:find"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/sympy__sympy__1.1/sympy/concrete/products.py"
+      },
+      "phase": "localization",
+      "step_indices": [
+        4
+      ],
+      "id": "5:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\ncreate",
+      "args": {
+        "path": "/workspace/sympy__sympy__1.1/reproduce_issue.py",
+        "file_text": "\nfrom sympy import *\nfrom sympy.abc import n,k\n\n# Test case from issue description\np = Product(n + 1/2**k, (k, 0, n-1)).doit()\nprint(\"Product result:\", simplify(p))\nprint(\"n=2 substitution:\", p.subs(n, 2))\n\n# Expected result for n=2\nexpected = (2 + 1/2**0)*(2 + 1/2**1)\nprint(\"Expected n=2:\", expected)\n"
+      },
+      "phase": "verification",
+      "step_indices": [
+        5
+      ],
+      "id": "6:str_replace_editor\ncreate"
+    },
+    {
+      "label": "python",
+      "args": [
+        "reproduce_issue.py"
+      ],
+      "phase": "verification",
+      "step_indices": [
+        6,
+        8,
+        10,
+        15
+      ],
+      "id": "7:python"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/sympy__sympy__1.1/sympy/concrete/products.py",
+        "old_str": "\n        elif term.is_Add:\n            p, q = term.as_numer_denom()\n            q = self._eval_product(q, (k, a, n))\n            if q.is_Number:\n\n                # There is expression, which couldn't change by\n                # as_numer_denom(). E.g. n**(2/3) + 1 --> (n**(2/3) + 1, 1).\n                # We have to catch this case.\n\n                p = sum([self._eval_product(i, (k, a, n)) for i in p.as_coeff_Add()])\n            else:\n                p = self._eval_product(p, (k, a, n))\n            return p / q\n",
+        "new_str": "\n        elif term.is_Add:\n            # Special case for Product(n + c_k) where n is independent of k\n            free_symbols = term.free_symbols\n            if len(free_symbols) == 2 and n in free_symbols and k in free_symbols:\n                # Check if term is of form n + c_k where c_k depends only on k\n                c_k = term - n\n                if not c_k.free_symbols.difference({k}):\n                    # Return unevaluated product since we can't simplify n + c_k\n                    return None\n            \n            # Default handling for other cases\n            p, q = term.as_numer_denom()\n            q = self._eval_product(q, (k, a, n))\n            if q.is_Number:\n                p = sum([self._eval_product(i, (k, a, n)) for i in p.as_coeff_Add()])\n            else:\n                p = self._eval_product(p, (k, a, n))\n            return p / q\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        7
+      ],
+      "id": "8:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/sympy__sympy__1.1/sympy/concrete/products.py",
+        "old_str": "\n        elif term.is_Add:\n            # Special case for Product(n + c_k) where n is independent of k\n            free_symbols = term.free_symbols\n            if len(free_symbols) == 2 and n in free_symbols and k in free_symbols:\n                # Check if term is of form n + c_k where c_k depends only on k\n                c_k = term - n\n                if not c_k.free_symbols.difference({k}):\n                    # Return unevaluated product since we can't simplify n + c_k\n                    return None\n            \n            # Default handling for other cases\n            p, q = term.as_numer_denom()\n            q = self._eval_product(q, (k, a, n))\n            if q.is_Number:\n                p = sum([self._eval_product(i, (k, a, n)) for i in p.as_coeff_Add()])\n            else:\n                p = self._eval_product(p, (k, a, n))\n            return p / q\n",
+        "new_str": "\n        elif term.is_Add:\n            # For additive terms, check if term has both k and other symbols\n            k_dep = term.has(k)\n            other_dep = term.free_symbols.difference({k})\n            if k_dep and other_dep:\n                # If term depends on both k and other symbols, don't evaluate\n                # This prevents incorrect evaluation of Product(n + c_k)\n                return None\n            \n            # Default handling for simple cases\n            p, q = term.as_numer_denom()\n            q = self._eval_product(q, (k, a, n))\n            if q.is_Number:\n                p = sum([self._eval_product(i, (k, a, n)) for i in p.as_coeff_Add()])\n            else:\n                p = self._eval_product(p, (k, a, n))\n            return p / q\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        9
+      ],
+      "id": "9:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/sympy__sympy__1.1/reproduce_issue.py",
+        "old_str": "\n\nfrom sympy import *\nfrom sympy.abc import n,k\n\n# Test case from issue description\np = Product(n + 1/2**k, (k, 0, n-1)).doit()\nprint(\"Product result:\", simplify(p))\nprint(\"n=2 substitution:\", p.subs(n, 2))\n\n# Expected result for n=2\nexpected = (2 + 1/2**0)*(2 + 1/2**1)\nprint(\"Expected n=2:\", expected)\n\n",
+        "new_str": "\n\nfrom sympy import *\nfrom sympy.abc import n,k\n\n# Test symbolic form\np = Product(n + 1/2**k, (k, 0, n-1))\nprint(\"Symbolic form:\", p)\n\n# Test numerical evaluation\np_num = p.subs(n, 2).doit()\nprint(\"Numerical evaluation for n=2:\", p_num)\nprint(\"Expected value for n=2:\", (2 + 1/2**0)*(2 + 1/2**1))\n\n# Test that doit() expands correctly for concrete values\np_concrete = Product(2 + 1/2**k, (k, 0, 1)).doit()\nprint(\"Expanded product:\", p_concrete)\n\n",
+        "edit_status": "failure: not found"
+      },
+      "phase": "patch",
+      "step_indices": [
+        11
+      ],
+      "id": "10:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nview",
+      "args": {
+        "path": "/workspace/sympy__sympy__1.1/reproduce_issue.py"
+      },
+      "phase": "localization",
+      "step_indices": [
+        12
+      ],
+      "id": "11:str_replace_editor\nview"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/sympy__sympy__1.1/reproduce_issue.py",
+        "old_str": "from sympy import *\nfrom sympy.abc import n,k\n\n# Test case from issue description\np = Product(n + 1/2**k, (k, 0, n-1)).doit()\nprint(\"Product result:\", simplify(p))\nprint(\"n=2 substitution:\", p.subs(n, 2))\n\n# Expected result for n=2\nexpected = (2 + 1/2**0)*(2 + 1/2**1)\nprint(\"Expected n=2:\", expected)\n",
+        "new_str": "from sympy import *\nfrom sympy.abc import n,k\n\n# Test symbolic form\np = Product(n + 1/2**k, (k, 0, n-1)\nprint(\"Symbolic form:\", p)\n\n# Test numerical evaluation\np_num = p.subs(n, 2).doit()\nprint(\"Numerical evaluation for n=2:\", p_num)\nprint(\"Expected value for n=2:\", (2 + 1/2**0)*(2 + 1/2**1))\n\n# Test that doit() expands correctly for concrete values\np_concrete = Product(2 + 1/2**k, (k, 0, 1)).doit()\nprint(\"Expanded product:\", p_concrete)\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        13
+      ],
+      "id": "12:str_replace_editor\nstr_replace"
+    },
+    {
+      "label": "str_replace_editor\nstr_replace",
+      "args": {
+        "path": "/workspace/sympy__sympy__1.1/reproduce_issue.py",
+        "old_str": "\np = Product(n + 1/2**k, (k, 0, n-1)\n",
+        "new_str": "\np = Product(n + 1/2**k, (k, 0, n-1))\n",
+        "edit_status": "success"
+      },
+      "phase": "patch",
+      "step_indices": [
+        14
+      ],
+      "id": "13:str_replace_editor\nstr_replace"
+    }
+  ],
+  "edges": [
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "0:empty action",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "1",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "2:find",
+      "key": 0
+    },
+    {
+      "label": "3",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "4:find",
+      "key": 0
+    },
+    {
+      "label": "6",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "7:python",
+      "key": 0
+    },
+    {
+      "label": "8",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "7:python",
+      "key": 1
+    },
+    {
+      "label": "10",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "7:python",
+      "key": 2
+    },
+    {
+      "label": "15",
+      "type": "exec",
+      "source": "1:cd",
+      "target": "7:python",
+      "key": 3
+    },
+    {
+      "label": "2",
+      "type": "exec",
+      "source": "2:find",
+      "target": "3:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "3",
+      "type": "exec",
+      "source": "3:str_replace_editor\nview",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "4",
+      "type": "exec",
+      "source": "4:find",
+      "target": "5:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "5",
+      "type": "exec",
+      "source": "5:str_replace_editor\nview",
+      "target": "6:str_replace_editor\ncreate",
+      "key": 0
+    },
+    {
+      "label": "6",
+      "type": "exec",
+      "source": "6:str_replace_editor\ncreate",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "7",
+      "type": "exec",
+      "source": "7:python",
+      "target": "8:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "9",
+      "type": "exec",
+      "source": "7:python",
+      "target": "9:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "11",
+      "type": "exec",
+      "source": "7:python",
+      "target": "10:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "8",
+      "type": "exec",
+      "source": "8:str_replace_editor\nstr_replace",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "10",
+      "type": "exec",
+      "source": "9:str_replace_editor\nstr_replace",
+      "target": "1:cd",
+      "key": 0
+    },
+    {
+      "label": "12",
+      "type": "exec",
+      "source": "10:str_replace_editor\nstr_replace",
+      "target": "11:str_replace_editor\nview",
+      "key": 0
+    },
+    {
+      "label": "13",
+      "type": "exec",
+      "source": "11:str_replace_editor\nview",
+      "target": "12:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "14",
+      "type": "exec",
+      "source": "12:str_replace_editor\nstr_replace",
+      "target": "13:str_replace_editor\nstr_replace",
+      "key": 0
+    },
+    {
+      "label": "15",
+      "type": "exec",
+      "source": "13:str_replace_editor\nstr_replace",
+      "target": "1:cd",
+      "key": 0
+    }
+  ]
+}

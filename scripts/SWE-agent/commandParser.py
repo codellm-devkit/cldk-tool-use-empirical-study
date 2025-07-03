@@ -1,7 +1,8 @@
 import yaml
 import shlex
 import re
-from typing import Dict, List, Optional, Union, Any
+import bashlex
+from typing import Dict, List, Optional, Any
 
 
 class ToolDefinition:
@@ -105,25 +106,54 @@ class CommandParser:
             except Exception as e:
                 print(f"Failed to load YAML from {path}: {e}")
 
+    def is_complex(self, cmd_str: str) -> bool:
+        try:
+            parts = bashlex.parse(cmd_str)
+            for part in parts:
+                if self._has_control_structure(part):
+                    return True
+            return False
+        except bashlex.errors.ParsingError:
+            return True  # treat parsing errors as complex
+
+    def _has_control_structure(self, node) -> bool:
+        if hasattr(node, 'kind') and node.kind in {
+            'if', 'for', 'while', 'until', 'case', 'function'
+        }:
+            return True
+        if hasattr(node, 'parts'):
+            for part in node.parts:
+                if self._has_control_structure(part):
+                    return True
+        if hasattr(node, 'list'):
+            for sub in node.list:
+                if self._has_control_structure(sub):
+                    return True
+        return False
+
     def split_env_and_command(self, cmd_str: str) -> List[str]:
-        """Split command string into environment assignment and actual command(s)."""
-        # e.g., "FOO=bar BAZ=qux python run.py && echo done"
-        env_pattern = re.compile(r"^((?:\w+=[^ ]+\s*)+)(.*)")
-        match = env_pattern.match(cmd_str)
+        env_pattern = re.compile(r"^((?:\w+=[^ \t\n\r\f\v]+[ \t]*)+)(.+)?")
+        match = env_pattern.match(cmd_str.strip())
+
+        def split_sequential(cmd: str) -> List[str]:
+            return [c for c in re.split(r'\s*(?:&&|\|\||;)\s*', cmd.strip()) if c]
+
         if match:
             env_part = match.group(1).strip()
-            cmd_part = match.group(2).strip()
-            return [env_part] if not cmd_part else [env_part, *[c.strip() for c in cmd_part.split("&&") if c.strip()]]
+            rest = match.group(2) or ""
+            return [env_part] + split_sequential(rest)
         else:
-            return [c.strip() for c in cmd_str.split("&&") if c.strip()]
+            return split_sequential(cmd_str)
 
     def parse(self, cmd_str: str) -> List[Dict[str, Any]]:
+        if self.is_complex(cmd_str):
+            return [{"command": "complex_command", "args": [cmd_str.strip()]}]
+
         parts = self.split_env_and_command(cmd_str)
         results = []
 
         for subcmd in parts:
             if re.fullmatch(r"\w+=.+", subcmd.strip()) or all("=" in token for token in subcmd.strip().split()):
-                # It's a standalone env assignment
                 results.append({"command": "set_env", "args": [subcmd.strip()]})
                 continue
 
@@ -193,9 +223,9 @@ class CommandParser:
 if __name__ == "__main__":
     parser = CommandParser()
     parser.load_tool_yaml_files([
-        "tools/edit_anthropic/config.yaml",
-        "tools/review_on_submit_m/config.yaml",
-        "tools/registry/config.yaml"
+        "../../SWE-agent/tools/edit_anthropic/config.yaml",
+        "../../SWE-agent/tools/review_on_submit_m/config.yaml",
+        "../../SWE-agent/tools/registry/config.yaml"
     ])
 
     commands = [
@@ -211,7 +241,7 @@ if __name__ == "__main__":
         "python3 script.py --input=data.txt --verbose",
         "cd /project && python3 run.py",
         "PYTHONPATH=/testbed",
-        "PYTHONPATH=/testbed python3 main.py"
+        "PYTHONPATH=/project python3 script.py --input file.txt && echo \"done\" ; rm temp.log"
     ]
 
     for cmd in commands:
@@ -219,3 +249,17 @@ if __name__ == "__main__":
         print(f"\n>>> {cmd}")
         for r in result:
             print(r)
+
+    complex_bash = """
+for file in $(git status --porcelain | grep -E "^(M| M|\\?\\?|A| A)" | cut -c4-); do
+    if [ -f "$file" ] && (file "$file" | grep -q "executable" || git check-attr binary "$file" | grep -q "binary: set"); then
+        git rm -f "$file" 2>/dev/null || rm -f "$file"
+        echo "Removed: $file"
+    fi
+done
+    """
+
+    result = parser.parse(complex_bash)
+    print(f"\n>>> Complex Bash:\n{complex_bash}")
+    for r in result:
+        print(r)
