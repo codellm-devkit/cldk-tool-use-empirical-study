@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+"""Structural Searcher Tool
+================================================
+Structure‑aware search for SWE‑Agent.
+
+Commands
+--------
+* `locate_entity` – locate a class / function / method definition.
+* `find_code`     – locate function / method blocks containing a snippet.
+
+The tool automatically regenerates a **symbol table** using
+`codeanalyzer-python` (analysis‑level 1) **only** when a project‑wide hash of
+`.py` files changes.  Output styling mirrors `str_replace_editor` so the agent
+understands the response.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+# ---------------------------------------------------------------------------
+# Constants shared with str_replace_editor
+# ---------------------------------------------------------------------------
+TRUNCATED_MESSAGE = (
+    "<response clipped><NOTE>To save on context, only part of the code has been "
+    "shown. Use `str_replace_editor view --view_range` to inspect full block.</NOTE>"
+)
+MAX_RESPONSE_LEN = 16000
+
+
+# ---------------------------------------------------------------------------
+# Helpers – hash & safe subprocess execution
+# ---------------------------------------------------------------------------
+
+def project_sha256(root: Path) -> str:
+    sha = hashlib.sha256()
+    for py in sorted(root.rglob("*.py")):
+        try:
+            st = py.stat()
+        except FileNotFoundError:
+            continue
+        sha.update(str(py.relative_to(root)).encode())
+        sha.update(str(st.st_mtime_ns).encode())
+        sha.update(str(st.st_size).encode())
+    return sha.hexdigest()
+
+
+def run_cmd(cmd: List[str]) -> subprocess.CompletedProcess[str]:
+    """Run command and return CompletedProcess.  Propagate CalledProcessError."""
+    return subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+
+# ---------------------------------------------------------------------------
+# Symbol‑table search engine
+# ---------------------------------------------------------------------------
+class SymbolTableSearch:
+    def __init__(self, project_root: Path):
+        self.project_root = project_root.resolve()
+        self.output_dir = self.project_root / ".codeanalyzer_output"
+        self.output_json = self.output_dir / "analysis.json"
+        self.hash_file = self.output_dir / ".project_hash"
+        self.symbol_table = self._load_or_build()
+        self._entity_index: Dict[str, Dict[str, Any]] = {}
+        self._index_entities()
+
+    # ---------------- private helpers ----------------
+    def _load_or_build(self) -> Dict[str, Any]:
+        cur = project_sha256(self.project_root)
+        if self.output_json.exists() and self.hash_file.exists():
+            if self.hash_file.read_text() == cur:
+                return json.loads(self.output_json.read_text())["symbol_table"]
+
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        cmd_cli = [
+            "codeanalyzer",
+            "--input",
+            str(self.project_root),
+            "--analysis-level",
+            "1",
+            "--output",
+            str(self.output_dir),
+            "--format",
+            "json",
+        ]
+        try:
+            run_cmd(cmd_cli)
+        except FileNotFoundError:
+            # fall back to `python -m codeanalyzer`
+            cmd_cli = [
+                sys.executable,
+                "-m",
+                "codeanalyzer",
+                "--input",
+                str(self.project_root),
+                "--analysis-level",
+                "1",
+                "--output",
+                str(self.output_dir),
+            ]
+            run_cmd(cmd_cli)
+        except subprocess.CalledProcessError as e:
+            print(f"<ERROR>codeanalyzer failed. STDERR:\n{e.stderr}")
+            sys.exit(10)
+
+        if not self.output_json.exists():
+            print("<ERROR>analysis.json not produced by codeanalyzer.")
+            sys.exit(11)
+        self.hash_file.write_text(cur)
+        return json.loads(self.output_json.read_text())["symbol_table"]
+
+    def _index_entities(self):
+        for fp, module in self.symbol_table.items():
+            for fn_name, fn in module.get("functions", {}).items():
+                self._entity_index[fn_name] = {**fn, "file": fp, "kind": "function"}
+            for cls in module.get("classes", {}).values():
+                self._entity_index[cls["name"]] = {**cls, "file": fp, "kind": "class"}
+                for m_name, m in cls.get("methods", {}).items():
+                    fq = f"{cls['name']}.{m_name}"
+                    self._entity_index[fq] = {**m, "file": fp, "kind": "method"}
+                    if m_name not in self._entity_index:
+                        self._entity_index[m_name] = {**m, "file": fp, "kind": "method"}
+
+    # ---------------- user‑facing API ----------------
+    def locate_entity(self, name: str) -> str:
+        node = self._entity_index.get(name) or next(
+            (v for k, v in self._entity_index.items() if k.endswith(f".{name}")),
+            None,
+        )
+        if not node:
+            return (
+                f"<ERROR>Entity `{name}` not found.</ERROR>\n"
+                "<HINT>Use fully‑qualified names like `MyClass.my_method` or run directory views to discover names.</HINT>"
+            )
+        return self._block_to_text(node, descriptor=name)
+
+    def find_code(self, snippet: str) -> str:
+        norm = lambda s: "".join(s.split())
+        target = norm(snippet)
+        hits: List[Dict[str, Any]] = []
+        for fp, mod in self.symbol_table.items():
+            for fn in mod.get("functions", {}).values():
+                if target in norm(fn["code"]):
+                    hits.append({**fn, "file": fp})
+            for cls in mod.get("classes", {}).values():
+                for method in cls.get("methods", {}).values():
+                    if target in norm(method["code"]):
+                        hits.append({**method, "file": fp})
+        if not hits:
+            return "<ERROR>No function/method contains the provided snippet.</ERROR>"
+        return "\n\n".join(self._block_to_text(h, descriptor="matched block") for h in hits)
+
+    # ---------------- formatting ----------------
+    def _block_to_text(self, node: Dict[str, Any], *, descriptor: str) -> str:
+        code = node["code"]
+        if len(code) > MAX_RESPONSE_LEN:
+            code = code[:MAX_RESPONSE_LEN] + "\n" + TRUNCATED_MESSAGE
+        start, end = node["start_line"], node["end_line"]
+        numbered = "\n".join(f"{i+start:6}\t{ln}" for i, ln in enumerate(code.splitlines()))
+        return f"Here's the definition for {descriptor} in {node['file']} (lines {start}-{end}):\n" + numbered
+
+
+# ---------------------------------------------------------------------------
+# CLI wrapper (called by SWE‑Agent)
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="structure‑aware search tool")
+    parser.add_argument("command", choices=["locate_entity", "find_code"], help="Sub‑command")
+    parser.add_argument("project", help="Absolute path to project root")
+    parser.add_argument("--entity", type=str, nargs="?", help="Entity name when using locate_entity")
+    parser.add_argument("--code_snippet", type=str, nargs="?", help="Snippet when using find_code")
+    args = parser.parse_args()
+
+    proj = Path(args.project)
+    if not proj.is_dir():
+        print(f"<ERROR>Project path `{proj}` is not a directory.</ERROR>")
+        sys.exit(2)
+
+    searcher = SymbolTableSearch(proj)
+
+    if args.command == "locate_entity":
+        if not args.entity:
+            print("<ERROR>Missing <entity> argument for locate_entity.</ERROR>")
+            sys.exit(3)
+        print(searcher.locate_entity(args.entity))
+    else:  # find_code
+        if not args.code_snippet:
+            print("<ERROR>Missing <code_snippet> argument for find_code.</ERROR>")
+            sys.exit(4)
+        print(searcher.find_code(args.code_snippet))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except subprocess.CalledProcessError as exc:
+        print(f"<ERROR>Subprocess failed: {exc.stderr}")
+        sys.exit(5)

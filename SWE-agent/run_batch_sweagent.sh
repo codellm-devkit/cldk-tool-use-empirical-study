@@ -1,5 +1,5 @@
 sweagent run-batch \
-    --config config/anthropic_filemap.yaml \
+    --config config/structural_search.yaml \
     --agent.model.name deepseek/deepseek-chat \
     --num_workers 1 \
     --agent.model.per_instance_cost_limit 2.00 \
@@ -7,5 +7,5 @@ sweagent run-batch \
     --instances.type swe_bench \
     --instances.subset verified \
     --instances.split test  \
-    --instances.slice :1 \
+    --instances.slice 301:302 \
     --instances.shuffle=False \

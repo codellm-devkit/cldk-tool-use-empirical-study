@@ -6,6 +6,7 @@ from gsppy.gsp import GSP
 import getpass
 import pandas as pd
 from collections import defaultdict, Counter
+from statistics import mean
 
 # --------------------------- Graph Analyzer ---------------------------
 class TrajectoryGraphAnalyzer:
@@ -31,13 +32,13 @@ class TrajectoryGraphAnalyzer:
             "longest_path": self.get_longest_simple_path(),
             "most_freq_node": mf_node.replace("\n", " ") if mf_node else None,
             "most_freq_node_freq": self.get_frequency(mf_node),
-            "in_degree_most_freq": self.get_in_degree(mf_node),
-            "out_degree_most_freq": self.get_out_degree(mf_node),
+            # "in_degree_most_freq": self.get_in_degree(mf_node),
+            # "out_degree_most_freq": self.get_out_degree(mf_node),
             "loc_focus_ratio": loc["focus_ratio"],
             "loc_dominant_zone": loc["dominant_zone"],
             "loc_cluster_num": loc["num_clusters"],
             "loc_avg_node_freq": loc["loc_avg_node_freq"],
-            "total_execution_time": self.get_total_execution_time(),
+            # "total_execution_time": self.get_total_execution_time(),
         }
 
     def get_exec_edges(self):
@@ -122,11 +123,11 @@ class TrajectoryGraphAnalyzer:
         step_sequence.sort(key=lambda x: x[0])
         return [n.get("label", "Unknown").replace('\n', ': ').strip() for _, n in step_sequence]
 
-    def get_total_execution_time(self):
-        total = 0.0
-        for _, data in self.graph.nodes(data=True):
-            total += sum(data.get("execution_time", []))
-        return round(total, 2)
+    # def get_total_execution_time(self):
+    #     total = 0.0
+    #     for _, data in self.graph.nodes(data=True):
+    #         total += sum(data.get("execution_time", []))
+    #     return round(total, 2)
     
     def get_localization_summary(self):
         """
@@ -185,6 +186,148 @@ class TrajectoryGraphAnalyzer:
             loc_avg_node_freq=loc_avg_freq
         )
 
+    def get_patch_summary(self):
+        """
+        Analyze patching behavior from a trajectory graph.
+
+        Returns:
+            dict: A summary of patch-related metrics, including:
+                - patch_total: total number of patch attempts.
+                - patch_success: count of successful patch attempts.
+                - fail_types: breakdown of all failure types encountered.
+                - fail_streaks: dict with max, average, and count of consecutive failed patch attempts.
+                - flip_flop: True if an edit is undone by a reverse change.
+                - repeat_failed_edit: True if a previously failed patch is attempted and failed again.
+                - abandonment: True if there is no successful patch in the entire sequence.
+                - fail_to_success_patterns: common reasoning phase transitions from a failed to successful patch.
+        """
+        patch_nodes = []
+        step_node_map = {}
+
+        # First, extract all patch nodes and build a step-to-node map
+        for node_id, data in self.graph.nodes(data=True):
+            phase = data.get("phase", "")
+            if phase == "patch":
+                for step in data.get("step_indices", []):
+                    patch_nodes.append((step, node_id, data))
+            for step in data.get("step_indices", []):
+                step_node_map[step] = (node_id, data)
+
+        # Sort the patch_nodes based on step indices
+        patch_nodes.sort(key=lambda x: x[0])
+        patch_steps = sorted(step_node_map.keys())
+
+        patch_total = len(patch_nodes)
+        patch_success = 0
+        fail_types = Counter()
+        fail_streaks = []
+        seen_edits = set()
+        flip_flop = False
+        repeat_failed_edit = False
+        abandonment = False
+        edit_history = []
+        current_streak = 0
+        reasoning_between_patches = []
+        fail_to_success_phases = []
+        reasoning_transitions = Counter()
+        fail_success_transitions = Counter()
+
+        previous_status = None
+        previous_edit = None
+        previous_step = None
+
+        # Reasoning span detection between patches
+        for i in range(len(patch_steps) - 1):
+            span = list(range(patch_steps[i] + 1, patch_steps[i + 1]))
+            phases = []
+            for s in span:
+                _, node_data = step_node_map.get(s, (None, {}))
+                if node_data:
+                    phase = node_data.get("phase", "unknown")
+                    if phase != "patch":
+                        phases.append(phase)
+            if phases:
+                reasoning_between_patches.append(phases)
+                deduped = [p for i, p in enumerate(phases) if i == 0 or p != phases[i-1]]
+                reasoning_transitions[tuple(deduped)] += 1
+
+        for step, node_id, data in patch_nodes:
+            args = data.get("args", {})
+            path = args.get("path", "")
+            old_str = args.get("old_str", "")
+            new_str = args.get("new_str", "")
+            status_raw = args.get("edit_status", "")
+            edit_key = (path, old_str, new_str)
+
+            # Normalize status
+            if status_raw.strip() == "success":
+                status = "success"
+                patch_success += 1
+                if current_streak > 0:
+                    fail_streaks.append(current_streak)
+                    current_streak = 0
+            else:
+                status = status_raw.replace("failure: ", "").strip()
+                current_streak += 1
+                fail_types[status] += 1
+                if edit_key in seen_edits:
+                    repeat_failed_edit = True
+
+            if edit_history and edit_key == (edit_history[-1][0], edit_history[-1][2], edit_history[-1][1]):
+                flip_flop = True
+
+            if previous_status != "success" and status == "success":
+                if previous_step is not None:
+                    span = list(range(previous_step + 1, step))
+                    inter_phases = []
+                    for s in span:
+                        _, node_data = step_node_map.get(s, (None, {}))
+                        if node_data:
+                            phase = node_data.get("phase", "unknown")
+                            if phase != "patch":
+                                inter_phases.append(phase)
+                    if inter_phases:
+                        fail_to_success_phases.append(inter_phases)
+                        deduped = [p for i, p in enumerate(inter_phases) if i == 0 or p != inter_phases[i-1]]
+                        fail_success_transitions[tuple(deduped)] += 1
+
+            seen_edits.add(edit_key)
+            edit_history.append(edit_key)
+            previous_edit = edit_key
+            previous_status = status
+            previous_step = step
+
+        if current_streak > 0:
+            fail_streaks.append(current_streak)
+        if patch_total > 0 and patch_success == 0:
+            abandonment = True
+
+        max_fail_streak = max(fail_streaks) if fail_streaks else 0
+        avg_fail_streak = round(mean(fail_streaks), 2) if fail_streaks else 0
+        num_fail_streaks = len(fail_streaks)
+
+        full_fail_types = {
+            "not found": 0,
+            "no change": 0,
+            "multiple occurrences": 0,
+            "unknown": 0
+        }
+        full_fail_types.update(fail_types)
+
+        return {
+            "patch_total": patch_total,
+            "patch_success": patch_success,
+            "fail_types": dict(full_fail_types),
+            "fail_streaks": {
+                "max": max_fail_streak,
+                "avg": avg_fail_streak,
+                "count": num_fail_streaks
+            },
+            "flip_flop": flip_flop,
+            "repeat_failed_edit": repeat_failed_edit,
+            "abandonment": abandonment,
+            "fail_to_success_patterns": fail_success_transitions.most_common(3),
+        }
 
 # --------------------------- GSP Miner ---------------------------
 class SequentialPatternMiner:
@@ -222,6 +365,123 @@ class SequentialPatternMiner:
         return [(pat, freq) for pat, freq in flat if len(pat) == max_len]
 
 
+# --------------------------- Patch Stats Group Summary ---------------------------
+def summarize_patch_stats(patch_stats_list):
+    numeric_fields = ["patch_total", "patch_success"]
+    summed_flags = ["flip_flop", "repeat_failed_edit", "abandonment"]
+    streak_maxes, streak_avgs, streak_counts = [], [], []
+
+    # reasoning_counter = Counter()
+    fail_success_counter = Counter()
+    fail_types_sum = Counter()
+
+    result = {f: 0 for f in numeric_fields + summed_flags}
+
+    for entry in patch_stats_list:
+        for f in numeric_fields:
+            result[f] += entry.get(f, 0)
+        for f in summed_flags:
+            result[f] += int(entry.get(f, False))
+
+        fs = entry.get("fail_streaks", {})
+        streak_maxes.append(fs.get("max", 0))
+        streak_avgs.append(fs.get("avg", 0))
+        streak_counts.append(fs.get("count", 0))
+
+        fail_types_sum.update(entry.get("fail_types", {}))
+
+        if entry.get("fail_to_success_patterns"):
+            fail_success_counter.update([tuple(entry["fail_to_success_patterns"][0][0])])
+
+    n = len(patch_stats_list)
+    result["avg_patch_total"] = round(result["patch_total"] / n, 2) if n else 0
+    result["avg_patch_success"] = round(result["patch_success"] / n, 2) if n else 0
+    result["avg_max_fail_streak"] = round(sum(streak_maxes) / n, 2) if n else 0
+    result["avg_avg_fail_streak"] = round(sum(streak_avgs) / n, 2) if n else 0
+    result["avg_fail_streak_count"] = round(sum(streak_counts) / n, 2) if n else 0
+    result["top_fail_to_success"] = fail_success_counter.most_common(1)[0][0] if fail_success_counter else "N/A"
+    result["fail_types_sum"] = dict(fail_types_sum)
+    return result
+
+def write_summary_file(filename, category_name, category_data):
+    with open(filename, "w") as fout:
+        fout.write(f"===== Category: {category_name} ({len(category_data['phases'])} instances) =====\n")
+        if not category_data["metrics"]:
+            fout.write("No data.\n")
+            return
+
+        df_k = pd.DataFrame(category_data["metrics"])
+
+        # ---------- General Metrics ----------
+        fout.write("\n-- Averaged General Metrics --\n")
+        drop_cols = [
+            "most_freq_node", "instance", "difficulty", "patch_difficulty", "resolution",
+            "loc_focus_ratio", "loc_dominant_zone", "loc_cluster_num", "loc_avg_node_freq",
+            "patch_total", "patch_success",
+            "fail_streak_max", "fail_streak_avg", "fail_streak_count",
+            "reasoning_transition_patterns", "fail_to_success_patterns",
+            "flip_flop", "repeat_failed_edit", "abandonment",
+        ]
+        drop_cols += [col for col in df_k.columns if col.startswith("fail_type_")]
+        general_avg = df_k.drop(columns=drop_cols, errors='ignore').mean(numeric_only=True).round(2)
+        fout.write(general_avg.to_string())
+
+        # ---------- Localization Focus & Clusters ----------
+        fout.write("\n\n-- Localization Focus & Clusters --\n")
+        mean_focus = df_k["loc_focus_ratio"].mean().round(2)
+        mean_clusters = df_k["loc_cluster_num"].mean().round(2)
+        zone_counter = Counter(category_data["dominant_zones"])
+        total = sum(zone_counter.values())
+        zone_percents = {zone: f"{(count / total * 100):.1f}%" for zone, count in zone_counter.items()}
+        fout.write(f"Mean Localization Focus Ratio: {mean_focus}\n")
+        fout.write(f"Mean Number of Localization Clusters: {mean_clusters}\n")
+        fout.write("Dominant Zone Distribution:\n")
+        for zone in ["early", "middle", "late", "mixed", "none"]:
+            percent = zone_percents.get(zone, "0.0%")
+            fout.write(f"  {zone}: {percent}\n")
+        fout.write("\nTop Instances with High Localization Node Frequency (>1):\n")
+        top_freqs = sorted(category_data["top_loc_info"], key=lambda x: x[1], reverse=True)[:5]
+        if not top_freqs:
+            fout.write("  None found.\n")
+        else:
+            for inst, freq, focus, dom in top_freqs:
+                fout.write(f"  {inst} | AvgFreq: {freq:.2f} | LocPercent: {focus:.2f} | Dominant: {dom}\n")
+
+        # ---------- Phase & Action Patterns ----------
+        fout.write("\n-- Phase Patterns --\n")
+        pm = SequentialPatternMiner(category_data["phases"])
+        for p, f in pm.get_most_frequent_patterns(pm.find_frequent_patterns()):
+            fout.write(f"Most Frequent: {p}: {f}\n")
+        for p, f in pm.get_longest_patterns(pm.find_frequent_patterns()):
+            fout.write(f"Longest: {p}: {f}\n")
+        fout.write("\n-- Action Patterns --\n")
+        am = SequentialPatternMiner(category_data["labels"])
+        for p, f in am.get_most_frequent_patterns(am.find_frequent_patterns()):
+            fout.write(f"Most Frequent: {p}: {f}\n")
+        for p, f in am.get_longest_patterns(am.find_frequent_patterns()):
+            fout.write(f"Longest: {p}: {f}\n")
+
+        fout.write("\n-- Most Frequent Nodes --\n")
+        for label, count in category_data["freq_nodes"].most_common():
+            fout.write(f"{label}: {count}\n")
+
+        # ---------- Patch Behavior Metrics ----------
+        fout.write("\n-- Patch Behavior Summary --\n")
+        patch_summary = summarize_patch_stats(category_data["patches"])
+        fout.write(f"Avg Patch Total: {patch_summary['avg_patch_total']}\n")
+        fout.write(f"Avg Patch Success: {patch_summary['avg_patch_success']}\n")
+        fout.write(f"Avg Max Fail Streak: {patch_summary['avg_max_fail_streak']}\n")
+        fout.write(f"Avg Avg Fail Streak: {patch_summary['avg_avg_fail_streak']}\n")
+        fout.write(f"Avg Fail Streak Count: {patch_summary['avg_fail_streak_count']}\n")
+        fout.write(f"Total Flip-Flop Edits: {patch_summary['flip_flop']}\n")
+        fout.write(f"Total Repeat Failed Edits: {patch_summary['repeat_failed_edit']}\n")
+        fout.write(f"Total Abandonment Cases: {patch_summary['abandonment']}\n")
+        fout.write(f"Top Fail-to-Success Transition Pattern: {patch_summary['top_fail_to_success']}\n")
+        fail_order = ["not found", "no change", "multiple occurrences", "unknown"]
+        for kf in fail_order:
+            vf = patch_summary["fail_types_sum"].get(kf, 0)
+            fout.write(f"  {kf}: {vf}\n")
+
 # --------------------------- Main Analysis ---------------------------
 if __name__ == "__main__":
     user = getpass.getuser()
@@ -240,9 +500,10 @@ if __name__ == "__main__":
         "phases": [],
         "labels": [],
         "metrics": [],
+        "patches": [],
         "freq_nodes": Counter(),
         "dominant_zones": [],
-        "top_loc_info": []  # NEW: store tuple of (id, avg_loc_freq, loc_percent, dominant)
+        "top_loc_info": []
     })
     rows = []
 
@@ -255,8 +516,10 @@ if __name__ == "__main__":
 
             analyzer = TrajectoryGraphAnalyzer(data)
             metrics = analyzer.get_metric_dict()
+            patch_stats = analyzer.get_patch_summary()
             phases = analyzer.extract_phase_sequence()
             labels = analyzer.extract_label_sequence()
+
             mf_node = metrics["most_freq_node"]
             freq_node = mf_node.split(":")[-1].strip() if mf_node else "Unknown"
 
@@ -264,95 +527,73 @@ if __name__ == "__main__":
             difficulty_raw = data.get("graph", {}).get("difficulty", "unknown")
             difficulty = difficulty_rename.get(difficulty_raw, difficulty_raw)
             patch_difficulty = data.get("graph", {}).get("patch_difficulty", "unknown")
-
+            files_changed = "single" if data.get("graph", {}).get("files_change", 0) == 1 else "multiple"
             inst_id = data.get("graph", {}).get("instance_name")
             avg_loc_freq = metrics["loc_avg_node_freq"]
             loc_focus_ratio = metrics["loc_focus_ratio"]
             dominant = metrics["loc_dominant_zone"]
 
-            keys = [resolution, difficulty, f"{resolution}_{difficulty}"]
+            keys = [resolution, difficulty, files_changed, f"{resolution}_{difficulty}", f"{resolution}_{files_changed}"]
             for k in keys:
                 categories[k]["phases"].append(phases)
                 categories[k]["labels"].append(labels)
                 categories[k]["metrics"].append(metrics)
+                categories[k]["patches"].append(patch_stats)
                 categories[k]["freq_nodes"][freq_node] += 1
                 categories[k]["dominant_zones"].append(dominant)
                 if avg_loc_freq > 1:
                     categories[k]["top_loc_info"].append((inst_id, avg_loc_freq, loc_focus_ratio, dominant))
 
-            metrics["difficulty"] = difficulty
-            metrics["patch_difficulty"] = patch_difficulty
-            metrics["resolution"] = resolution
-            metrics["instance"] = inst_id
+            # Flatten patch stats for CSV
+            flat_patch_stats = patch_stats.copy()
+            fs = flat_patch_stats.pop("fail_streaks", {})
+            flat_patch_stats["fail_streak_max"] = fs.get("max", 0)
+            flat_patch_stats["fail_streak_avg"] = fs.get("avg", 0)
+            flat_patch_stats["fail_streak_count"] = fs.get("count", 0)
+
+            fail_types = flat_patch_stats.pop("fail_types", {})
+            for kf, vf in fail_types.items():
+                flat_patch_stats[f"fail_type_{kf}"] = vf
+
+            for k in ["fail_to_success_patterns"]:
+                val = flat_patch_stats.get(k, [])
+                flat_patch_stats[k] = str(val[0][0]) if val else "N/A"
+
+            metrics.update({
+                "difficulty": difficulty,
+                "patch_difficulty": patch_difficulty,
+                "resolution": resolution,
+                "instance": inst_id
+            })
+            metrics.update(flat_patch_stats)
             rows.append(metrics)
 
     df = pd.DataFrame(rows)
     df.to_csv(os.path.join(out_dir, "trajectory_metrics.csv"), index=False)
 
+    # Per-category summaries
     for k, v in categories.items():
         filename = k.replace(" ", "_").replace("<", "lt").replace(">", "gt").replace("/", "-")
-        with open(os.path.join(out_dir, f"{filename}.txt"), "w") as fout:
-            fout.write(f"===== Category: {k} ({len(v['phases'])} instances) =====\n")
-            if not v["metrics"]:
-                fout.write("No data.\n")
-                continue
+        write_summary_file(os.path.join(out_dir, f"{filename}.txt"), k, v)
 
-            df_k = pd.DataFrame(v["metrics"])
+    # Overall summary across all instances
+    resolutions = set(k for k in categories.keys() if "_" not in k and k in ["single", "multiple"])
+    aggregated = {
+        "phases": [],
+        "labels": [],
+        "metrics": [],
+        "patches": [],
+        "freq_nodes": Counter(),
+        "dominant_zones": [],
+        "top_loc_info": []
+    }
+    for r in resolutions:
+        for k in categories:
+            if k == r:
+                for field in aggregated:
+                    if isinstance(aggregated[field], list):
+                        aggregated[field].extend(categories[k][field])
+                    else:
+                        aggregated[field] += categories[k][field]
 
-            # ---------- General Metrics ----------
-            fout.write("\n-- Averaged General Metrics --\n")
-            drop_cols = ["most_freq_node", "instance",
-                         "loc_focus_ratio", "loc_dominant_zone",
-                         "loc_cluster_num", "loc_avg_node_freq"]
-            general_avg = df_k.drop(columns=drop_cols).mean(numeric_only=True).round(2)
-            fout.write(general_avg.to_string())
-            # for _, val in general_avg.items():
-            #     fout.write(f"{val}\n")
-
-            # ---------- Localization Focus & Clusters ----------
-            fout.write("\n\n-- Localization Focus & Clusters --\n")
-            mean_focus = df_k["loc_focus_ratio"].mean().round(2)
-            mean_clusters = df_k["loc_cluster_num"].mean().round(2)
-
-            zone_counter = Counter(v["dominant_zones"])
-            total = sum(zone_counter.values())
-            zone_percents = {zone: f"{(count/total*100):.1f}%" for zone, count in zone_counter.items()}
-
-            fout.write(f"Mean Localization Focus Ratio: {mean_focus}\n")
-            fout.write(f"Mean Number of Localization Clusters: {mean_clusters}\n")
-            fout.write("Dominant Zone Distribution:\n")
-            for zone in ["early", "middle", "late", "mixed", "none"]:
-                percent = zone_percents.get(zone, "0.0%")
-                fout.write(f"  {zone}: {percent}\n")
-
-            # ---------- NEW: Top instances by loc avg freq > 1 ----------
-            fout.write("\nTop Instances with High Localization Node Frequency (>1):\n")
-            top_freqs = sorted(v["top_loc_info"], key=lambda x: x[1], reverse=True)[:5]
-            if not top_freqs:
-                fout.write("  None found.\n")
-            else:
-                for inst, freq, focus, dom in top_freqs:
-                    fout.write(f"  {inst} | AvgFreq: {freq:.2f} | LocPercent: {focus:.2f} | Dominant: {dom}\n")
-
-            # ---------- Phase Patterns ----------
-            fout.write("\n-- Phase Patterns --\n")
-            pm = SequentialPatternMiner(v["phases"])
-            ppat = pm.find_frequent_patterns()
-            for p, f in pm.get_most_frequent_patterns(ppat):
-                fout.write(f"Most Frequent: {p}: {f}\n")
-            for p, f in pm.get_longest_patterns(ppat):
-                fout.write(f"Longest: {p}: {f}\n")
-
-            # ---------- Action Patterns ----------
-            fout.write("\n-- Action Patterns --\n")
-            am = SequentialPatternMiner(v["labels"])
-            apat = am.find_frequent_patterns()
-            for p, f in am.get_most_frequent_patterns(apat):
-                fout.write(f"Most Frequent: {p}: {f}\n")
-            for p, f in am.get_longest_patterns(apat):
-                fout.write(f"Longest: {p}: {f}\n")
-
-            # ---------- Most Frequent Nodes ----------
-            fout.write("\n-- Most Frequent Nodes --\n")
-            for label, count in v["freq_nodes"].most_common():
-                fout.write(f"{label}: {count}\n")
+    write_summary_file(os.path.join(out_dir, "summary_all_instances.txt"), "All Instances", aggregated)
