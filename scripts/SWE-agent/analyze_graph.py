@@ -52,6 +52,15 @@ class TrajectoryGraphAnalyzer:
             if d.get("type") == "exec":
                 G_exec.add_edge(u, v)
         return G_exec
+    
+    def get_hier_graph(self):
+        G_hier = nx.DiGraph()
+        for node, data in self.graph.nodes(data=True):
+            G_hier.add_node(node, **data)
+        for u, v, d in self.graph.edges(data=True):
+            if d.get("type") == "hier":
+                G_hier.add_edge(u, v)
+        return G_hier
 
     def get_loop_count(self):
         return sum(1 for _ in nx.simple_cycles(self.get_exec_graph()))
@@ -131,30 +140,52 @@ class TrajectoryGraphAnalyzer:
     
     def get_localization_summary(self):
         """
-        Returns:
+        Returns localization behavior metrics:
         - focus_ratio: percent of actions that are localization
         - dominant_zone: early/middle/late/mixed/none
         - num_clusters: number of contiguous localization clusters
         - loc_avg_node_freq: mean revisit frequency of unique localization nodes
+        - max_view_depth: deepest hierarchical level visited
+        - scroll_behavior: True if agent scrolls up/down to explore overlapping views in same file
+        - num_deep_zooms_without_edit: Leaf-viewed paths without corresponding edits
         """
-        # Ordered phases
         steps = []
         loc_nodes_freq = []
+        loc_ranges_by_path = defaultdict(list)
+
+        edit_paths = set()
+        for _, data in self.graph.nodes(data=True):
+            label = data.get("label", "")
+            if label == "str_replace_editor\nstr_replace" or label == "str_replace_editor\ncreate" or label == "str_replace_editor\ninsert":
+                path = data.get("args", {}).get("path")
+                if path:
+                    edit_paths.add(path)
+
         for node_id, data in self.graph.nodes(data=True):
             phase = data.get("phase", "general")
             freq = len(data.get("step_indices", []))
             if phase == "localization":
                 loc_nodes_freq.append(freq)
+
+                view_range = data.get("args", {}).get("view_range")
+                path = data.get("args", {}).get("path")
+                if isinstance(view_range, (list, tuple)) and len(view_range) == 2 and path:
+                    loc_ranges_by_path[path].append(tuple(view_range))
+
             for idx in data.get("step_indices", []):
-                steps.append((idx, phase))
+                steps.append((idx, phase, node_id))
         steps.sort(key=lambda x: x[0])
-        phases = [p for _, p in steps]
+        phases = [p for _, p, _ in steps]
 
         total_actions = len(phases)
         if total_actions == 0:
-            return dict(focus_ratio=0, dominant_zone="none", num_clusters=0, loc_avg_node_freq=0)
+            return dict(
+                focus_ratio=0, dominant_zone="none", num_clusters=0,
+                loc_avg_node_freq=0, max_view_depth=0,
+                scroll_behavior=False, num_deep_zooms_without_edit=0
+            )
 
-        # Bins + clusters
+        # Zone & cluster logic
         bins = [0, 0, 0]
         clusters, current = [], 0
         for i, p in enumerate(phases):
@@ -170,7 +201,6 @@ class TrajectoryGraphAnalyzer:
 
         total_loc = sum(bins)
         ratio = round(total_loc / total_actions, 2)
-
         if total_loc == 0:
             dominant = "none"
         else:
@@ -179,11 +209,62 @@ class TrajectoryGraphAnalyzer:
 
         loc_avg_freq = round(mean(loc_nodes_freq), 2) if loc_nodes_freq else 0
 
+        # --- Hierarchical prefix encoding ---
+        hier_graph = self.get_hier_graph()
+        prefix_map = {}
+        node_path_map = {}  # node_id → path
+
+        def dfs(node, prefix):
+            prefix_map[node] = prefix
+            for i, child in enumerate(hier_graph.successors(node)):
+                dfs(child, f"{prefix}-{i}" if prefix else str(i))
+
+        roots = [n for n in hier_graph.nodes if hier_graph.in_degree(n) == 0]
+        for i, root in enumerate(roots):
+            dfs(root, str(i))
+
+        for node_id, data in self.graph.nodes(data=True):
+            path = data.get("args", {}).get("path")
+            if path:
+                node_path_map[node_id] = path
+
+        exec_order = [prefix_map.get(nid, "") for idx, phase, nid in steps if phase == "localization"]
+        max_view_depth = max((len(p.split("-")) for p in exec_order if p), default=0)
+
+        # --- Scroll behavior detection ---
+        scroll_behavior = False
+        for path, ranges in loc_ranges_by_path.items():
+            if len(ranges) <= 1:
+                continue
+            ranges.sort()
+            for i in range(1, len(ranges)):
+                prev_start, prev_end = ranges[i - 1]
+                curr_start, curr_end = ranges[i]
+                if curr_start <= prev_end:
+                    scroll_behavior = True
+                    break
+            if scroll_behavior:
+                break
+
+        # --- Deep zoom without edit detection ---
+        leaf_nodes = [n for n in hier_graph.nodes if hier_graph.out_degree(n) == 0]
+        leaf_paths = {
+            node_path_map[n] for n in leaf_nodes
+            if n in node_path_map and n in prefix_map  # must be viewed
+        }
+        deep_zooms_without_edit = [
+            p for p in leaf_paths if p not in edit_paths
+        ]
+        num_deep_zooms_without_edit = len(deep_zooms_without_edit)
+
         return dict(
             focus_ratio=ratio,
             dominant_zone=dominant,
             num_clusters=len(clusters),
-            loc_avg_node_freq=loc_avg_freq
+            loc_avg_node_freq=loc_avg_freq,
+            max_view_depth=max_view_depth,
+            scroll_behavior=scroll_behavior,
+            num_deep_zooms_without_edit=num_deep_zooms_without_edit
         )
 
     def get_patch_summary(self):
@@ -395,7 +476,7 @@ def summarize_patch_stats(patch_stats_list):
 
     n = len(patch_stats_list)
     result["avg_patch_total"] = round(result["patch_total"] / n, 2) if n else 0
-    result["avg_patch_success"] = round(result["patch_success"] / n, 2) if n else 0
+    result["patch_success_rate"] = round(result["patch_success"] / result["patch_total"], 2) if result["patch_total"] > 0 else 0
     result["avg_max_fail_streak"] = round(sum(streak_maxes) / n, 2) if n else 0
     result["avg_avg_fail_streak"] = round(sum(streak_avgs) / n, 2) if n else 0
     result["avg_fail_streak_count"] = round(sum(streak_counts) / n, 2) if n else 0
@@ -469,7 +550,7 @@ def write_summary_file(filename, category_name, category_data):
         fout.write("\n-- Patch Behavior Summary --\n")
         patch_summary = summarize_patch_stats(category_data["patches"])
         fout.write(f"Avg Patch Total: {patch_summary['avg_patch_total']}\n")
-        fout.write(f"Avg Patch Success: {patch_summary['avg_patch_success']}\n")
+        fout.write(f"Avg Patch Success Rate: {patch_summary['patch_success_rate']}\n")
         fout.write(f"Avg Max Fail Streak: {patch_summary['avg_max_fail_streak']}\n")
         fout.write(f"Avg Avg Fail Streak: {patch_summary['avg_avg_fail_streak']}\n")
         fout.write(f"Avg Fail Streak Count: {patch_summary['avg_fail_streak_count']}\n")
