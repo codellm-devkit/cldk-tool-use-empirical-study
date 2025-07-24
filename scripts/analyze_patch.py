@@ -10,6 +10,21 @@ def load_metrics(path: str):
     with open(path, "r", encoding="utf-8") as f:
         return [json.loads(line.strip()) for line in f if line.strip()]
 
+def summarize_file_count(metrics):
+    file_count_counter = Counter(m["file_count"] for m in metrics)
+
+    # Accurate counts
+    single_file_instances = sum(1 for m in metrics if m["file_count"] == 1)
+    multiple_file_instances = sum(1 for m in metrics if m["file_count"] > 1)
+
+    print("File Count Breakdown:")
+    print(f"  {'Single file':<15}: {single_file_instances}")
+    print(f"  {'Multiple files':<15}: {multiple_file_instances}")
+    print("  File Count Distribution:")     
+    for count, freq in sorted(file_count_counter.items()):
+        print(f"  {count:>2} files: {freq}")
+    return file_count_counter
+
 def summarize_difficulty(metrics):
     difficulty_counter = Counter(m["patch_difficulty"] for m in metrics)
     print("Patch Difficulty Breakdown:")
@@ -84,16 +99,26 @@ def ensure_plot_dir():
     os.makedirs(PLOT_DIR, exist_ok=True)
 
 if __name__ == "__main__":
-    path = "golden_patch_metrics.jsonl"
+    path = "../SWE-agent/trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/patch_metrics.jsonl"
     metrics = load_metrics(path)
+    print(f"Loaded {len(metrics)} instances from SWE-agent (anthropic_filemap__deepseek)")
+    summarize_file_count(metrics)
 
+    path = "../OpenHands/evaluation/evaluation_outputs/outputs/princeton-nlp__SWE-bench_Verified-test/CodeActAgent/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/patch_metrics.jsonl"
+    metrics = load_metrics(path)
+    print(f"Loaded {len(metrics)} instances from OpenHands (deepseek)")
+    summarize_file_count(metrics)
+
+    path = "golden_patch_metrics.jsonl"  
+    metrics = load_metrics(path)
     print(f"Loaded {len(metrics)} instances from {path}")
-    ensure_plot_dir()
+    summarize_file_count(metrics)
+    # ensure_plot_dir()
 
-    summarize_difficulty(metrics)
-    compare_with_swebench(metrics)
+    # summarize_difficulty(metrics)
+    # compare_with_swebench(metrics)
 
-    plot_histogram(metrics, "difficulty_score", "Difficulty Score Distribution", "difficulty_score.png")
-    plot_histogram(metrics, "ABC_magnitude_sum", "ABC Magnitude Distribution", "abc_magnitude.png")
-    plot_histogram(metrics, "file_count", "Files per Patch", "file_count.png")
-    plot_histogram(metrics, "hunk_count", "Hunks per Patch", "hunk_count.png")
+    # plot_histogram(metrics, "difficulty_score", "Difficulty Score Distribution", "difficulty_score.png")
+    # plot_histogram(metrics, "ABC_magnitude_sum", "ABC Magnitude Distribution", "abc_magnitude.png")
+    # plot_histogram(metrics, "file_count", "Files per Patch", "file_count.png")
+    # plot_histogram(metrics, "hunk_count", "Hunks per Patch", "hunk_count.png")

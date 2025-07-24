@@ -21,23 +21,54 @@ class PatchAnalyzer:
         self._parse_patch()
 
     def _parse_patch(self):
-        current = None
+        current_file = None
+        current_status = None
         in_hunk = False
+
         for line in self.patch:
-            if line.startswith('--- '):
-                current = line[4:].strip()
-                self.files.setdefault(current, {'hunks': 0, 'added': [], 'removed': []})
-            elif line.startswith('@@'):
-                self.files[current]['hunks'] += 1
-                in_hunk = True
-            elif in_hunk and current:
+            if line.startswith("diff --git "):
+                parts = line.strip().split()
+                if len(parts) >= 4:
+                    a_path = parts[2][2:]  # strip 'a/'
+                    b_path = parts[3][2:]  # strip 'b/'
+
+                    # Canonical file path → use b_path unless it’s a deletion
+                    current_file = b_path if b_path != "/dev/null" else a_path
+
+                    # Exclude "reproduce" files
+                    if re.search(r'reproduce', current_file, re.IGNORECASE):
+                        current_file = None
+                        in_hunk = False
+                        continue
+
+                    self.files[current_file] = {
+                        'status': 'modified',  # default
+                        'hunks': 0,
+                        'added': [],
+                        'removed': []
+                    }
+                    in_hunk = False
+
+            elif line.startswith("--- "):
+                if current_file and line.strip() == "--- /dev/null":
+                    self.files[current_file]['status'] = 'added'
+
+            elif line.startswith("+++ "):
+                if current_file and line.strip() == "+++ /dev/null":
+                    self.files[current_file]['status'] = 'deleted'
+
+            elif line.startswith("@@"):
+                if current_file:
+                    self.files[current_file]['hunks'] += 1
+                    in_hunk = True
+
+            elif in_hunk and current_file:
                 if line.startswith('+') and not line.startswith('+++'):
-                    self.files[current]['added'].append(line[1:])
+                    self.files[current_file]['added'].append(line[1:])
                 elif line.startswith('-') and not line.startswith('---'):
-                    self.files[current]['removed'].append(line[1:])
+                    self.files[current_file]['removed'].append(line[1:])
 
     def _count_abc_tree_sitter(self, code: str):
-        """Count ABC using tree-sitter AST."""
         tree = PARSER.parse(bytes(code, "utf8"))
         root = tree.root_node
 
@@ -57,15 +88,13 @@ class PatchAnalyzer:
                 "logical_and_operator", "not_operator", "conditional_expression"
             }:
                 C += 1
-
-
             for child in node.children:
                 traverse(child)
 
         traverse(root)
         return A, B, C
 
-    def _compute_abc(self, code: str) -> Dict[str, int]:
+    def _compute_abc(self, code: str) -> tuple[int, int, int]:
         try:
             return self._count_abc_tree_sitter(code)
         except Exception as e:
@@ -74,14 +103,14 @@ class PatchAnalyzer:
 
     def aggregate(self) -> Dict[str, any]:
         total_files = len(self.files)
-        total_hunks = sum(f['hunks'] for f in self.files.values())
-        total_added = sum(len(f['added']) for f in self.files.values())
-        total_removed = sum(len(f['removed']) for f in self.files.values())
+        total_hunks = sum(d['hunks'] for d in self.files.values())
+        total_added_lines = sum(len(d['added']) for d in self.files.values())
+        total_removed_lines = sum(len(d['removed']) for d in self.files.values())
 
         total_A = total_B = total_C = 0
-        for f in self.files.values():
-            added_code = "\n".join(f["added"])
-            removed_code = "\n".join(f["removed"])
+        for fdata in self.files.values():
+            added_code = "\n".join(fdata["added"])
+            removed_code = "\n".join(fdata["removed"])
 
             A1, B1, C1 = self._compute_abc(added_code)
             A2, B2, C2 = self._compute_abc(removed_code)
@@ -91,64 +120,63 @@ class PatchAnalyzer:
             total_C += C1 + C2
 
         abc_mag = round(math.sqrt(total_A**2 + total_B**2 + total_C**2), 1)
-        
-        # Calculate difficulty score
+
         score = (
             total_files * 2 +
             total_hunks * 1 +
-            (total_added + total_removed) / 20 +
+            (total_added_lines + total_removed_lines) / 20 +
             abc_mag / 3
         )
 
         if score < 5:
-            diff = "easy"
+            difficulty = "easy"
         elif score < 30:
-            diff = "medium"
+            difficulty = "medium"
         elif score < 50:
-            diff = "hard"
+            difficulty = "hard"
         else:
-            diff = "very hard"
+            difficulty = "very hard"
 
         return {
             "file_count": total_files,
             "hunk_count": total_hunks,
-            "lines_added": total_added,
-            "lines_removed": total_removed,
+            "lines_added": total_added_lines,
+            "lines_removed": total_removed_lines,
             "Assignment": total_A,
             "Branch": total_B,
             "Conditional": total_C,
             "ABC_magnitude_sum": abc_mag,
             "difficulty_score": round(score, 2),
-            "patch_difficulty": diff
+            "patch_difficulty": difficulty
         }
 
 
 if __name__ == "__main__":
-    # # Golden Patch Metrics
-    # output = "golden_patch_metrics.jsonl"
-    # sbv = load_dataset("princeton-nlp/SWE-bench_Verified", split="test")
+    # Golden Patch Metrics
+    output = "golden_patch_metrics.jsonl"
+    sbv = load_dataset("princeton-nlp/SWE-bench_Verified", split="test")
 
-    # with open(output, "w", encoding="utf-8") as fout:
-    #     for item in sbv:
-    #         metrics = PatchAnalyzer(item.get("patch", "")).aggregate()
-    #         record = {"instance_id": item["instance_id"], **metrics}
-    #         fout.write(json.dumps(record) + "\n")
+    with open(output, "w", encoding="utf-8") as fout:
+        for item in sbv:
+            metrics = PatchAnalyzer(item.get("patch", "")).aggregate()
+            record = {"instance_id": item["instance_id"], **metrics}
+            fout.write(json.dumps(record) + "\n")
 
-    # print(f"Saved metrics for {len(sbv)} instances → {output}")
+    print(f"Saved metrics for {len(sbv)} instances → {output}")
 
-    # # OpenHands Patch Metrics
-    # oh_trajs = "../OpenHands/evaluation/evaluation_outputs/outputs/princeton-nlp__SWE-bench_Verified-test/CodeActAgent/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/output.jsonl" # path to OpenHands trajectories
-    # oh_output = oh_trajs.replace("output.jsonl", "patch_metrics.jsonl")
-    # with open(oh_output, "w", encoding="utf-8") as fout:
-    #     with open(oh_trajs, "r", encoding="utf-8") as fin:
-    #         for line in fin:
-    #             item = json.loads(line)
-    #             if "test_result" not in item or not item["test_result"]:
-    #                 continue
-    #             metrics = PatchAnalyzer(item["test_result"]["git_patch"]).aggregate()
-    #             record = {"instance_id": item["instance_id"], **metrics}
-    #             fout.write(json.dumps(record) + "\n")
-    # print(f"Saved metrics for OpenHands instances → {oh_output}")
+    # OpenHands Patch Metrics
+    oh_trajs = "../OpenHands/evaluation/evaluation_outputs/outputs/princeton-nlp__SWE-bench_Verified-test/CodeActAgent/deepseek-chat_maxiter_100_N_v0.40.0-no-hint-run_1/output.jsonl" # path to OpenHands trajectories
+    oh_output = oh_trajs.replace("output.jsonl", "patch_metrics.jsonl")
+    with open(oh_output, "w", encoding="utf-8") as fout:
+        with open(oh_trajs, "r", encoding="utf-8") as fin:
+            for line in fin:
+                item = json.loads(line)
+                if "test_result" not in item or not item["test_result"]:
+                    continue
+                metrics = PatchAnalyzer(item["test_result"]["git_patch"]).aggregate()
+                record = {"instance_id": item["instance_id"], **metrics}
+                fout.write(json.dumps(record) + "\n")
+    print(f"Saved metrics for OpenHands instances → {oh_output}")
 
     # SWE-Agent Patch Metrics
     user = getpass.getuser()
@@ -194,16 +222,7 @@ if __name__ == "__main__":
 # +        return None
 # """
 
-#     test_patch_3 = """\
-# diff --git a/baz.py b/baz.py
-# --- a/baz.py
-# +++ b/baz.py
-# @@ -10,3 +10,5 @@ class Baz:
-#      pass
-# -    result = 'negative and even' if a < 0
-# +    def new_method(self):
-# +        result = compute(self.value)
-# """
+#     test_patch_3 = "diff --git a/lib/matplotlib/patches.py b/lib/matplotlib/patches.py\nindex e062249589..0c893aac3a 100644\n--- a/lib/matplotlib/patches.py\n+++ b/lib/matplotlib/patches.py\n@@ -586,10 +586,7 @@ class Patch(artist.Artist):\n         # docstring inherited\n         if not self.get_visible():\n             return\n-        # Patch has traditionally ignored the dashoffset.\n-        with cbook._setattr_cm(\n-                 self, _dash_pattern=(0, self._dash_pattern[1])), \\\n-             self._bind_draw_path_function(renderer) as draw_path:\n+        with self._bind_draw_path_function(renderer) as draw_path:\n             path = self.get_path()\n             transform = self.get_transform()\n             tpath = transform.transform_path_non_affine(path)\ndiff --git a/reproduce_bug.py b/reproduce_bug.py\nnew file mode 100644\nindex 0000000000..2b5ef207b6\n--- /dev/null\n+++ b/reproduce_bug.py\n@@ -0,0 +1,10 @@\n+import matplotlib.pyplot as plt\n+import matplotlib as mpl\n+\n+plt.figure(figsize=(10,10))\n+ax = plt.gca()\n+ax.add_patch(mpl.patches.Rectangle((0.5,0.5),1,1, alpha=0.5, edgecolor = 'r', linewidth=4, ls=(0,(10,10))))\n+ax.add_patch(mpl.patches.Rectangle((0.5,0.5),1,1, alpha=0.5, edgecolor = 'b', linewidth=4, ls=(10,(10,10))))\n+plt.ylim([0,2])\n+plt.xlim([0,2])\n+plt.show()\n"
 
 #     for i, patch in enumerate([test_patch_1, test_patch_2, test_patch_3], start=1):
 #         metrics = PatchAnalyzer(patch).aggregate()

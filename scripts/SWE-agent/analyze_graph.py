@@ -55,10 +55,13 @@ class TrajectoryGraphAnalyzer:
     
     def get_hier_graph(self):
         G_hier = nx.DiGraph()
+        # Add only localization nodes
         for node, data in self.graph.nodes(data=True):
-            G_hier.add_node(node, **data)
+            if data.get("phase") == "localization":
+                G_hier.add_node(node, **data)
+        # Add hierarchical edges only if both endpoints are localization nodes
         for u, v, d in self.graph.edges(data=True):
-            if d.get("type") == "hier":
+            if d.get("type") == "hier" and u in G_hier and v in G_hier:
                 G_hier.add_edge(u, v)
         return G_hier
 
@@ -145,33 +148,38 @@ class TrajectoryGraphAnalyzer:
         - dominant_zone: early/middle/late/mixed/none
         - num_clusters: number of contiguous localization clusters
         - loc_avg_node_freq: mean revisit frequency of unique localization nodes
+        - repeated_view: True if any localization node is revisited
         - max_view_depth: deepest hierarchical level visited
-        - scroll_behavior: True if agent scrolls up/down to explore overlapping views in same file
-        - num_deep_zooms_without_edit: Leaf-viewed paths without corresponding edits
+        - avg_view_depth: average view depth
+        - max_view_span: largest number of nodes viewed at same hierarchical level
+        - avg_view_span: average number of nodes viewed per level
+        - scroll_behavior: True if overlapping views within same file
+        - num_deep_zooms_without_edit: count of leaf nodes explored without edits
+        - back_and_forth_switch: True if zigzag pattern detected in view hierarchy
         """
         steps = []
         loc_nodes_freq = []
         loc_ranges_by_path = defaultdict(list)
 
-        edit_paths = set()
+        # -- patch nodes
+        patch_paths = set()
         for _, data in self.graph.nodes(data=True):
             label = data.get("label", "")
-            if label == "str_replace_editor\nstr_replace" or label == "str_replace_editor\ncreate" or label == "str_replace_editor\ninsert":
+            if label in {"str_replace_editor\nstr_replace", "str_replace_editor\ncreate", "str_replace_editor\ninsert"}:
                 path = data.get("args", {}).get("path")
                 if path:
-                    edit_paths.add(path)
+                    patch_paths.add(path)
 
+        # -- gather step and localization info
         for node_id, data in self.graph.nodes(data=True):
-            phase = data.get("phase", "general")
+            phase = data.get("phase", "")
             freq = len(data.get("step_indices", []))
             if phase == "localization":
                 loc_nodes_freq.append(freq)
-
                 view_range = data.get("args", {}).get("view_range")
                 path = data.get("args", {}).get("path")
                 if isinstance(view_range, (list, tuple)) and len(view_range) == 2 and path:
                     loc_ranges_by_path[path].append(tuple(view_range))
-
             for idx in data.get("step_indices", []):
                 steps.append((idx, phase, node_id))
         steps.sort(key=lambda x: x[0])
@@ -179,13 +187,15 @@ class TrajectoryGraphAnalyzer:
 
         total_actions = len(phases)
         if total_actions == 0:
-            return dict(
-                focus_ratio=0, dominant_zone="none", num_clusters=0,
-                loc_avg_node_freq=0, max_view_depth=0,
-                scroll_behavior=False, num_deep_zooms_without_edit=0
-            )
+            return {
+                "focus_ratio": 0, "dominant_zone": "none", "num_clusters": 0,
+                "loc_avg_node_freq": 0, "repeated_view": False,
+                "max_view_depth": 0, "avg_view_depth": 0,
+                "max_view_span": 0, "avg_view_span": 0,
+                "scroll_behavior": False, "num_deep_zooms_without_edit": 0
+            }
 
-        # Zone & cluster logic
+        # -- zone and cluster analysis
         bins = [0, 0, 0]
         clusters, current = [], 0
         for i, p in enumerate(phases):
@@ -201,18 +211,19 @@ class TrajectoryGraphAnalyzer:
 
         total_loc = sum(bins)
         ratio = round(total_loc / total_actions, 2)
-        if total_loc == 0:
-            dominant = "none"
-        else:
-            max_b = max(bins)
-            dominant = ["early", "middle", "late"][bins.index(max_b)] if max_b / total_loc >= 0.5 else "mixed"
+        dominant = (
+            "none" if total_loc == 0 else
+            ["early", "middle", "late"][bins.index(max(bins))] if max(bins) / total_loc >= 0.5
+            else "mixed"
+        )
 
         loc_avg_freq = round(mean(loc_nodes_freq), 2) if loc_nodes_freq else 0
+        repeated_view = any(freq > 1 for freq in loc_nodes_freq)
 
-        # --- Hierarchical prefix encoding ---
+        # --- Hierarchical structure
         hier_graph = self.get_hier_graph()
         prefix_map = {}
-        node_path_map = {}  # node_id → path
+        node_path_map = {}
 
         def dfs(node, prefix):
             prefix_map[node] = prefix
@@ -223,49 +234,95 @@ class TrajectoryGraphAnalyzer:
         for i, root in enumerate(roots):
             dfs(root, str(i))
 
-        for node_id, data in self.graph.nodes(data=True):
+        for node_id, data in hier_graph.nodes(data=True):
             path = data.get("args", {}).get("path")
             if path:
                 node_path_map[node_id] = path
 
-        exec_order = [prefix_map.get(nid, "") for idx, phase, nid in steps if phase == "localization"]
-        max_view_depth = max((len(p.split("-")) for p in exec_order if p), default=0)
+        # --- View depth and span analysis ---
+        exec_prefixes = [(nid, prefix_map.get(nid, "")) for _, phase, nid in steps if phase == "localization"]
+        level_counts = Counter()
+        leaf_depths = []
 
-        # --- Scroll behavior detection ---
+        for nid, prefix in exec_prefixes:
+            if not prefix:
+                continue
+            level = prefix.count("-")
+            level_counts[level] += 1
+
+            # Check if it's a leaf in the hierarchy
+            if hier_graph.out_degree(nid) == 0:
+                leaf_depths.append(level + 1)  # depth = number of segments
+
+        max_view_span = max(level_counts.values(), default=0)
+        avg_view_span = round(mean(level_counts.values()), 2) if level_counts else 0
+        max_view_depth = max(leaf_depths, default=0)
+        avg_view_depth = round(mean(leaf_depths), 2) if leaf_depths else 0
+
+        # --- scroll behavior
         scroll_behavior = False
         for path, ranges in loc_ranges_by_path.items():
             if len(ranges) <= 1:
                 continue
             ranges.sort()
             for i in range(1, len(ranges)):
-                prev_start, prev_end = ranges[i - 1]
-                curr_start, curr_end = ranges[i]
-                if curr_start <= prev_end:
+                if ranges[i][0] <= ranges[i - 1][1]:
                     scroll_behavior = True
                     break
             if scroll_behavior:
                 break
 
-        # --- Deep zoom without edit detection ---
+        # --- deep zoom without edit
         leaf_nodes = [n for n in hier_graph.nodes if hier_graph.out_degree(n) == 0]
         leaf_paths = {
             node_path_map[n] for n in leaf_nodes
-            if n in node_path_map and n in prefix_map  # must be viewed
+            if n in node_path_map and n in prefix_map
         }
         deep_zooms_without_edit = [
-            p for p in leaf_paths if p not in edit_paths
+            p for p in leaf_paths if not any(p in patch for patch in patch_paths)
         ]
         num_deep_zooms_without_edit = len(deep_zooms_without_edit)
 
-        return dict(
-            focus_ratio=ratio,
-            dominant_zone=dominant,
-            num_clusters=len(clusters),
-            loc_avg_node_freq=loc_avg_freq,
-            max_view_depth=max_view_depth,
-            scroll_behavior=scroll_behavior,
-            num_deep_zooms_without_edit=num_deep_zooms_without_edit
-        )
+        # --- back-and-forth switch detection ---
+        def common_prefix_len(p1, p2):
+            s1, s2 = p1[1].split("-"), p2[1].split("-")
+            i = 0
+            while i < min(len(s1), len(s2)) and s1[i] == s2[i]:
+                i += 1
+            return i
+
+        back_and_forth_switch = False
+        window = []
+        for p in exec_prefixes:
+            if not p:
+                continue
+            window.append(p)
+            if len(window) > 3:
+                window.pop(0)
+            if len(window) == 3:
+                pre, mid, post = window
+                cp1 = common_prefix_len(pre, mid)
+                cp2 = common_prefix_len(mid, post)
+                cp3 = common_prefix_len(pre, post)
+                # Detect zigzag: mid diverges from pre and post, while pre and post are similar
+                if cp3 >= max(cp1, cp2) and cp1 != cp2:
+                    back_and_forth_switch = True
+                    break
+
+        return {
+            "focus_ratio": ratio,
+            "dominant_zone": dominant,
+            "num_clusters": len(clusters),
+            "loc_avg_node_freq": loc_avg_freq,
+            "repeated_view": repeated_view,
+            "max_view_depth": max_view_depth,
+            "avg_view_depth": avg_view_depth,
+            "max_view_span": max_view_span,
+            "avg_view_span": avg_view_span,
+            "scroll_behavior": scroll_behavior,
+            "num_deep_zooms_without_edit": num_deep_zooms_without_edit,
+            "back_and_forth_switch": back_and_forth_switch
+        }
 
     def get_patch_summary(self):
         """
@@ -445,6 +502,38 @@ class SequentialPatternMiner:
         max_len = max(len(pat) for pat, _ in flat)
         return [(pat, freq) for pat, freq in flat if len(pat) == max_len]
 
+# --------------------------- Localization Stats Group Summary ---------------------------
+def summarize_localization_stats(localization_stats_list):
+    counter_fields = [
+        "repeated_view", "scroll_behavior", "back_and_forth_switch"
+    ]
+    numeric_fields = [
+        "focus_ratio", "num_clusters", "loc_avg_node_freq",
+        "max_view_depth", "avg_view_depth", "max_view_span", "avg_view_span",
+        "num_deep_zooms_without_edit"
+    ]
+
+    result = {f: 0 for f in counter_fields}
+    sums = {f: 0.0 for f in numeric_fields}
+    n = len(localization_stats_list)
+
+    deep_zooms_without_edit_count = 0
+
+    for stat in localization_stats_list:
+        for f in counter_fields:
+            result[f] += int(stat.get(f, False))
+        for f in numeric_fields:
+            value = stat.get(f, 0)
+            sums[f] += value
+            if f == "num_deep_zooms_without_edit" and value > 1:
+                deep_zooms_without_edit_count += 1
+
+    for f in numeric_fields:
+        result[f] = round(sums[f] / n, 2) if n else 0
+
+    result["deep_zooms_without_edit"] = deep_zooms_without_edit_count
+
+    return result
 
 # --------------------------- Patch Stats Group Summary ---------------------------
 def summarize_patch_stats(patch_stats_list):
@@ -502,6 +591,8 @@ def write_summary_file(filename, category_name, category_data):
             "fail_streak_max", "fail_streak_avg", "fail_streak_count",
             "reasoning_transition_patterns", "fail_to_success_patterns",
             "flip_flop", "repeat_failed_edit", "abandonment",
+            "repeated_view", "scroll_behavior", "back_and_forth_switch", "num_deep_zooms_without_edit",
+            "avg_view_depth", "max_view_depth", "avg_view_span", "max_view_span",
         ]
         drop_cols += [col for col in df_k.columns if col.startswith("fail_type_")]
         general_avg = df_k.drop(columns=drop_cols, errors='ignore').mean(numeric_only=True).round(2)
@@ -527,6 +618,24 @@ def write_summary_file(filename, category_name, category_data):
         else:
             for inst, freq, focus, dom in top_freqs:
                 fout.write(f"  {inst} | AvgFreq: {freq:.2f} | LocPercent: {focus:.2f} | Dominant: {dom}\n")
+        
+        # ---------- Localization Behavior Summary ----------
+        fout.write("\n-- Localization Behavior Summary --\n")
+        loc_summary = summarize_localization_stats(category_data["localization"])
+        for field in [
+            "repeated_view", "scroll_behavior", "back_and_forth_switch",
+        ]:
+            percent_true = (loc_summary[field] / len(category_data["localization"])) * 100 if category_data["localization"] else 0
+            fout.write(f"{field}: {loc_summary[field]}({percent_true:.1f}%) \n")
+        
+        deep_zooms_percent_true = (loc_summary['deep_zooms_without_edit'] / len(category_data["localization"])) * 100 if category_data["localization"] else 0
+        fout.write(f"deep_zooms_without_edit: {loc_summary['deep_zooms_without_edit']}({deep_zooms_percent_true:.1f}%)\n")
+
+        for field in [
+            "max_view_depth", "avg_view_depth", "max_view_span", "avg_view_span",
+            "num_deep_zooms_without_edit"
+        ]:
+            fout.write(f"{field}: {loc_summary[field]:.2f}\n")
 
         # ---------- Phase & Action Patterns ----------
         fout.write("\n-- Phase Patterns --\n")
@@ -581,6 +690,7 @@ if __name__ == "__main__":
         "phases": [],
         "labels": [],
         "metrics": [],
+        "localization": [],
         "patches": [],
         "freq_nodes": Counter(),
         "dominant_zones": [],
@@ -597,6 +707,7 @@ if __name__ == "__main__":
 
             analyzer = TrajectoryGraphAnalyzer(data)
             metrics = analyzer.get_metric_dict()
+            localization_stats = analyzer.get_localization_summary()
             patch_stats = analyzer.get_patch_summary()
             phases = analyzer.extract_phase_sequence()
             labels = analyzer.extract_label_sequence()
@@ -619,6 +730,7 @@ if __name__ == "__main__":
                 categories[k]["phases"].append(phases)
                 categories[k]["labels"].append(labels)
                 categories[k]["metrics"].append(metrics)
+                categories[k]["localization"].append(localization_stats)
                 categories[k]["patches"].append(patch_stats)
                 categories[k]["freq_nodes"][freq_node] += 1
                 categories[k]["dominant_zones"].append(dominant)
@@ -646,6 +758,11 @@ if __name__ == "__main__":
                 "resolution": resolution,
                 "instance": inst_id
             })
+            for drop_field in [
+                "focus_ratio", "dominant_zone", "num_clusters", "loc_avg_node_freq"
+            ]:
+                localization_stats.pop(drop_field, None)
+            metrics.update(localization_stats)
             metrics.update(flat_patch_stats)
             rows.append(metrics)
 
@@ -664,6 +781,7 @@ if __name__ == "__main__":
         "labels": [],
         "metrics": [],
         "patches": [],
+        "localization": [],
         "freq_nodes": Counter(),
         "dominant_zones": [],
         "top_loc_info": []
