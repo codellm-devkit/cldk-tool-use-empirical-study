@@ -1,11 +1,14 @@
 sweagent run-batch \
-    --config config/structural_search.yaml \
-    --agent.model.name deepseek/deepseek-chat \
-    --num_workers 1 \
+    --config config/anthropic_filemap.yaml \
+    --agent.model.api_base https://ete-litellm.bx.cloud9.ibm.com \
+    --agent.model.name GCP/claude-3-7-sonnet \
+    --agent.model.api_key $ANTHROPIC_API_KEY \
+    --agent.model.max_output_tokens 64000 \
+    --num_workers 3 \
     --agent.model.per_instance_cost_limit 2.00 \
     --instances.deployment.docker_args=--memory=10g \
     --instances.type swe_bench \
     --instances.subset verified \
     --instances.split test  \
-    --instances.slice 301:302 \
+    --instances.slice 1: \
     --instances.shuffle=False \

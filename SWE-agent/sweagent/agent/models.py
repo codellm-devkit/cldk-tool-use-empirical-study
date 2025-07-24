@@ -138,6 +138,17 @@ class GenericAPIModelConfig(PydanticBaseModel):
     Set this to 0 to disable this check.
     """
 
+    litellm_model_registry: str | None = None
+    """If set, this will override the default model registry for litellm.
+    Use this for local models or models not (yet) in the default litellm model registry for tracking costs.
+    """
+
+    custom_tokenizer: dict[str, Any] | None = None
+    """Override the default tokenizer for the model.
+    Use the arguments of `litellm.create_pretrained_tokenizer`.
+    Basic example: `{"identifier": "hf-internal-testing/llama-tokenizer"}`
+    """
+
     # pydantic
     model_config = ConfigDict(extra="forbid")
 
@@ -180,7 +191,14 @@ class GenericAPIModelConfig(PydanticBaseModel):
 
     @property
     def id(self) -> str:
-        return f"{self.name}__t-{self.temperature:.2f}__p-{self.top_p:.2f}__c-{self.per_instance_cost_limit:.2f}"
+        name = self.name.replace("/", "--")
+        if self.top_p is not None:
+            top_p = f"{self.top_p:.2f}"
+        else:
+            top_p = "None"
+        temperature = f"{self.temperature:.2f}"
+        per_instance_cost_limit = f"{self.per_instance_cost_limit:.2f}"
+        return f"{name}__t-{temperature}__p-{top_p}__c-{per_instance_cost_limit}"
 
 
 class ReplayModelConfig(GenericAPIModelConfig):
@@ -223,6 +241,8 @@ class HumanModelConfig(GenericAPIModelConfig):
     )
     total_cost_limit: float = Field(default=0.0, description="Cost limit for all instances (tasks).")
     cost_per_call: float = 0.0
+    catch_eof: bool = True
+    """Whether to catch EOF and return 'exit' when ^D is pressed. Set to False when used in human_step_in mode."""
     model_config = ConfigDict(extra="forbid")
 
 
@@ -354,10 +374,10 @@ class HumanModel(AbstractModel):
     ) -> None:
         self.stats.instance_cost += self.config.cost_per_call
         self.stats.api_calls += 1
-        if self.stats.instance_cost > self.config.per_instance_cost_limit:
+        if 0 < self.config.per_instance_cost_limit < self.stats.instance_cost:
             msg = f"Instance cost limit exceeded: {self.stats.instance_cost} > {self.config.per_instance_cost_limit}"
             raise InstanceCostLimitExceededError(msg)
-        if self.stats.instance_cost > self.config.total_cost_limit:
+        if 0 < self.config.total_cost_limit < self.stats.instance_cost:
             msg = f"Total cost limit exceeded: {self.stats.instance_cost} > {self.config.total_cost_limit}"
             raise TotalCostLimitExceededError(msg)
 
@@ -387,8 +407,6 @@ class HumanModel(AbstractModel):
             while True:
                 action = input("... ")
                 if action.rstrip() == "end_multiline_command":
-                    return self._query(history, action_prompt)
-                if action.rstrip() == "end_multiline_command":
                     break
                 buffer.append(action)
             action = "\n".join(buffer)
@@ -414,8 +432,12 @@ class HumanModel(AbstractModel):
                 print("^C (exit with ^D)")
                 out.append(self.query(history, action_prompt))
             except EOFError:
-                print("\nGoodbye!")
-                out.append({"message": "exit"})
+                if self.config.catch_eof:
+                    print("\nGoodbye!")
+                    out.append({"message": "exit"})
+                else:
+                    # Re-raise EOFError when catch_eof is disabled
+                    raise
         if n is None:
             return out[0]
         return out
@@ -434,7 +456,7 @@ class HumanThoughtModel(HumanModel):
             thought_all += thought
             thought = input("... ")
 
-        action = super()._query(history, action_prompt="Action: ")
+        action = super()._query(history, action_prompt="Action: ")["message"]
 
         return {"message": f"{thought_all}\n```\n{action}\n```"}
 
@@ -543,7 +565,7 @@ class InstantEmptySubmitTestModel(AbstractModel):
                 "DISCUSSION\n"
                 "Let's reproduce the bug by creating a `reproduce.py` file.\n\n"
                 "```\n"
-                "create reproduce.py\n"
+                "touch reproduce.py\n"
                 "```\n"
             )
         elif self._action_idx == 1:
@@ -570,7 +592,10 @@ class LiteLLMModel(AbstractModel):
                     "See https://swe-agent.com/latest/faq/ for more information."
                 )
                 self.logger.warning(msg)
-
+        if self.config.litellm_model_registry is not None:
+            with open(self.config.litellm_model_registry) as f:
+                model_costs = json.load(f)
+                litellm.register_model(model_costs)
         if self.config.max_input_tokens is not None:
             self.model_max_input_tokens = self.config.max_input_tokens
         else:
@@ -582,19 +607,22 @@ class LiteLLMModel(AbstractModel):
             self.model_max_output_tokens = litellm.model_cost.get(self.config.name, {}).get("max_output_tokens")
             # Special handling for Claude 3.7 models to set 64k context by default when beta header not present
             # See https://github.com/SWE-agent/SWE-agent/pull/1016
-            is_claude_3_7 = "claude-3-7-sonnet" in self.config.name
+            is_claude_3_7 = "claude-3-7-sonnet" in self.config.name or "claude-sonnet-4" in self.config.name
             has_128k_beta_header = (
                 self.config.completion_kwargs.get("extra_headers", {}).get("anthropic-beta") == "output-128k-2025-02-19"
             )
             if is_claude_3_7 and not has_128k_beta_header:
                 self.model_max_output_tokens = 64000
                 self.logger.warning(
-                    "Claude 3.7 models do not support 128k context by default. "
+                    "Claude 3.7/4 models do not support 128k context by default. "
                     "Setting max output tokens to 64k. To enable 128k context, please set the "
                     "completion_kwargs to {'extra_headers': {'anthropic-beta': 'output-128k-2025-02-19'}}."
                 )
 
-        self.lm_provider = litellm.model_cost.get(self.config.name, {}).get("litellm_provider")
+        self.lm_provider = litellm.model_cost.get(self.config.name, {}).get("litellm_provider", self.config.name)
+        self.custom_tokenizer = None
+        if self.config.custom_tokenizer is not None:
+            self.custom_tokenizer = litellm.utils.create_pretrained_tokenizer(**self.config.custom_tokenizer)
 
     @property
     def instance_cost_limit(self) -> float:
@@ -657,7 +685,11 @@ class LiteLLMModel(AbstractModel):
         for message in messages_no_cache_control:
             if "cache_control" in message:
                 del message["cache_control"]
-        input_tokens: int = litellm.utils.token_counter(messages=messages_no_cache_control, model=self.config.name)
+        input_tokens: int = litellm.utils.token_counter(
+            messages=messages_no_cache_control,
+            model=self.custom_tokenizer["identifier"] if self.custom_tokenizer is not None else self.config.name,
+            custom_tokenizer=self.custom_tokenizer,
+        )
         if self.model_max_input_tokens is None:
             msg = (
                 f"No max input tokens found for model {self.config.name!r}. "
@@ -698,7 +730,7 @@ class LiteLLMModel(AbstractModel):
             if "is longer than the model's context length" in str(e):
                 raise ContextWindowExceededError from e
             raise
-        self.logger.info(f"Response: {response}")
+        self.logger.debug(f"Response: {response}")
         try:
             cost = litellm.cost_calculator.completion_cost(response)
         except Exception as e:
@@ -718,7 +750,11 @@ class LiteLLMModel(AbstractModel):
         output_tokens = 0
         for i in range(n_choices):
             output = choices[i].message.content or ""
-            output_tokens += litellm.utils.token_counter(text=output, model=self.config.name)
+            output_tokens += litellm.utils.token_counter(
+                text=output,
+                model=self.custom_tokenizer["identifier"] if self.custom_tokenizer is not None else self.config.name,
+                custom_tokenizer=self.custom_tokenizer,
+            )
             output_dict = {"message": output}
             if self.tools.use_function_calling:
                 if response.choices[i].message.tool_calls:  # type: ignore
@@ -775,6 +811,8 @@ class LiteLLMModel(AbstractModel):
                     litellm.exceptions.AuthenticationError,
                     ContentPolicyViolationError,
                     ModelConfigurationError,
+                    KeyboardInterrupt,
+                    IndexError,
                 )
             ),
             before_sleep=retry_warning,
@@ -818,6 +856,72 @@ class LiteLLMModel(AbstractModel):
         return messages
 
 
+class OpenAIModel(AbstractModel):
+    def __init__(self, args: GenericAPIModelConfig, tools: ToolConfig):
+        self.config: GenericAPIModelConfig = args.model_copy(deep=True)
+        self.stats = InstanceStats()
+        self.tools = tools
+        self.logger = get_logger("swea-lm", emoji="🤖")
+
+        import openai
+        self.client = openai.OpenAI(
+            api_key=self.config.choose_api_key(),
+            base_url=self.config.api_base,
+        )
+
+    @property
+    def instance_cost_limit(self) -> float:
+        return self.config.per_instance_cost_limit
+
+    def query(self, history: History, n: int = 1, temperature: float | None = None) -> list[dict] | dict:
+        messages = self._history_to_messages(history)
+        kwargs = {
+            "model": self.config.name,
+            "messages": messages,
+            "temperature": self.config.temperature if temperature is None else temperature,
+        }
+        if self.tools.use_function_calling:
+            kwargs["tools"] = self.tools.tools
+        if self.config.max_output_tokens:
+            kwargs["max_tokens"] = self.config.max_output_tokens
+
+        try:
+            response = self.client.chat.completions.create(**kwargs)
+        except Exception as e:
+            raise ModelConfigurationError(f"OpenAI call failed: {e}")
+
+        outputs = []
+        for choice in response.choices:
+            # Ensure message content is always a string (not None)
+            content = choice.message.content or ""
+            msg = {"message": content}
+            if hasattr(choice.message, "tool_calls") and choice.message.tool_calls:
+                msg["tool_calls"] = [call.to_dict() for call in choice.message.tool_calls]
+            outputs.append(msg)
+
+        self.stats.api_calls += 1
+        return outputs[0] if n == 1 else outputs
+
+    def _history_to_messages(self, history: History) -> list[dict[str, str]]:
+        history = copy.deepcopy(history)
+        def get_role(item):
+            if item["role"] == "system":
+                return "user" if self.config.convert_system_to_user else "system"
+            return item["role"]
+        messages = []
+        for item in history:
+            role = get_role(item)
+            message = {"role": role, "content": item["content"]}
+            if "tool_calls" in item:
+                message["tool_calls"] = item["tool_calls"]
+            if "tool_call_ids" in item and role == "tool":
+                message["tool_call_id"] = item["tool_call_ids"][0]
+            if "cache_control" in item:
+                message["cache_control"] = item["cache_control"]
+            messages.append(message)
+        return messages
+
+
 def get_model(args: ModelConfig, tools: ToolConfig) -> AbstractModel:
     """Returns correct model object given arguments and commands"""
     # Convert GenericAPIModelConfig to specific model config if needed
@@ -846,4 +950,8 @@ def get_model(args: ModelConfig, tools: ToolConfig) -> AbstractModel:
         assert isinstance(args, InstantEmptySubmitModelConfig), f"Expected {InstantEmptySubmitModelConfig}, got {args}"
         return InstantEmptySubmitTestModel(args, tools)
     assert isinstance(args, GenericAPIModelConfig), f"Expected {GenericAPIModelConfig}, got {args}"
+    
+    if args.name.startswith("GCP/"):
+        return OpenAIModel(args, tools)
+
     return LiteLLMModel(args, tools)
