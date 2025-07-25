@@ -1,0 +1,142 @@
+diff --git a/django/db/migrations/serializer.py b/django/db/migrations/serializer.py
+index 7d226955d5..e20d5b4844 100644
+--- a/django/db/migrations/serializer.py
++++ b/django/db/migrations/serializer.py
+@@ -4,6 +4,7 @@ import datetime
+ import decimal
+ import enum
+ import functools
++import importlib
+ import math
+ import re
+ import types
+@@ -95,8 +96,30 @@ class DeconstructableSerializer(BaseSerializer):
+             imports = {"from django.db import models"}
+             name = "models.%s" % name
+         else:
+-            imports = {"import %s" % module}
+-            name = path
++            # Import the module to check if it exists
++            try:
++                importlib.import_module(module)
++                # If we get here, the module exists, so use it
++                imports = {"import %s" % module}
++                name = path
++            except ImportError:
++                # Module doesn't exist, so this might be an inner class
++                # Try to find the last valid module in the path
++                parts = module.split('.')
++                for i in range(len(parts), 0, -1):
++                    try_module = '.'.join(parts[:i])
++                    try:
++                        importlib.import_module(try_module)
++                        # Found a valid module, so the rest is the class path
++                        imports = {"import %s" % try_module}
++                        name = "%s.%s" % (try_module, '.'.join(parts[i:] + [name]))
++                        break
++                    except ImportError:
++                        continue
++                else:
++                    # If we get here, we couldn't find a valid module, so use the original
++                    imports = {"import %s" % module}
++                    name = path
+         return name, imports
+ 
+     def serialize(self):
+@@ -120,8 +143,52 @@ class EnumSerializer(BaseSerializer):
+     def serialize(self):
+         enum_class = self.value.__class__
+         module = enum_class.__module__
++        qualname = enum_class.__qualname__
++        
++        # Check if this is an inner class by looking for dots in the qualname
++        if '.' in qualname:
++            # Get the outer class name and the inner class name
++            outer_class_name, inner_class_name = qualname.split('.', 1)
++            
++            # Try to import the module to check if it exists
++            try:
++                # Try to import the module part
++                mod = importlib.import_module(module)
++                # If we get here, the module exists
++                # Check if the outer class exists in the module
++                if hasattr(mod, outer_class_name):
++                    # Get the outer class
++                    outer_class = getattr(mod, outer_class_name)
++                    # Check if the inner class exists in the outer class
++                    if hasattr(outer_class, inner_class_name):
++                        # Get the inner class
++                        inner_class = getattr(outer_class, inner_class_name)
++                        # Check if the inner class is the same as the enum class
++                        if inner_class is enum_class:
++                            # It's an inner class, so use the full path
++                            return (
++                                '%s.%s.%s[%r]' % (module, outer_class_name, inner_class_name, self.value.name),
++                                {'import %s' % module},
++                            )
++            except ImportError:
++                # Module doesn't exist, so this might be an inner class
++                # Try to find the last valid module in the path
++                parts = module.split('.')
++                for i in range(len(parts), 0, -1):
++                    try_module = '.'.join(parts[:i])
++                    try:
++                        importlib.import_module(try_module)
++                        # Found a valid module, so the rest is the class path
++                        return (
++                            '%s.%s.%s[%r]' % (try_module, '.'.join(parts[i:] + [outer_class_name]), inner_class_name, self.value.name),
++                            {'import %s' % try_module},
++                        )
++                    except ImportError:
++                        continue
++        
++        # Default case - not an inner class or couldn't find a valid module
+         return (
+-            '%s.%s[%r]' % (module, enum_class.__qualname__, self.value.name),
++            '%s.%s[%r]' % (module, qualname, self.value.name),
+             {'import %s' % module},
+         )
+ 
+@@ -269,6 +336,42 @@ class TypeSerializer(BaseSerializer):
+             if module == builtins.__name__:
+                 return self.value.__name__, set()
+             else:
++                # Check if this is an inner class by looking for dots in the qualname
++                if hasattr(self.value, "__qualname__") and '.' in self.value.__qualname__:
++                    # Get the outer class name and the inner class name
++                    outer_class_name, inner_class_name = self.value.__qualname__.split('.', 1)
++                    
++                    # Try to import the module to check if it exists
++                    try:
++                        # Try to import the module part
++                        mod = importlib.import_module(module)
++                        # If we get here, the module exists
++                        # Check if the outer class exists in the module
++                        if hasattr(mod, outer_class_name):
++                            # Get the outer class
++                            outer_class = getattr(mod, outer_class_name)
++                            # Check if the inner class exists in the outer class
++                            if hasattr(outer_class, self.value.__name__):
++                                # Get the inner class
++                                inner_class = getattr(outer_class, self.value.__name__)
++                                # Check if the inner class is the same as the value
++                                if inner_class is self.value:
++                                    # It's an inner class, so use the full path
++                                    return "%s.%s.%s" % (module, outer_class_name, self.value.__name__), {"import %s" % module}
++                    except ImportError:
++                        # Module doesn't exist, so this might be an inner class
++                        # Try to find the last valid module in the path
++                        parts = module.split('.')
++                        for i in range(len(parts), 0, -1):
++                            try_module = '.'.join(parts[:i])
++                            try:
++                                importlib.import_module(try_module)
++                                # Found a valid module, so the rest is the class path
++                                return "%s.%s.%s" % (try_module, '.'.join(parts[i:] + [outer_class_name]), self.value.__name__), {"import %s" % try_module}
++                            except ImportError:
++                                continue
++                
++                # Default case - not an inner class or couldn't find a valid module
+                 return "%s.%s" % (module, self.value.__name__), {"import %s" % module}
+ 
+ 

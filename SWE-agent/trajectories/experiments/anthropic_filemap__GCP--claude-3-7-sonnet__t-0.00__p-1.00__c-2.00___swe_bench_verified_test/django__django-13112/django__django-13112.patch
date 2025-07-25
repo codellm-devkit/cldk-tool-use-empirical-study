@@ -1,0 +1,45 @@
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index ce18098fd2..75f062249d 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1124,11 +1124,35 @@ class Query(BaseExpression):
+ 
+     def check_filterable(self, expression):
+         """Raise an error if expression cannot be used in a WHERE clause."""
+-        if not getattr(expression, 'filterable', True):
+-            raise NotSupportedError(
+-                expression.__class__.__name__ + ' is disallowed in the filter '
+-                'clause.'
+-            )
++        # Check if the expression has a filterable attribute that was explicitly set
++        # to control filterability, rather than just being a field named 'filterable'
++        
++        # For Django model instances, the filterable attribute might be a model field
++        # We need to distinguish between a model field named 'filterable' and
++        # a class-level attribute used to control filterability
++        
++        # If this is a Django model instance, we should check if it has a _meta attribute
++        # which would indicate it's a model instance, and then check if 'filterable' is a field
++        if hasattr(expression, '_meta') and hasattr(expression._meta, 'get_field'):
++            try:
++                # If 'filterable' is a field, we should not raise an error
++                expression._meta.get_field('filterable')
++                # It's a field, so we don't check its value
++            except Exception:
++                # 'filterable' is not a field, so check its value if it exists
++                if hasattr(expression, 'filterable') and not expression.filterable:
++                    raise NotSupportedError(
++                        expression.__class__.__name__ + ' is disallowed in the filter '
++                        'clause.'
++                    )
++        else:
++            # For non-model instances, use the original behavior
++            if not getattr(expression, 'filterable', True):
++                raise NotSupportedError(
++                    expression.__class__.__name__ + ' is disallowed in the filter '
++                    'clause.'
++                )
++                
+         if hasattr(expression, 'get_source_expressions'):
+             for expr in expression.get_source_expressions():
+                 self.check_filterable(expr)

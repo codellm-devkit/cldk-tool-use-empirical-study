@@ -1,0 +1,89 @@
+diff --git a/django/db/models/fields/json.py b/django/db/models/fields/json.py
+index fafc1beee8..6d018f2567 100644
+--- a/django/db/models/fields/json.py
++++ b/django/db/models/fields/json.py
+@@ -388,6 +388,23 @@ class KeyTransformExact(JSONExact):
+                 lhs = 'JSON_TYPE(%s, %%s)' % lhs
+         return lhs, lhs_params
+ 
++    @staticmethod
++    def process_rhs_value(value, connection):
++        if connection.vendor == 'oracle':
++            value_json = json.dumps(value)
++            if isinstance(value, (list, dict)):
++                return "JSON_QUERY('%s', '$.value')" % json.dumps({'value': value})
++            else:
++                return "JSON_VALUE('%s', '$.value')" % json.dumps({'value': value})
++        elif connection.vendor == 'sqlite':
++            value_json = json.dumps(value)
++            if value_json == 'null':
++                return value_json
++            else:
++                return "JSON_EXTRACT(%s, '$')" % value_json
++        else:
++            return json.dumps(value)
++
+     def process_rhs(self, compiler, connection):
+         if isinstance(self.rhs, KeyTransform):
+             return super(lookups.Exact, self).process_rhs(compiler, connection)
+@@ -479,6 +496,52 @@ class KeyTransformGte(KeyTransformNumericLookupMixin, lookups.GreaterThanOrEqual
+     pass
+ 
+ 
++class KeyTransformIn(lookups.In):
++    def get_prep_lookup(self):
++        # Remove None from the list as NULL is never equal to anything.
++        if self.rhs and None in self.rhs:
++            self.rhs = [val for val in self.rhs if val is not None]
++        return super().get_prep_lookup()
++    
++    def as_sql(self, compiler, connection):
++        # For SQLite, MySQL, and Oracle, we need to use a different approach
++        if connection.vendor in ('sqlite', 'mysql', 'oracle'):
++            lhs, lhs_params = self.process_lhs(compiler, connection)
++            
++            # Get the values from self.rhs
++            values = self.rhs
++            if not self.rhs_is_direct_value():
++                # If it's a subquery, evaluate it
++                values = list(self.rhs._clone())
++            
++            # Remove None values
++            values = [val for val in values if val is not None]
++            if not values:
++                return '0=1', []  # No values means no matches
++            
++            # Build a series of equality comparisons instead of using IN
++            in_clause_items = []
++            params = list(lhs_params)
++            
++            # For each value, create an exact lookup
++            for value in values:
++                # Create a KeyTransformExact lookup for this value
++                exact_lookup = KeyTransformExact(self.lhs, value)
++                # Get the SQL for this lookup
++                exact_sql, exact_params = exact_lookup.as_sql(compiler, connection)
++                # Add the SQL to the list of clauses
++                in_clause_items.append(exact_sql)
++                # Add the parameters to the list of parameters
++                params.extend(exact_params)
++            
++            # Join the clauses with OR
++            in_clause = ' OR '.join(in_clause_items)
++            return '(%s)' % in_clause, params
++        
++        # For other databases, use the default implementation
++        return super().as_sql(compiler, connection)
++
++
+ KeyTransform.register_lookup(KeyTransformExact)
+ KeyTransform.register_lookup(KeyTransformIExact)
+ KeyTransform.register_lookup(KeyTransformIsNull)
+@@ -494,6 +557,7 @@ KeyTransform.register_lookup(KeyTransformLt)
+ KeyTransform.register_lookup(KeyTransformLte)
+ KeyTransform.register_lookup(KeyTransformGt)
+ KeyTransform.register_lookup(KeyTransformGte)
++KeyTransform.register_lookup(KeyTransformIn)
+ 
+ 
+ class KeyTransformFactory:

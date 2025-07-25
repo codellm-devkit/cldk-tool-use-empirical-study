@@ -1,0 +1,123 @@
+diff --git a/django/contrib/admin/options.py b/django/contrib/admin/options.py
+index 880a2cc17b..792a1f1183 100644
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -2047,9 +2047,26 @@ class InlineModelAdmin(BaseModelAdmin):
+         base_model_form = defaults['form']
+         can_change = self.has_change_permission(request, obj) if request else True
+         can_add = self.has_add_permission(request, obj) if request else True
+-
+-        class DeleteProtectedModelForm(base_model_form):
+-
++        can_view = self.has_view_permission(request, obj) if request else True
++
++        class ReadOnlyModelForm(base_model_form):
++            def __init__(self, *args, **kwargs):
++                super().__init__(*args, **kwargs)
++                if can_view and not can_change:
++                    for field_name, field in self.fields.items():
++                        # Ensure the widget has an attrs dictionary
++                        if not hasattr(field.widget, 'attrs'):
++                            field.widget.attrs = {}
++                        
++                        # Set the field as disabled
++                        field.widget.attrs['disabled'] = 'disabled'
++                        field.widget.attrs['readonly'] = True
++                        
++                        # Also set the field's disabled attribute if it has one
++                        if hasattr(field, 'disabled'):
++                            field.disabled = True
++
++        class DeleteProtectedModelForm(ReadOnlyModelForm):
+             def hand_clean_DELETE(self):
+                 """
+                 We don't validate the 'DELETE' field itself because on
+@@ -2100,7 +2117,33 @@ class InlineModelAdmin(BaseModelAdmin):
+         if defaults['fields'] is None and not modelform_defines_fields(defaults['form']):
+             defaults['fields'] = forms.ALL_FIELDS
+ 
+-        return inlineformset_factory(self.parent_model, self.model, **defaults)
++        # Create the formset class
++        FormSet = inlineformset_factory(self.parent_model, self.model, **defaults)
++        
++        # If the user only has view permission, override the formset's __init__ method
++        # to disable all fields in all forms
++        if self.has_view_permission(request, obj) and not self.has_change_permission(request, obj):
++            original_init = FormSet.__init__
++            
++            def new_init(self, *args, **kwargs):
++                original_init(self, *args, **kwargs)
++                for form in self.forms:
++                    for field_name, field in form.fields.items():
++                        # Ensure the widget has an attrs dictionary
++                        if not hasattr(field.widget, 'attrs'):
++                            field.widget.attrs = {}
++                        
++                        # Set the field as disabled
++                        field.widget.attrs['disabled'] = 'disabled'
++                        field.widget.attrs['readonly'] = True
++                        
++                        # Also set the field's disabled attribute if it has one
++                        if hasattr(field, 'disabled'):
++                            field.disabled = True
++            
++            FormSet.__init__ = new_init
++        
++        return FormSet
+ 
+     def _get_form_for_get_fields(self, request, obj=None):
+         return self.get_formset(request, obj, fields=None).form
+@@ -2115,28 +2158,44 @@ class InlineModelAdmin(BaseModelAdmin):
+         if self.opts.auto_created:
+             # We're checking the rights to an auto-created intermediate model,
+             # which doesn't have its own individual permissions. The user needs
+-            # to have the view permission for the related model in order to
+-            # be able to do anything with the intermediate model.
+-            return self.has_view_permission(request, obj)
++            # to have the change permission for the related model in order to
++            # be able to add intermediate model instances.
++            opts = self._get_related_model_opts()
++            return (
++                request.user.has_perm('%s.%s' % (opts.app_label, get_permission_codename('add', opts))) or
++                request.user.has_perm('%s.%s' % (opts.app_label, get_permission_codename('change', opts)))
++            )
+         return super().has_add_permission(request)
+ 
+     def has_change_permission(self, request, obj=None):
+         if self.opts.auto_created:
+             # We're checking the rights to an auto-created intermediate model,
+             # which doesn't have its own individual permissions. The user needs
+-            # to have the view permission for the related model in order to
+-            # be able to do anything with the intermediate model.
+-            return self.has_view_permission(request, obj)
++            # to have the change permission for the related model in order to
++            # be able to change intermediate model instances.
++            opts = self._get_related_model_opts()
++            return request.user.has_perm('%s.%s' % (opts.app_label, get_permission_codename('change', opts)))
+         return super().has_change_permission(request)
+ 
+     def has_delete_permission(self, request, obj=None):
+         if self.opts.auto_created:
+             # We're checking the rights to an auto-created intermediate model,
+             # which doesn't have its own individual permissions. The user needs
+-            # to have the view permission for the related model in order to
+-            # be able to do anything with the intermediate model.
+-            return self.has_view_permission(request, obj)
++            # to have the change permission for the related model in order to
++            # be able to delete intermediate model instances.
++            opts = self._get_related_model_opts()
++            return request.user.has_perm('%s.%s' % (opts.app_label, get_permission_codename('change', opts)))
+         return super().has_delete_permission(request, obj)
++        
++    def _get_related_model_opts(self):
++        # Helper method to get the options for the related model
++        opts = self.opts
++        # The model was auto-created as intermediary for a many-to-many
++        # relationship; find the target model.
++        for field in opts.fields:
++            if field.remote_field and field.remote_field.model != self.parent_model:
++                return field.remote_field.model._meta
++        return opts
+ 
+     def has_view_permission(self, request, obj=None):
+         if self.opts.auto_created:

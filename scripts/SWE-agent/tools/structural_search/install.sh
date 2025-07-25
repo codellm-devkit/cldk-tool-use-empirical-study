@@ -3,7 +3,7 @@ set -e
 
 echo "[structural_searcher] Installing dependencies..."
 
-# Only works if using Python 3.10
-pip install codeanalyzer-python==0.1.9
+# Support for Python 3.9+
+pip install -U codeanalyzer-python
 
 echo "[structural_searcher] Done."

@@ -1,0 +1,116 @@
+diff --git a/astropy/units/core.py b/astropy/units/core.py
+index 8c3204b8b0..30bfcdde33 100644
+--- a/astropy/units/core.py
++++ b/astropy/units/core.py
+@@ -1013,7 +1013,11 @@ class UnitBase:
+ 
+         def make_converter(scale1, func, scale2):
+             def convert(v):
+-                return func(_condition_arg(v) / scale1) * scale2
++                # Handle the case where _condition_arg returns NotImplemented
++                conditioned = _condition_arg(v)
++                if conditioned is NotImplemented:
++                    return NotImplemented
++                return func(conditioned / scale1) * scale2
+ 
+             return convert
+ 
+@@ -1070,7 +1074,13 @@ class UnitBase:
+             if scale == 1.0:
+                 return unit_scale_converter
+             else:
+-                return lambda val: scale * _condition_arg(val)
++                def converter(val):
++                    # Handle the case where _condition_arg returns NotImplemented
++                    result = _condition_arg(val)
++                    if result is NotImplemented:
++                        return NotImplemented
++                    return scale * result
++                return converter
+ 
+         # if that doesn't work, maybe we can do it with equivalencies?
+         try:
+@@ -2614,23 +2624,25 @@ def _condition_arg(value):
+ 
+     Returns
+     -------
+-    Scalar value or numpy array
+-
+-    Raises
+-    ------
+-    ValueError
+-        If value is not as expected
++    Scalar value or numpy array or NotImplemented
++        Returns NotImplemented if the value cannot be converted to a compatible array
++
++    Notes
++    -----
++    Previously, this function raised a ValueError for incompatible inputs, but
++    this prevented duck-typing with custom array-like objects. Returning NotImplemented
++    allows the reflected operations to be tried.
+     """
+     if isinstance(value, (np.ndarray, float, int, complex, np.void)):
+         return value
+ 
+-    avalue = np.array(value)
+-    if avalue.dtype.kind not in ["i", "f", "c"]:
+-        raise ValueError(
+-            "Value not scalar compatible or convertible to "
+-            "an int, float, or complex array"
+-        )
+-    return avalue
++    try:
++        avalue = np.array(value)
++        if avalue.dtype.kind not in ["i", "f", "c"]:
++            return NotImplemented
++        return avalue
++    except (TypeError, ValueError):
++        return NotImplemented
+ 
+ 
+ def unit_scale_converter(val):
+@@ -2639,7 +2651,11 @@ def unit_scale_converter(val):
+     This is a separate function so it can be recognized and
+     discarded in unit conversion.
+     """
+-    return 1.0 * _condition_arg(val)
++    # Handle the case where _condition_arg returns NotImplemented
++    conditioned = _condition_arg(val)
++    if conditioned is NotImplemented:
++        return NotImplemented
++    return 1.0 * conditioned
+ 
+ 
+ dimensionless_unscaled = CompositeUnit(1, [], [], _error_check=False)
+diff --git a/astropy/units/quantity.py b/astropy/units/quantity.py
+index b98abfafb0..1d07383042 100644
+--- a/astropy/units/quantity.py
++++ b/astropy/units/quantity.py
+@@ -667,7 +667,15 @@ class Quantity(np.ndarray):
+         arrays = []
+         for input_, converter in zip(inputs, converters):
+             input_ = getattr(input_, "value", input_)
+-            arrays.append(converter(input_) if converter else input_)
++            if converter:
++                converted = converter(input_)
++                # If a converter returns NotImplemented, we should return NotImplemented
++                # to allow the reflected operation to be tried
++                if converted is NotImplemented:
++                    return NotImplemented
++                arrays.append(converted)
++            else:
++                arrays.append(input_)
+ 
+         # Call our superclass's __array_ufunc__
+         result = super().__array_ufunc__(function, method, *arrays, **kwargs)
+diff --git a/pyproject.toml b/pyproject.toml
+index 486d6b9b3b..1c5f74f3a1 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,5 +1,5 @@
+ [build-system]
+-requires = ["setuptools",
++requires = ["setuptools==68.0.0",
+             "setuptools_scm>=6.2",
+             "wheel",
+             "cython==0.29.30",

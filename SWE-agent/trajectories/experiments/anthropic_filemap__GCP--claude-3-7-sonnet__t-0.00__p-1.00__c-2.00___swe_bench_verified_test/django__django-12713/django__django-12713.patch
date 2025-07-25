@@ -1,0 +1,19 @@
+diff --git a/django/db/models/fields/__init__.py b/django/db/models/fields/__init__.py
+index caa03665ea..eae1d73fed 100644
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -804,6 +804,14 @@ class Field(RegisterLookupMixin):
+         """Perform preliminary non-db specific value checks and conversions."""
+         if isinstance(value, Promise):
+             value = value._proxy____cast()
++        # Handle SimpleLazyObject
++        elif hasattr(value, '_wrapped') and hasattr(value, '_setup'):
++            if value._wrapped == 'empty':
++                value._setup()
++            value = value._wrapped
++            # Handle nested SimpleLazyObjects recursively
++            if hasattr(value, '_wrapped') and hasattr(value, '_setup'):
++                value = self.get_prep_value(value)
+         return value
+ 
+     def get_db_prep_value(self, value, connection, prepared=False):

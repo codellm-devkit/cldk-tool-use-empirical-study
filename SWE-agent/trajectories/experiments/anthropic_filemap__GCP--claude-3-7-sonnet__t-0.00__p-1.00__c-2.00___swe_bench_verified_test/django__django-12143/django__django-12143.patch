@@ -1,0 +1,88 @@
+diff --git a/django/db/models/base.py b/django/db/models/base.py
+index 0a5e5ff673..a6c1d04134 100644
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -1,4 +1,5 @@
+ import copy
++import enum
+ import inspect
+ import warnings
+ from functools import partialmethod
+@@ -431,6 +432,9 @@ class Model(metaclass=ModelBase):
+             for val, field in zip(args, fields_iter):
+                 if val is _DEFERRED:
+                     continue
++                # Convert enum values to their primitive types
++                if isinstance(val, enum.Enum):
++                    val = val.value
+                 _setattr(self, field.attname, val)
+         else:
+             # Slower, kwargs-ready version.
+@@ -438,6 +442,9 @@ class Model(metaclass=ModelBase):
+             for val, field in zip(args, fields_iter):
+                 if val is _DEFERRED:
+                     continue
++                # Convert enum values to their primitive types
++                if isinstance(val, enum.Enum):
++                    val = val.value
+                 _setattr(self, field.attname, val)
+                 kwargs.pop(field.name, None)
+ 
+@@ -482,6 +489,9 @@ class Model(metaclass=ModelBase):
+                     _setattr(self, field.name, rel_obj)
+             else:
+                 if val is not _DEFERRED:
++                    # Convert enum values to their primitive types
++                    if isinstance(val, enum.Enum):
++                        val = val.value
+                     _setattr(self, field.attname, val)
+ 
+         if kwargs:
+diff --git a/django/db/models/fields/__init__.py b/django/db/models/fields/__init__.py
+index d610dc86f0..ffed485881 100644
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -2,6 +2,7 @@ import collections.abc
+ import copy
+ import datetime
+ import decimal
++import enum
+ import operator
+ import uuid
+ import warnings
+@@ -792,6 +793,9 @@ class Field(RegisterLookupMixin):
+         """Perform preliminary non-db specific value checks and conversions."""
+         if isinstance(value, Promise):
+             value = value._proxy____cast()
++        # Handle TextChoices and IntegerChoices enum values
++        if isinstance(value, enum.Enum):
++            value = value.value
+         return value
+ 
+     def get_db_prep_value(self, value, connection, prepared=False):
+diff --git a/django/db/models/query_utils.py b/django/db/models/query_utils.py
+index 189fb4fa44..55d2e0d1e8 100644
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -6,6 +6,7 @@ large and/or so that they can be used by other modules without getting into
+ circular import difficulties.
+ """
+ import copy
++import enum
+ import functools
+ import inspect
+ from collections import namedtuple
+@@ -136,7 +137,12 @@ class DeferredAttribute:
+                 instance.refresh_from_db(fields=[field_name])
+                 val = getattr(instance, field_name)
+             data[field_name] = val
+-        return data[field_name]
++        
++        # Handle TextChoices and IntegerChoices enum values
++        value = data[field_name]
++        if isinstance(value, enum.Enum):
++            return value.value
++        return value
+ 
+     def _check_parent_chain(self, instance):
+         """

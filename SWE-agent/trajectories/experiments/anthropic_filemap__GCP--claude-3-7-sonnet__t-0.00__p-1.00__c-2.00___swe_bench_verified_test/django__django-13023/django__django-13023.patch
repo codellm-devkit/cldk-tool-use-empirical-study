@@ -1,0 +1,39 @@
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index 29e33c075f..79619f886a 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1410,8 +1410,15 @@ class SQLDeleteCompiler(SQLCompiler):
+         return sum(self.query.alias_refcount[t] > 0 for t in self.query.alias_map) == 1
+ 
+     def _as_sql(self, query):
++        # Get the base table name
++        if query.base_table is None and hasattr(query, 'model') and query.model is not None:
++            # If base_table is None but we have a model, use the model's db_table
++            base_table = query.model._meta.db_table
++        else:
++            base_table = query.base_table
++            
+         result = [
+-            'DELETE FROM %s' % self.quote_name_unless_alias(query.base_table)
++            'DELETE FROM %s' % self.quote_name_unless_alias(base_table)
+         ]
+         where, params = self.compile(query.where)
+         if where:
+@@ -1423,8 +1430,17 @@ class SQLDeleteCompiler(SQLCompiler):
+         Create the SQL for this query. Return the SQL string and list of
+         parameters.
+         """
++        # For simple DELETE queries without any WHERE conditions, use the direct DELETE FROM syntax
++        # This avoids issues with MySQL LOCK TABLES and improves performance
++        if not self.query.where.children:
++            # This handles Model.objects.all().delete() - simple DELETE FROM without subquery
++            return self._as_sql(self.query)
++            
++        # For queries with WHERE conditions but a single table, use direct DELETE FROM with WHERE
+         if self.single_alias:
+             return self._as_sql(self.query)
++            
++        # For complex queries with multiple tables, use a subquery
+         innerq = self.query.clone()
+         innerq.__class__ = Query
+         innerq.clear_select_clause()

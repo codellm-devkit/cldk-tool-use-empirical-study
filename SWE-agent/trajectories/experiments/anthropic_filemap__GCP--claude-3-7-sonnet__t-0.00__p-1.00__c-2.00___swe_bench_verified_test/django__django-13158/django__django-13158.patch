@@ -1,0 +1,78 @@
+diff --git a/django/db/models/expressions.py b/django/db/models/expressions.py
+index d913658291..414f8054c9 100644
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -63,9 +63,41 @@ class Combinable:
+             )
+             other = Value(other, output_field=output_field)
+ 
++        # Check if we're doing a subtraction between DateTimeFields
++        if connector == self.SUB and not reversed:
++            try:
++                lhs_type = self.output_field.get_internal_type()
++                rhs_type = getattr(other, 'output_field', None)
++                if rhs_type:
++                    rhs_type = rhs_type.get_internal_type()
++                datetime_fields = {'DateField', 'DateTimeField', 'TimeField'}
++                if lhs_type in datetime_fields and lhs_type == rhs_type:
++                    # Use TemporalSubtraction directly
++                    return TemporalSubtraction(self, other)
++            except (AttributeError, FieldError):
++                pass
++
+         if reversed:
+             return CombinedExpression(other, connector, self)
+-        return CombinedExpression(self, connector, other)
++        
++        # Create the CombinedExpression
++        combined = CombinedExpression(self, connector, other)
++        
++        # If we're doing a subtraction between DateTimeFields, set the output_field
++        if connector == self.SUB:
++            try:
++                lhs_output_field = getattr(self, 'output_field', None)
++                rhs_output_field = getattr(other, 'output_field', None)
++                if lhs_output_field and rhs_output_field:
++                    lhs_type = lhs_output_field.get_internal_type()
++                    rhs_type = rhs_output_field.get_internal_type()
++                    datetime_fields = {'DateField', 'DateTimeField', 'TimeField'}
++                    if lhs_type in datetime_fields and lhs_type == rhs_type:
++                        combined.output_field = fields.DurationField()
++            except (AttributeError, FieldError):
++                pass
++        
++        return combined
+ 
+     #############
+     # OPERATORS #
+@@ -459,6 +491,7 @@ class CombinedExpression(SQLiteNumericMixin, Expression):
+             return DurationExpression(self.lhs, self.connector, self.rhs).as_sql(compiler, connection)
+         datetime_fields = {'DateField', 'DateTimeField', 'TimeField'}
+         if self.connector == self.SUB and lhs_type in datetime_fields and lhs_type == rhs_type:
++            # Use TemporalSubtraction directly
+             return TemporalSubtraction(self.lhs, self.rhs).as_sql(compiler, connection)
+         expressions = []
+         expression_params = []
+@@ -478,6 +511,22 @@ class CombinedExpression(SQLiteNumericMixin, Expression):
+         c.is_summary = summarize
+         c.lhs = c.lhs.resolve_expression(query, allow_joins, reuse, summarize, for_save)
+         c.rhs = c.rhs.resolve_expression(query, allow_joins, reuse, summarize, for_save)
++        
++        # Check if we're doing a subtraction between DateTimeFields
++        if c.connector == c.SUB:
++            try:
++                lhs_output_field = getattr(c.lhs, 'output_field', None)
++                rhs_output_field = getattr(c.rhs, 'output_field', None)
++                if lhs_output_field and rhs_output_field:
++                    lhs_type = lhs_output_field.get_internal_type()
++                    rhs_type = rhs_output_field.get_internal_type()
++                    datetime_fields = {'DateField', 'DateTimeField', 'TimeField'}
++                    if lhs_type in datetime_fields and lhs_type == rhs_type:
++                        # Set the output_field to DurationField
++                        c.output_field = fields.DurationField()
++            except (AttributeError, FieldError):
++                pass
++        
+         return c
+ 
+ 

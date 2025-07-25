@@ -10,5 +10,5 @@ sweagent run-batch \
     --instances.type swe_bench \
     --instances.subset verified \
     --instances.split test  \
-    --instances.slice 1: \
+    --instances.slice 112: \
     --instances.shuffle=False \

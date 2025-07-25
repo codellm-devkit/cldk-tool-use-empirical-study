@@ -1,34 +1,22 @@
-diff --git a/astropy/timeseries/core.py b/astropy/timeseries/core.py
-index c279f35f87..014dfa9616 100644
---- a/astropy/timeseries/core.py
-+++ b/astropy/timeseries/core.py
-@@ -75,10 +75,20 @@ class BaseTimeSeries(QTable):
-                                  .format(self.__class__.__name__, required_columns[0], plural))
+diff --git a/astropy/table/table.py b/astropy/table/table.py
+index 5afe2127a3..0f922f03de 100644
+--- a/astropy/table/table.py
++++ b/astropy/table/table.py
+@@ -1243,6 +1243,12 @@ class Table:
+         # mixin class
+         if (not isinstance(data, Column) and not data_is_mixin
+                 and isinstance(data, np.ndarray) and len(data.dtype) > 1):
++            warnings.warn(
++                "In Astropy 5.2, structured arrays will be added as Column objects "
++                "instead of being automatically converted to NdarrayMixin. "
++                "To maintain the current behavior, explicitly wrap the array in "
++                "NdarrayMixin. To adopt the new behavior now, wrap the array in Column.",
++                FutureWarning)
+             data = data.view(NdarrayMixin)
+             data_is_mixin = True
  
-             elif self.colnames[:len(required_columns)] != required_columns:
--
--                raise ValueError("{} object is invalid - expected '{}' "
--                                 "as the first column{} but found '{}'"
--                                 .format(self.__class__.__name__, required_columns[0], plural, self.colnames[0]))
-+                # Check if all required columns are present but in wrong order
-+                missing_columns = [col for col in required_columns if col not in self.colnames]
-+                
-+                if missing_columns:
-+                    missing_str = "', '".join(missing_columns)
-+                    raise ValueError("{} object is invalid - missing required column{}: '{}'"
-+                                    .format(self.__class__.__name__, 
-+                                           's' if len(missing_columns) > 1 else '',
-+                                           missing_str))
-+                else:
-+                    # If no columns are missing, it's an order issue
-+                    raise ValueError("{} object is invalid - expected '{}' "
-+                                    "as the first column{} but found '{}'"
-+                                    .format(self.__class__.__name__, required_columns[0], plural, self.colnames[0]))
- 
-             if (self._required_columns_relax
-                     and self._required_columns == self.colnames[:len(self._required_columns)]):
 diff --git a/pyproject.toml b/pyproject.toml
-index 32ebe645ce..6ebe80c7a6 100644
+index 4e84dd196b..3c3d00c32d 100644
 --- a/pyproject.toml
 +++ b/pyproject.toml
 @@ -1,5 +1,5 @@

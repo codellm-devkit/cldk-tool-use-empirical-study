@@ -1,0 +1,95 @@
+diff --git a/astropy/io/ascii/fixedwidth.py b/astropy/io/ascii/fixedwidth.py
+index fdadbbc050..958cb9dc70 100644
+--- a/astropy/io/ascii/fixedwidth.py
++++ b/astropy/io/ascii/fixedwidth.py
+@@ -271,17 +271,23 @@ class FixedWidthData(basic.BasicData):
+         # List (rows) of list (columns values) for header lines.
+         hdrs_list = []
+         for col_attr in header_rows:
+-            vals = [
+-                "" if (val := getattr(col.info, col_attr)) is None else str(val)
+-                for col in self.cols
+-            ]
++            vals = []
++            for col in self.cols:
++                try:
++                    val = getattr(col.info, col_attr)
++                    vals.append("" if val is None else str(val))
++                except AttributeError:
++                    vals.append("")
+             hdrs_list.append(vals)
+ 
+         # Widths for data columns
+-        widths = [
+-            max(len(vals[i_col]) for vals in vals_list)
+-            for i_col in range(len(self.cols))
+-        ]
++        widths = []
++        for i_col in range(len(self.cols)):
++            if vals_list:
++                widths.append(max(len(vals[i_col]) for vals in vals_list))
++            else:
++                # Handle case of no data rows
++                widths.append(0)
+         # Incorporate widths for header columns (if there are any)
+         if hdrs_list:
+             for i_col in range(len(self.cols)):
+diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
+index abdeba8efb..ee9edaf967 100644
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -27,7 +27,7 @@ class SimpleRSTHeader(FixedWidthHeader):
+ 
+ 
+ class SimpleRSTData(FixedWidthData):
+-    start_line = 3
++    start_line = 3  # Default for standard RST format with single header row
+     end_line = -1
+     splitter_class = FixedWidthTwoLineDataSplitter
+ 
+@@ -49,7 +49,14 @@ class RST(FixedWidth):
+     Currently there is no support for reading tables which utilize continuation lines,
+     or for ones which define column spans through the use of an additional
+     line of dashes in the header.
+-
++    
++    Parameters
++    ----------
++    header_rows : list, optional
++        A list of strings corresponding to attributes of column.info that
++        should be used for the header rows. For instance, ['name', 'unit']
++        will create a header row with column names followed by a row with
++        the units. Default is ['name'].
+     """
+ 
+     _format_name = "rst"
+@@ -57,10 +64,26 @@ class RST(FixedWidth):
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+ 
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, header_rows=None):
++        # If header_rows is an empty list, set it to None to use default behavior
++        if header_rows is not None and len(header_rows) == 0:
++            header_rows = None
++            
++        super().__init__(delimiter_pad=None, bookend=False, header_rows=header_rows)
++        
++        # Adjust data start line based on header_rows
++        if header_rows is not None:
++            self.data.start_line = len(header_rows) + 1
+ 
+     def write(self, lines):
+         lines = super().write(lines)
+-        lines = [lines[1]] + lines + [lines[1]]
++        # Get the separator line (the line with '=' characters)
++        # In the standard case, it's the second line (index 1)
++        # With multiple header rows, it's after all header rows
++        header_rows = getattr(self.header, "header_rows", ["name"])
++        separator_line_index = len(header_rows) if header_rows else 1
++        separator_line = lines[separator_line_index]
++        
++        # Add separator line at the beginning and end
++        lines = [separator_line] + lines + [separator_line]
+         return lines

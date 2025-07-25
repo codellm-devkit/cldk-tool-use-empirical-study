@@ -1,0 +1,45 @@
+diff --git a/astropy/units/format/cds.py b/astropy/units/format/cds.py
+index 307e987ed6..4b93d08ac8 100644
+--- a/astropy/units/format/cds.py
++++ b/astropy/units/format/cds.py
+@@ -301,6 +301,27 @@ class CDS(Base):
+             return cls._parse_unit(s, detailed_exception=False)
+         except ValueError:
+             try:
++                # Preprocess the string to handle consecutive divisions correctly
++                # For CDS format, a/b/c should be interpreted as a/(b*c)
++                import re
++                
++                # Check if there are multiple consecutive divisions
++                if s.count('/') > 1:
++                    # Split the string by '/'
++                    parts = s.split('/')
++                    
++                    # The first part is the numerator
++                    numerator = parts[0]
++                    
++                    # The rest are denominators that should be multiplied together
++                    denominators = parts[1:]
++                    
++                    # Join the denominators with '.' (multiplication in CDS format)
++                    denominator = '.'.join(denominators)
++                    
++                    # Reconstruct the string with a single division
++                    s = f"{numerator}/{denominator}"
++                
+                 return cls._parser.parse(s, lexer=cls._lexer, debug=debug)
+             except ValueError as e:
+                 if str(e):
+diff --git a/pyproject.toml b/pyproject.toml
+index 5b691556b8..277dafd0f3 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -231,7 +231,7 @@ extend-ignore = [
+     "S101",  # UseOfAssert                           # TODO: fix
+     "S105",  # HardcodedPasswordString               # TODO: fix by adding noqa
+     "S506",  # UnsafeYAMLLoad                        # TODO: fix
+-    "S324",	 # HashlibInsecureHashFunction           # TODO: fix or noqa
++    "S324",      # HashlibInsecureHashFunction           # TODO: fix or noqa
+ 
+     # flake8-simplify (SIM)
+     "SIM102",  # NestedIfStatements                  # TODO: fixable with `pass`.
