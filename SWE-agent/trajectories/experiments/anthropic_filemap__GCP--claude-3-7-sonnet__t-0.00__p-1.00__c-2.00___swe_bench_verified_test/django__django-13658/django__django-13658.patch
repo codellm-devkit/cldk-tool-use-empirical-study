@@ -1,0 +1,22 @@
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index 04e430a42e..c4e999207a 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -128,8 +128,15 @@ class SQLCompiler:
+         for expr, (sql, params, is_ref) in order_by:
+             # Skip References to the select clause, as all expressions in the
+             # select clause are already part of the group by.
+-            if not is_ref:
+-                expressions.extend(expr.get_group_by_cols())
++            if expr.contains_aggregate:
++                continue
++            if is_ref:
++                continue
++            # Don't add Random expressions to GROUP BY
++            expressions.extend([
++                exp for exp in expr.get_source_expressions()
++                if not isinstance(exp, Random)
++            ])
+         having_group_by = self.having.get_group_by_cols() if self.having else ()
+         for expr in having_group_by:
+             expressions.append(expr)

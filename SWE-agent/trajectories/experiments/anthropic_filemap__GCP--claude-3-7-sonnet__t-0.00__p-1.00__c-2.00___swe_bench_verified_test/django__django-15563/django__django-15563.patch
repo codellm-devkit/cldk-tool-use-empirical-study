@@ -1,0 +1,29 @@
+diff --git a/django/db/models/sql/subqueries.py b/django/db/models/sql/subqueries.py
+index 04063f73bc..f9cb757ab6 100644
+--- a/django/db/models/sql/subqueries.py
++++ b/django/db/models/sql/subqueries.py
+@@ -134,7 +134,23 @@ class UpdateQuery(Query):
+             query = UpdateQuery(model)
+             query.values = values
+             if self.related_ids is not None:
+-                query.add_filter("pk__in", self.related_ids)
++                # For multi-table inheritance, we need to find the correct parent link field
++                if len(self.model._meta.parents) > 1:
++                    # Find the link field from child to this parent model
++                    for parent, parent_link in self.model._meta.parents.items():
++                        if parent._meta.concrete_model == model._meta.concrete_model:
++                            # Use the correct parent link field to filter
++                            parent_link_name = parent_link.name
++                            # Get the parent IDs from the child objects
++                            query.add_filter(f"pk__in", 
++                                self.model.objects.filter(pk__in=self.related_ids).values_list(parent_link_name, flat=True))
++                            break
++                    else:
++                        # Fallback to the default behavior if no parent link is found
++                        query.add_filter("pk__in", self.related_ids)
++                else:
++                    # Default behavior for single inheritance or non-inheritance models
++                    query.add_filter("pk__in", self.related_ids)
+             result.append(query)
+         return result
+ 

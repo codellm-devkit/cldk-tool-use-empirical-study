@@ -1,0 +1,44 @@
+diff --git a/django/urls/resolvers.py b/django/urls/resolvers.py
+index 6ea18dd22f..8a739a7e11 100644
+--- a/django/urls/resolvers.py
++++ b/django/urls/resolvers.py
+@@ -324,7 +324,39 @@ class LocalePrefixPattern:
+         language_prefix = self.language_prefix
+         if path.startswith(language_prefix):
+             return path[len(language_prefix):], (), {}
++        
++        # If the language prefix is empty (default language with prefix_default_language=False)
++        # and the path doesn't have a language prefix, we should match the path as is
++        if language_prefix == '' and not self._has_language_prefix(path):
++            return path, (), {}
++        
++        # Check if the path starts with a language code from LANGUAGES
++        languages = getattr(settings, 'LANGUAGES', [])
++        path_lower = path.lower()
++        for language_code, language_name in languages:
++            # Skip the default language if prefix_default_language is False
++            if language_code == settings.LANGUAGE_CODE and not self.prefix_default_language:
++                continue
++                
++            language_path = f"{language_code.lower()}/"
++            if path_lower.startswith(language_path):
++                # Use the original case from the path
++                prefix_len = len(language_path)
++                return path[prefix_len:], (), {}
++        
+         return None
++        
++    def _has_language_prefix(self, path):
++        """Check if the path starts with any language code from LANGUAGES."""
++        languages = getattr(settings, 'LANGUAGES', [])
++        path_lower = path.lower()
++        
++        for language_code, language_name in languages:
++            language_path = f"{language_code.lower()}/"
++            if path_lower.startswith(language_path):
++                return True
++                
++        return False
+ 
+     def check(self):
+         return []

@@ -1,0 +1,442 @@
+diff --git a/django/db/models/base.py b/django/db/models/base.py
+index 0d50dad0c9..04cc579683 100644
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -539,6 +539,20 @@ class Model(metaclass=ModelBase):
+         new = cls(*values)
+         new._state.adding = False
+         new._state.db = db
++        
++        # Store the list of fields that were actually fetched from the database
++        # This is used to determine which fields are deferred
++        new._loaded_field_names = set(field_names)
++        
++        # Initialize the fields_cache dictionary if it doesn't exist
++        if not hasattr(new._state, 'fields_cache'):
++            new._state.fields_cache = {}
++        
++        # Add the loaded field values to the fields_cache dictionary
++        for i, field_name in enumerate(field_names):
++            if values[i] is not DEFERRED:
++                new._state.fields_cache[field_name] = values[i]
++        
+         return new
+ 
+     def __repr__(self):
+@@ -622,10 +636,46 @@ class Model(metaclass=ModelBase):
+         """
+         Return a set containing names of deferred fields for this instance.
+         """
+-        return {
++        # Check if the field is in the fields_cache dictionary
++        fields_cache = getattr(self._state, 'fields_cache', {})
++        
++        # Check if we have a record of which fields were loaded from the database
++        loaded_field_names = getattr(self, '_loaded_field_names', set())
++        
++        # A field is not deferred if it's either in __dict__, in fields_cache, or in _loaded_field_names
++        deferred_fields = {
+             f.attname for f in self._meta.concrete_fields
+-            if f.attname not in self.__dict__
++            if f.attname not in self.__dict__ and f.attname not in fields_cache and f.attname not in loaded_field_names
+         }
++        
++        # Check if this is a circular reference in a prefetch_related chain
++        # This happens when we have a chain like User -> Profile -> User
++        # In this case, we need to check if the field value is available
++        # in the prefetched objects
++        if hasattr(self, '_meta'):
++            # Check if this is a OneToOneField relation
++            for related_field in self._meta.related_objects:
++                if related_field.one_to_one:
++                    # Get the related object
++                    related_name = related_field.get_accessor_name()
++                    if hasattr(self, related_name):
++                        related_obj = getattr(self, related_name)
++                        if related_obj is not None:
++                            # Check if the related object has a relation back to this model
++                            for field in related_obj._meta.fields:
++                                if field.is_relation and field.related_model == self.__class__:
++                                    # Get the related object
++                                    back_related_obj = getattr(related_obj, field.name)
++                                    if back_related_obj is not None and back_related_obj.pk == self.pk:
++                                        # This is a circular reference
++                                        # Check if the field value is available in the prefetched objects
++                                        back_loaded_field_names = getattr(back_related_obj, '_loaded_field_names', set())
++                                        deferred_fields = {
++                                            f.attname for f in self._meta.concrete_fields
++                                            if f.attname not in self.__dict__ and f.attname not in fields_cache and f.attname not in loaded_field_names and f.attname not in back_loaded_field_names
++                                        }
++        
++        return deferred_fields
+ 
+     def refresh_from_db(self, using=None, fields=None):
+         """
+diff --git a/django/db/models/query.py b/django/db/models/query.py
+index fb6639793a..e1ed8d3806 100644
+--- a/django/db/models/query.py
++++ b/django/db/models/query.py
+@@ -19,7 +19,7 @@ from django.db.models.constants import LOOKUP_SEP
+ from django.db.models.deletion import Collector
+ from django.db.models.expressions import Case, Expression, F, Ref, Value, When
+ from django.db.models.functions import Cast, Trunc
+-from django.db.models.query_utils import FilteredRelation, Q
++from django.db.models.query_utils import DeferredAttribute, FilteredRelation, Q
+ from django.db.models.sql.constants import CURSOR, GET_ITERATOR_CHUNK_SIZE
+ from django.db.models.utils import create_namedtuple_class, resolve_callables
+ from django.utils import timezone
+@@ -1689,6 +1689,10 @@ def prefetch_related_objects(model_instances, *related_lookups):
+     # lookups that we look up (see below).  So we need some book keeping to
+     # ensure we don't do duplicate work.
+     done_queries = {}    # dictionary of things like 'foo__bar': [results]
++    done_queries_by_model = {}  # dictionary of model: {pk: instance}
++    
++    # Make the done_queries_by_model dictionary available to the prefetch_one_level function
++    prefetch_related_objects.done_queries_by_model = done_queries_by_model
+ 
+     auto_lookups = set()  # we add to this as we go through.
+     followed_descriptors = set()  # recursion protection
+@@ -1736,6 +1740,14 @@ def prefetch_related_objects(model_instances, *related_lookups):
+                         # party. prefetch_related() doesn't make sense, so quit.
+                         good_objects = False
+                         break
++                
++                # Store the object in the done_queries_by_model dictionary
++                # This is used to handle circular references in prefetch_related
++                model_class = obj.__class__
++                if model_class not in done_queries_by_model:
++                    done_queries_by_model[model_class] = {}
++                done_queries_by_model[model_class][obj.pk] = obj
++                
+             if not good_objects:
+                 break
+ 
+@@ -1907,10 +1919,57 @@ def prefetch_one_level(instances, prefetcher, lookup, level):
+         # for performance reasons.
+         rel_qs._prefetch_related_lookups = ()
+ 
++    # Get the list of fields that are being selected in the queryset
++    # This is used to determine which fields are deferred
++    selected_fields = getattr(rel_qs.query, 'deferred_loading', (set(), True))[0]
++    model_fields = {f.attname for f in rel_qs.model._meta.concrete_fields}
++    if selected_fields and selected_fields != set(['*']):
++        # If we're using only(), then selected_fields contains the field names that are NOT deferred
++        if rel_qs.query.deferred_loading[1]:
++            loaded_field_names = selected_fields
++        # If we're using defer(), then selected_fields contains the field names that ARE deferred
++        else:
++            loaded_field_names = model_fields - selected_fields
++    else:
++        # If we're not using defer() or only(), then all fields are loaded
++        loaded_field_names = model_fields
++
+     all_related_objects = list(rel_qs)
++    
++    # Check if any of the related objects are already in the done_queries_by_model dictionary
++    # This is used to handle circular references in prefetch_related
++    done_queries_by_model = getattr(prefetch_related_objects, 'done_queries_by_model', {})
++    for i, obj in enumerate(all_related_objects):
++        model_class = obj.__class__
++        if model_class in done_queries_by_model and obj.pk in done_queries_by_model[model_class]:
++            # This object is already in the done_queries_by_model dictionary
++            # We need to update it with the fields from the current object
++            existing_obj = done_queries_by_model[model_class][obj.pk]
++            
++            # Copy the fields from the current object to the existing object
++            for field_name in loaded_field_names:
++                if hasattr(obj, field_name) and not isinstance(getattr(obj, field_name, None), DeferredAttribute):
++                    # Set the field value in the existing object's __dict__
++                    existing_obj.__dict__[field_name] = getattr(obj, field_name)
++            
++            # Replace the object in the all_related_objects list with the existing object
++            all_related_objects[i] = existing_obj
+ 
+     rel_obj_cache = {}
+     for rel_obj in all_related_objects:
++        # Store the object in the done_queries_by_model dictionary
++        # This is used to handle circular references in prefetch_related
++        model_class = rel_obj.__class__
++        if model_class not in done_queries_by_model:
++            done_queries_by_model[model_class] = {}
++        done_queries_by_model[model_class][rel_obj.pk] = rel_obj
++        
++        # Store the loaded field names in the object
++        if hasattr(rel_obj, '_loaded_field_names'):
++            rel_obj._loaded_field_names.update(loaded_field_names)
++        else:
++            rel_obj._loaded_field_names = loaded_field_names
++        
+         rel_attr_val = rel_obj_attr(rel_obj)
+         rel_obj_cache.setdefault(rel_attr_val, []).append(rel_obj)
+ 
+@@ -1963,6 +2022,29 @@ def prefetch_one_level(instances, prefetcher, lookup, level):
+                 # since we have merged this into the current work.
+                 qs._prefetch_done = True
+                 obj._prefetched_objects_cache[cache_name] = qs
++        
++        # If this is a circular reference in a prefetch_related chain,
++        # we need to update the inner object with the fields from the outer object
++        # This happens when we have a chain like User -> Profile -> User
++        if vals and single and val is not None:
++            # Check if the related object has a relation back to this model
++            if hasattr(val, '_meta'):
++                for field in val._meta.fields:
++                    if field.is_relation and field.related_model == obj.__class__:
++                        # Get the related object
++                        back_related_obj = getattr(val, field.name)
++                        if back_related_obj is not None and back_related_obj.pk == obj.pk:
++                            # This is a circular reference
++                            # Update the inner object with the fields from the outer object
++                            for field_name in getattr(obj, '_loaded_field_names', set()):
++                                if hasattr(obj, field_name) and not isinstance(getattr(obj, field_name, None), DeferredAttribute):
++                                    # Set the field value in the inner object's __dict__
++                                    back_related_obj.__dict__[field_name] = getattr(obj, field_name)
++                                    # Update the inner object's _loaded_field_names
++                                    if hasattr(back_related_obj, '_loaded_field_names'):
++                                        back_related_obj._loaded_field_names.add(field_name)
++                                    else:
++                                        back_related_obj._loaded_field_names = {field_name}
+     return all_related_objects, additional_lookups
+ 
+ 
+diff --git a/django/db/models/query_utils.py b/django/db/models/query_utils.py
+index 188b640850..27f5254076 100644
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -113,7 +113,15 @@ class DeferredAttribute:
+             # might be able to reuse the already loaded value. Refs #18343.
+             val = self._check_parent_chain(instance)
+             if val is None:
+-                instance.refresh_from_db(fields=[field_name])
++                # Check if this field has been loaded through prefetch_related
++                # and is available in the fields_cache
++                fields_cache = getattr(instance._state, 'fields_cache', {})
++                if field_name in fields_cache:
++                    data[field_name] = fields_cache[field_name]
++                else:
++                    # If we couldn't find the field value in the prefetched objects,
++                    # we need to get it from the database
++                    instance.refresh_from_db(fields=[field_name])
+             else:
+                 data[field_name] = val
+         return data[field_name]
+diff --git a/reproduce_issue.py b/reproduce_issue.py
+new file mode 100644
+index 0000000000..3074cf1375
+--- /dev/null
++++ b/reproduce_issue.py
+@@ -0,0 +1,161 @@
++import os
++import sys
++import django
++from django.db import models
++from django.test import TestCase
++from django.db.models import Prefetch
++from django.db import connection
++from django.test.utils import CaptureQueriesContext
++
++# Add the current directory to the Python path
++sys.path.insert(0, '/testbed')
++
++# Create a minimal settings module
++with open('/testbed/settings.py', 'w') as f:
++    f.write("""
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++INSTALLED_APPS = [
++    'django.contrib.contenttypes',
++    'django.contrib.auth',
++    'testapp',
++]
++SECRET_KEY = 'dummy'
++""")
++
++# Create a test app
++os.makedirs('/testbed/testapp', exist_ok=True)
++
++# Create __init__.py
++with open('/testbed/testapp/__init__.py', 'w') as f:
++    f.write('')
++
++# Create apps.py
++with open('/testbed/testapp/apps.py', 'w') as f:
++    f.write("""
++from django.apps import AppConfig
++
++class TestAppConfig(AppConfig):
++    name = 'testapp'
++    default_auto_field = 'django.db.models.AutoField'
++""")
++
++# Create models.py
++with open('/testbed/testapp/models.py', 'w') as f:
++    f.write("""
++from django.db import models
++
++class User(models.Model):
++    email = models.EmailField()
++    kind = models.CharField(
++        max_length=10, choices=[("ADMIN", "Admin"), ("REGULAR", "Regular")]
++    )
++
++class Profile(models.Model):
++    full_name = models.CharField(max_length=255)
++    user = models.OneToOneField(User, on_delete=models.CASCADE)
++""")
++
++# Configure Django settings
++os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'settings')
++
++# Initialize Django
++django.setup()
++
++# Import the models from the test app
++from testapp.models import User, Profile
++
++# Create a test case to reproduce the issue
++class DeferredFieldsTest(TestCase):
++    def test_only_related_queryset(self):
++        # Create test data
++        user = User.objects.create(
++            email="test@example.com",
++            kind="ADMIN",
++        )
++        Profile.objects.create(user=user, full_name="Test Tester")
++        
++        # Create the queryset with nested prefetches and only() calls
++        queryset = User.objects.only("email").prefetch_related(
++            Prefetch(
++                "profile",
++                queryset=Profile.objects.prefetch_related(
++                    Prefetch("user", queryset=User.objects.only("kind"))
++                ),
++            )
++        )
++        
++        # Execute the queryset and access the prefetched data
++        print("Executing queryset...")
++        with CaptureQueriesContext(connection) as queries:
++            user = queryset.first()
++            print(f"Number of queries executed: {len(queries)}")
++            for i, query in enumerate(queries):
++                print(f"Query {i+1}: {query['sql']}")
++                
++        # Print information about the user object
++        print("\nUser object:")
++        print(f"user.__dict__: {user.__dict__}")
++        print(f"user._state.fields_cache: {getattr(user._state, 'fields_cache', {})}")
++        print(f"user._loaded_field_names: {getattr(user, '_loaded_field_names', set())}")
++        print(f"user._prefetched_objects_cache: {getattr(user, '_prefetched_objects_cache', {})}")
++        for cache_name, qs in getattr(user, '_prefetched_objects_cache', {}).items():
++            print(f"user._prefetched_objects_cache[{cache_name}]._result_cache: {getattr(qs, '_result_cache', [])}")
++        
++        # This should not execute any additional queries
++        print("\nAccessing user.profile.user.kind...")
++        print(f"Deferred fields on user.profile.user: {user.profile.user.get_deferred_fields()}")
++        print(f"user.profile.user.__dict__: {user.profile.user.__dict__}")
++        print(f"user.profile.user._state.fields_cache: {getattr(user.profile.user._state, 'fields_cache', {})}")
++        print(f"user.profile.user._loaded_field_names: {getattr(user.profile.user, '_loaded_field_names', set())}")
++        print(f"user.profile.user._prefetched_objects_cache: {getattr(user.profile.user, '_prefetched_objects_cache', {})}")
++        
++        # Print information about the profile object
++        print("\nProfile object:")
++        print(f"user.profile.__dict__: {user.profile.__dict__}")
++        print(f"user.profile._state.fields_cache: {getattr(user.profile._state, 'fields_cache', {})}")
++        print(f"user.profile._loaded_field_names: {getattr(user.profile, '_loaded_field_names', set())}")
++        print(f"user.profile._prefetched_objects_cache: {getattr(user.profile, '_prefetched_objects_cache', {})}")
++        
++        # Print information about the prefetched objects
++        print("\nPrefetched objects:")
++        print(f"user._prefetched_objects_cache: {getattr(user, '_prefetched_objects_cache', {})}")
++        for cache_name, qs in getattr(user, '_prefetched_objects_cache', {}).items():
++            print(f"user._prefetched_objects_cache[{cache_name}]._result_cache: {getattr(qs, '_result_cache', [])}")
++            for obj in getattr(qs, '_result_cache', []):
++                print(f"user._prefetched_objects_cache[{cache_name}]._result_cache[0].__dict__: {obj.__dict__}")
++                print(f"user._prefetched_objects_cache[{cache_name}]._result_cache[0]._prefetched_objects_cache: {getattr(obj, '_prefetched_objects_cache', {})}")
++                for nested_cache_name, nested_qs in getattr(obj, '_prefetched_objects_cache', {}).items():
++                    print(f"user._prefetched_objects_cache[{cache_name}]._result_cache[0]._prefetched_objects_cache[{nested_cache_name}]._result_cache: {getattr(nested_qs, '_result_cache', [])}")
++                    for nested_obj in getattr(nested_qs, '_result_cache', []):
++                        print(f"user._prefetched_objects_cache[{cache_name}]._result_cache[0]._prefetched_objects_cache[{nested_cache_name}]._result_cache[0].__dict__: {nested_obj.__dict__}")
++                        print(f"user._prefetched_objects_cache[{cache_name}]._result_cache[0]._prefetched_objects_cache[{nested_cache_name}]._result_cache[0]._loaded_field_names: {getattr(nested_obj, '_loaded_field_names', set())}")
++        
++        # This will trigger a query if there's a bug
++        with CaptureQueriesContext(connection) as queries:
++            kind_value = user.profile.user.kind
++            print(f"Value of user.profile.user.kind: {kind_value}")
++            print(f"Number of queries executed: {len(queries)}")
++            for i, query in enumerate(queries):
++                print(f"Query {i+1}: {query['sql']}")
++
++# Run the test
++if __name__ == "__main__":
++    # Create the database tables
++    from django.core.management import call_command
++    from django.db import connection
++    
++    # Create the tables manually since we're using an in-memory database
++    with connection.schema_editor() as schema_editor:
++        schema_editor.create_model(User)
++        schema_editor.create_model(Profile)
++    
++    # Run the test
++    test = DeferredFieldsTest()
++    test.setUp()
++    test.test_only_related_queryset()
++    test.tearDown()
+\ No newline at end of file
+diff --git a/settings.py b/settings.py
+new file mode 100644
+index 0000000000..c0eadc0093
+--- /dev/null
++++ b/settings.py
+@@ -0,0 +1,13 @@
++
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.sqlite3',
++        'NAME': ':memory:',
++    }
++}
++INSTALLED_APPS = [
++    'django.contrib.contenttypes',
++    'django.contrib.auth',
++    'testapp',
++]
++SECRET_KEY = 'dummy'
+diff --git a/testapp/__init__.py b/testapp/__init__.py
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/testapp/apps.py b/testapp/apps.py
+new file mode 100644
+index 0000000000..63ed839e18
+--- /dev/null
++++ b/testapp/apps.py
+@@ -0,0 +1,6 @@
++
++from django.apps import AppConfig
++
++class TestAppConfig(AppConfig):
++    name = 'testapp'
++    default_auto_field = 'django.db.models.AutoField'
+diff --git a/testapp/models.py b/testapp/models.py
+new file mode 100644
+index 0000000000..b2a6ceba2e
+--- /dev/null
++++ b/testapp/models.py
+@@ -0,0 +1,12 @@
++
++from django.db import models
++
++class User(models.Model):
++    email = models.EmailField()
++    kind = models.CharField(
++        max_length=10, choices=[("ADMIN", "Admin"), ("REGULAR", "Regular")]
++    )
++
++class Profile(models.Model):
++    full_name = models.CharField(max_length=255)
++    user = models.OneToOneField(User, on_delete=models.CASCADE)

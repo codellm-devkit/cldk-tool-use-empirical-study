@@ -1,0 +1,76 @@
+diff --git a/django/db/backends/sqlite3/schema.py b/django/db/backends/sqlite3/schema.py
+index 6752a8e3c0..b448025ff1 100644
+--- a/django/db/backends/sqlite3/schema.py
++++ b/django/db/backends/sqlite3/schema.py
+@@ -327,7 +327,12 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
+         # Fields with default values cannot by handled by ALTER TABLE ADD
+         # COLUMN statement because DROP DEFAULT is not supported in
+         # ALTER TABLE.
+-        if not field.null or self.effective_default(field) is not None:
++        # Also, fields with UNIQUE constraints cannot be added via ALTER TABLE
++        # because SQLite doesn't support adding a UNIQUE constraint in an ALTER TABLE statement.
++        if (not field.null or 
++            self.effective_default(field) is not None or 
++            field.unique or 
++            field.get_internal_type() == 'OneToOneField'):
+             self._remake_table(model, create_field=field)
+         else:
+             super().add_field(model, field)
+diff --git a/setup.py b/setup.py
+deleted file mode 100644
+index 43a5f69365..0000000000
+--- a/setup.py
++++ /dev/null
+@@ -1,52 +0,0 @@
+-import os
+-import site
+-import sys
+-from distutils.sysconfig import get_python_lib
+-
+-from setuptools import setup
+-
+-# Allow editable install into user site directory.
+-# See https://github.com/pypa/pip/issues/7953.
+-site.ENABLE_USER_SITE = '--user' in sys.argv[1:]
+-
+-# Warn if we are installing over top of an existing installation. This can
+-# cause issues where files that were deleted from a more recent Django are
+-# still present in site-packages. See #18115.
+-overlay_warning = False
+-if "install" in sys.argv:
+-    lib_paths = [get_python_lib()]
+-    if lib_paths[0].startswith("/usr/lib/"):
+-        # We have to try also with an explicit prefix of /usr/local in order to
+-        # catch Debian's custom user site-packages directory.
+-        lib_paths.append(get_python_lib(prefix="/usr/local"))
+-    for lib_path in lib_paths:
+-        existing_path = os.path.abspath(os.path.join(lib_path, "django"))
+-        if os.path.exists(existing_path):
+-            # We note the need for the warning here, but present it after the
+-            # command is run, so it's more likely to be seen.
+-            overlay_warning = True
+-            break
+-
+-
+-setup()
+-
+-
+-if overlay_warning:
+-    sys.stderr.write("""
+-
+-========
+-WARNING!
+-========
+-
+-You have just installed Django over top of an existing
+-installation, without removing it first. Because of this,
+-your install may now include extraneous files from a
+-previous version that have since been removed from
+-Django. This is known to cause a variety of problems. You
+-should manually remove the
+-
+-%(existing_path)s
+-
+-directory and re-install Django.
+-
+-""" % {"existing_path": existing_path})

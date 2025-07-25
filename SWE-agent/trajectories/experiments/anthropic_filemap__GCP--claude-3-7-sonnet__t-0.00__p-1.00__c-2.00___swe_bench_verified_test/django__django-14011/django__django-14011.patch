@@ -1,0 +1,60 @@
+diff --git a/django/db/models/base.py b/django/db/models/base.py
+index 2428218696..3b3a834ad0 100644
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -937,10 +937,33 @@ class Model(metaclass=ModelBase):
+                     # Use pk from related object if it has been saved after
+                     # an assignment.
+                     setattr(self, field.attname, obj.pk)
+-                # If the relationship's pk/to_field was changed, clear the
+-                # cached relationship.
++                # If the relationship's pk/to_field was changed, update the
++                # foreign key value and clear the cached relationship.
+                 if getattr(obj, field.target_field.attname) != getattr(self, field.attname):
+-                    field.delete_cached_value(self)
++                    setattr(self, field.attname, getattr(obj, field.target_field.attname))
++                    if field.is_cached(self):
++                        field.delete_cached_value(self)
++                    
++        # Also check for related objects that were cached by ForwardManyToOneDescriptor.__set__
++        if hasattr(self, '_related_objects_cache'):
++            for field_name, related_obj in self._related_objects_cache.items():
++                if related_obj is None:
++                    continue
++                    
++                field = self._meta.get_field(field_name)
++                if not field.is_relation:
++                    continue
++                    
++                # Update the foreign key value if it's different from the related object's PK
++                for lh_field, rh_field in field.related_fields:
++                    current_value = getattr(self, lh_field.attname)
++                    related_value = getattr(related_obj, rh_field.attname)
++                    
++                    if current_value != related_value:
++                        setattr(self, lh_field.attname, related_value)
++                        # Clear the cached relationship since we've updated the FK value
++                        if field.is_cached(self):
++                            field.delete_cached_value(self)
+ 
+     def delete(self, using=None, keep_parents=False):
+         using = using or router.db_for_write(self.__class__, instance=self)
+diff --git a/django/db/models/fields/related_descriptors.py b/django/db/models/fields/related_descriptors.py
+index 872a4c98dc..f1a0543905 100644
+--- a/django/db/models/fields/related_descriptors.py
++++ b/django/db/models/fields/related_descriptors.py
+@@ -265,6 +265,14 @@ class ForwardManyToOneDescriptor:
+         # query if it's accessed later on.
+         if value is not None and not remote_field.multiple:
+             remote_field.set_cached_value(value, instance)
++            
++        # Store a reference to the related object to update the foreign key
++        # value if the related object's primary key changes before this
++        # object is saved.
++        if value is not None:
++            if not hasattr(instance, '_related_objects_cache'):
++                instance._related_objects_cache = {}
++            instance._related_objects_cache[self.field.name] = value
+ 
+     def __reduce__(self):
+         """

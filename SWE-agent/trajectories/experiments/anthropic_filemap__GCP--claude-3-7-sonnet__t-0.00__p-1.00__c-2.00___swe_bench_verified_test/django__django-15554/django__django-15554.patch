@@ -1,0 +1,53 @@
+diff --git a/django/core/serializers/base.py b/django/core/serializers/base.py
+index da85cb4b92..e8191ce1a7 100644
+--- a/django/core/serializers/base.py
++++ b/django/core/serializers/base.py
+@@ -336,13 +336,41 @@ def build_instance(Model, data, db):
+         and hasattr(default_manager, "get_by_natural_key")
+         and hasattr(Model, "natural_key")
+     ):
+-        natural_key = Model(**data).natural_key()
+-        try:
+-            data[Model._meta.pk.attname] = Model._meta.pk.to_python(
+-                default_manager.db_manager(db).get_by_natural_key(*natural_key).pk
+-            )
+-        except Model.DoesNotExist:
+-            pass
++        # Create a temporary instance without accessing related fields
++        instance = Model()
++        for key, value in data.items():
++            field = Model._meta.get_field(key)
++            if not field.is_relation:
++                setattr(instance, key, value)
++        
++        # Get the natural key fields from the model's natural_key method
++        natural_key_fields = []
++        for field_name in Model.natural_key.__code__.co_varnames[1:]:  # Skip 'self'
++            if field_name in data:
++                natural_key_fields.append(data[field_name])
++        
++        # If we couldn't extract the natural key fields from the method,
++        # fall back to calling natural_key() directly
++        if not natural_key_fields:
++            try:
++                natural_key = instance.natural_key()
++            except (AttributeError, KeyError):
++                # If accessing a related field fails, we'll just skip this step
++                pass
++            else:
++                try:
++                    data[Model._meta.pk.attname] = Model._meta.pk.to_python(
++                        default_manager.db_manager(db).get_by_natural_key(*natural_key).pk
++                    )
++                except Model.DoesNotExist:
++                    pass
++        else:
++            try:
++                data[Model._meta.pk.attname] = Model._meta.pk.to_python(
++                    default_manager.db_manager(db).get_by_natural_key(*natural_key_fields).pk
++                )
++            except Model.DoesNotExist:
++                pass
+     return Model(**data)
+ 
+ 

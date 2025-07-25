@@ -1,0 +1,97 @@
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index d405a203ee..ff9f0da636 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1677,13 +1677,38 @@ class SQLAggregateCompiler(SQLCompiler):
+             sql.append(ann_sql)
+             params.extend(ann_params)
+         self.col_count = len(self.query.annotation_select)
+-        sql = ', '.join(sql)
++        sql_str = ', '.join(sql)
+         params = tuple(params)
+ 
+         inner_query_sql, inner_query_params = self.query.inner_query.get_compiler(
+             self.using, elide_empty=self.elide_empty,
+         ).as_sql(with_col_aliases=True)
+-        sql = 'SELECT %s FROM (%s) subquery' % (sql, inner_query_sql)
++        
++        # Ensure we have a non-empty SQL string to avoid "SELECT FROM" syntax error
++        if not sql_str.strip():
++            # If we have annotations but no SQL, it means the annotations were transformed
++            # (e.g., by Coalesce with default). We need to select them from the subquery.
++            
++            # Extract column aliases from the inner query
++            # This is a simple regex to find column aliases in the form of "AS "alias""
++            import re
++            column_aliases = re.findall(r'AS\s+"([^"]+)"', inner_query_sql)
++            
++            # Filter out the annotated columns (those that match our aggregation pattern)
++            agg_aliases = [alias for alias in column_aliases if alias.endswith('__sum') or 
++                                                               alias.endswith('__avg') or 
++                                                               alias.endswith('__min') or 
++                                                               alias.endswith('__max') or 
++                                                               alias.endswith('__count')]
++            
++            if agg_aliases:
++                # Use the aggregation column aliases
++                sql_str = ', '.join(f'"{alias}"' for alias in agg_aliases)
++            else:
++                # Fallback to a constant if no aggregation columns found
++                sql_str = '1'
++            
++        sql = 'SELECT %s FROM (%s) subquery' % (sql_str, inner_query_sql)
+         params = params + inner_query_params
+         return sql, params
+ 
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index e3fdea6f3a..83fc17ab8d 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -505,6 +505,47 @@ class Query(BaseExpression):
+         if result is None:
+             result = empty_set_result
+ 
++        # If we have no annotations in the outer query but we're using a subquery,
++        # it means the aggregations with default values were moved to the inner query.
++        # In this case, we need to extract the results from the inner query.
++        if not outer_query.annotation_select and hasattr(outer_query, 'inner_query'):
++            from django.db.models.sql.subqueries import AggregateQuery
++            # Get the original annotation names from the inner query
++            annotation_names = list(added_aggregate_names)
++            
++            # If we got a result, it's a single value (since we used SELECT 1 or similar)
++            # We need to create a dictionary with the original annotation names
++            if result is not None:
++                # Extract the column aliases from the inner query that match our aggregation pattern
++                import re
++                inner_query_sql = compiler.as_sql()[0]
++                column_aliases = re.findall(r'AS\s+"([^"]+)"', inner_query_sql)
++                agg_aliases = [alias for alias in column_aliases if alias.endswith('__sum') or 
++                                                                  alias.endswith('__avg') or 
++                                                                  alias.endswith('__min') or 
++                                                                  alias.endswith('__max') or 
++                                                                  alias.endswith('__count')]
++                
++                # Create a new result dictionary with the original annotation names
++                result_dict = {}
++                for alias in agg_aliases:
++                    # Find the original annotation name that corresponds to this alias
++                    for orig_name in annotation_names:
++                        if alias.endswith('__%s' % orig_name.split('__')[-1]):
++                            # Execute a new query to get just this column
++                            new_query = AggregateQuery(self.model, outer_query.inner_query)
++                            new_compiler = new_query.get_compiler(using, elide_empty=elide_empty)
++                            inner_sql, inner_params = outer_query.inner_query.get_compiler(using).as_sql(with_col_aliases=True)
++                            new_sql = f'SELECT "{alias}" FROM ({inner_sql}) subquery'
++                            with new_compiler.connection.cursor() as cursor:
++                                cursor.execute(new_sql, inner_params)
++                                col_result = cursor.fetchone()
++                                if col_result:
++                                    result_dict[orig_name] = col_result[0]
++                
++                return result_dict
++            return {}
++            
+         converters = compiler.get_converters(outer_query.annotation_select.values())
+         result = next(compiler.apply_converters((result,), converters))
+ 

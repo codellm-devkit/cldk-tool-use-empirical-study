@@ -1,0 +1,67 @@
+diff --git a/django/db/backends/mysql/schema.py b/django/db/backends/mysql/schema.py
+index 562b209eef..d94e83e321 100644
+--- a/django/db/backends/mysql/schema.py
++++ b/django/db/backends/mysql/schema.py
+@@ -168,6 +168,62 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
+     def _alter_column_type_sql(self, model, old_field, new_field, new_type):
+         new_type = self._set_field_new_type_null_status(old_field, new_type)
+         return super()._alter_column_type_sql(model, old_field, new_field, new_type)
++        
++    def _alter_field(self, model, old_field, new_field, old_type, new_type,
++                     old_db_params, new_db_params, strict=False):
++        """
++        MySQL needs special handling for foreign key columns that reference
++        a primary key with a collation. The foreign key needs to have the same
++        collation as the primary key it references.
++        """
++        # Call the parent method first
++        super()._alter_field(model, old_field, new_field, old_type, new_type,
++                           old_db_params, new_db_params, strict)
++                           
++        # If this is a primary key, check if collation has changed
++        if new_field.primary_key:
++            old_collation = old_db_params.get('collation')
++            new_collation = new_db_params.get('collation')
++            
++            # Only proceed if collation has changed
++            if old_collation != new_collation:
++                # Find all related objects that reference this field
++                for rel in model._meta.related_objects:
++                    if not rel.field.many_to_many and rel.field.db_constraint:
++                        # Only process foreign keys to this primary key
++                        if rel.field.target_field == new_field:
++                            # Get the related model and field
++                            related_model = rel.related_model
++                            related_field = rel.field
++                            
++                            # Get the field type
++                            rel_type = related_field.db_type(self.connection)
++                            
++                            # Add NULL/NOT NULL as needed
++                            if related_field.null:
++                                rel_type += " NULL"
++                            else:
++                                rel_type += " NOT NULL"
++                            
++                            # Generate SQL to update the foreign key column with the same collation
++                            if new_collation:
++                                self.execute(
++                                    "ALTER TABLE %(table)s MODIFY %(column)s %(type)s COLLATE %(collation)s" % {
++                                        'table': self.quote_name(related_model._meta.db_table),
++                                        'column': self.quote_name(related_field.column),
++                                        'type': rel_type,
++                                        'collation': self.quote_name(new_collation),
++                                    }
++                                )
++                            else:
++                                # If collation was removed, update without specifying collation
++                                self.execute(
++                                    "ALTER TABLE %(table)s MODIFY %(column)s %(type)s" % {
++                                        'table': self.quote_name(related_model._meta.db_table),
++                                        'column': self.quote_name(related_field.column),
++                                        'type': rel_type,
++                                    }
++                                )
+ 
+     def _rename_field_sql(self, table, old_field, new_field, new_type):
+         new_type = self._set_field_new_type_null_status(old_field, new_type)

@@ -1,0 +1,118 @@
+diff --git a/django/db/migrations/operations/models.py b/django/db/migrations/operations/models.py
+index c120f5d32d..25312d3440 100644
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -409,7 +409,8 @@ class RenameModel(ModelOperation):
+ 
+ class ModelOptionOperation(ModelOperation):
+     def reduce(self, operation, app_label):
+-        if isinstance(operation, (self.__class__, DeleteModel)) and self.name_lower == operation.name_lower:
++        # Only optimize if the operations are of the same class and on the same model
++        if isinstance(operation, self.__class__) and self.name_lower == operation.name_lower:
+             return [operation]
+         return super().reduce(operation, app_label)
+ 
+@@ -527,6 +528,19 @@ class AlterTogetherOptionOperation(ModelOptionOperation):
+     @property
+     def migration_name_fragment(self):
+         return 'alter_%s_%s' % (self.name_lower, self.option_name)
++        
++    def reduce(self, operation, app_label):
++        if (isinstance(operation, self.__class__) and 
++                self.name_lower == operation.name_lower and 
++                self.option_name == operation.option_name):
++            # If the first operation sets to empty set and the second sets to a non-empty set,
++            # we can optimize by just keeping the second operation
++            if not self.option_value and operation.option_value:
++                return [operation]
++            # If both operations have values, or if the first has a value and the second doesn't,
++            # we can't optimize them
++            return False
++        return super().reduce(operation, app_label)
+ 
+ 
+ class AlterUniqueTogether(AlterTogetherOptionOperation):
+diff --git a/django/db/migrations/optimizer.py b/django/db/migrations/optimizer.py
+index ee20f62af2..43db4a6013 100644
+--- a/django/db/migrations/optimizer.py
++++ b/django/db/migrations/optimizer.py
+@@ -29,6 +29,10 @@ class MigrationOptimizer:
+         # Internal tracking variable for test assertions about # of loops
+         if app_label is None:
+             raise TypeError('app_label must be a str.')
++        
++        # Pre-process operations to optimize AlterTogetherOptionOperation
++        operations = self.pre_process_together_operations(operations, app_label)
++        
+         self._iterations = 0
+         while True:
+             result = self.optimize_inner(operations, app_label)
+@@ -36,6 +40,51 @@ class MigrationOptimizer:
+             if result == operations:
+                 return result
+             operations = result
++            
++    def pre_process_together_operations(self, operations, app_label):
++        """
++        Pre-process operations to optimize AlterTogetherOptionOperation instances.
++        
++        This function looks for pairs of AlterTogetherOptionOperation instances
++        where the first one sets the option to an empty set and the second one
++        sets it to a non-empty set. In this case, we can optimize by just keeping
++        the second operation.
++        """
++        from django.db.migrations.operations.models import AlterTogetherOptionOperation
++        
++        # Group operations by model and option_name
++        grouped = {}
++        for i, op in enumerate(operations):
++            if isinstance(op, AlterTogetherOptionOperation):
++                key = (op.name_lower, op.option_name)
++                if key not in grouped:
++                    grouped[key] = []
++                grouped[key].append((i, op))
++        
++        # Check each group for optimization opportunities
++        to_remove = set()
++        for (model, option_name), ops in grouped.items():
++            if len(ops) >= 2:
++                # Sort by position in the original list
++                ops.sort(key=lambda x: x[0])
++                # Check for pairs of operations where the first sets to empty set and the second sets to non-empty
++                j = 0
++                while j < len(ops) - 1:
++                    idx1, op1 = ops[j]
++                    idx2, op2 = ops[j + 1]
++                    # Only optimize if the first one sets to empty set and the second sets to non-empty
++                    if not op1.option_value and op2.option_value:
++                        # Check if there are no other AlterTogetherOptionOperation operations in between
++                        # that operate on the same model and option
++                        if all(not (isinstance(operations[k], AlterTogetherOptionOperation) and
++                                    operations[k].name_lower == op1.name_lower and
++                                    operations[k].option_name == op1.option_name)
++                               for k in range(idx1 + 1, idx2)):
++                            to_remove.add(idx1)
++                    j += 1
++        
++        # Create a new list without the operations to remove
++        return [op for i, op in enumerate(operations) if i not in to_remove]
+ 
+     def optimize_inner(self, operations, app_label):
+         """Inner optimization loop."""
+@@ -44,6 +93,16 @@ class MigrationOptimizer:
+             right = True  # Should we reduce on the right or on the left.
+             # Compare it to each operation after it
+             for j, other in enumerate(operations[i + 1:]):
++                # Skip optimization for AlterTogetherOptionOperation if there are operations in between
++                from django.db.migrations.operations.models import AlterTogetherOptionOperation
++                if (isinstance(operation, AlterTogetherOptionOperation) and 
++                        isinstance(other, AlterTogetherOptionOperation) and
++                        operation.name_lower == other.name_lower and
++                        operation.option_name == other.option_name and
++                        j > 0):
++                    # Skip optimization if there are operations in between
++                    continue
++                
+                 result = operation.reduce(other, app_label)
+                 if isinstance(result, list):
+                     in_between = operations[i + 1:i + j + 1]

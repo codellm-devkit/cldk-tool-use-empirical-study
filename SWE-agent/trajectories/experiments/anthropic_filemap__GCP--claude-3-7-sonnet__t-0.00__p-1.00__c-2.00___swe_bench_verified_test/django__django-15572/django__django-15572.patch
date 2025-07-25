@@ -1,0 +1,41 @@
+diff --git a/django/db/backends/sqlite3/schema.py b/django/db/backends/sqlite3/schema.py
+index b3a2f4282b..aaf15cc08c 100644
+--- a/django/db/backends/sqlite3/schema.py
++++ b/django/db/backends/sqlite3/schema.py
+@@ -548,3 +548,36 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
+ 
+     def _collate_sql(self, collation):
+         return "COLLATE " + collation
++        
++    def _field_should_be_altered(self, old_field, new_field):
++        """
++        Return True if field should be altered.
++        
++        For SQLite, we don't need to alter the field for choices changes.
++        """
++        # First, check if the base implementation would alter the field
++        if not super()._field_should_be_altered(old_field, new_field):
++            return False
++            
++        # Get the attributes that would normally trigger a field alteration
++        _, old_path, old_args, old_kwargs = old_field.deconstruct()
++        _, new_path, new_args, new_kwargs = new_field.deconstruct()
++        
++        # Make copies of the kwargs to avoid modifying the originals
++        old_kwargs_copy = old_kwargs.copy()
++        new_kwargs_copy = new_kwargs.copy()
++        
++        # Remove choices from kwargs for comparison
++        old_choices = old_kwargs_copy.pop('choices', None)
++        new_choices = new_kwargs_copy.pop('choices', None)
++        
++        # If paths, args, and all kwargs except choices are the same,
++        # then the only difference is choices, which doesn't require a schema change
++        if (old_path == new_path and 
++            old_args == new_args and 
++            old_kwargs_copy == new_kwargs_copy and
++            self.quote_name(old_field.column) == self.quote_name(new_field.column)):
++            return False
++            
++        # Otherwise, the field needs to be altered
++        return True

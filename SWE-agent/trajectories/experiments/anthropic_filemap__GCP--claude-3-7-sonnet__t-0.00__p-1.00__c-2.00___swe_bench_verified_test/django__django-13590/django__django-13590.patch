@@ -1,0 +1,27 @@
+diff --git a/django/contrib/auth/checks.py b/django/contrib/auth/checks.py
+index 65fc266f7e..76bee4693f 100644
+--- a/django/contrib/auth/checks.py
++++ b/django/contrib/auth/checks.py
+@@ -51,8 +51,20 @@ def check_user_model(app_configs=None, **kwargs):
+             )
+         )
+ 
+-    # Check that the username field is unique
+-    if not cls._meta.get_field(cls.USERNAME_FIELD).unique:
++    # Check that the username field is unique (either via unique=True or UniqueConstraint)
++    username_field = cls.USERNAME_FIELD
++    field_is_unique = cls._meta.get_field(username_field).unique
++    
++    # Check if the field is part of a UniqueConstraint
++    has_unique_constraint = False
++    for constraint in cls._meta.constraints:
++        if hasattr(constraint, 'fields') and username_field in constraint.fields:
++            # If it's a single-field UniqueConstraint without a condition
++            if len(constraint.fields) == 1 and getattr(constraint, 'condition', None) is None:
++                has_unique_constraint = True
++                break
++    
++    if not (field_is_unique or has_unique_constraint):
+         if (settings.AUTHENTICATION_BACKENDS ==
+                 ['django.contrib.auth.backends.ModelBackend']):
+             errors.append(
