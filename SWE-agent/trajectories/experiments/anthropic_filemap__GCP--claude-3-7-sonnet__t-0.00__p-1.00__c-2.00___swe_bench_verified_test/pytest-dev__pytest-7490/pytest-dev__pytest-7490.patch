@@ -1,0 +1,80 @@
+diff --git a/src/_pytest/skipping.py b/src/_pytest/skipping.py
+index 335e10996..92faba07d 100644
+--- a/src/_pytest/skipping.py
++++ b/src/_pytest/skipping.py
+@@ -262,6 +262,14 @@ def pytest_runtest_makereport(item: Item, call: CallInfo[None]):
+     outcome = yield
+     rep = outcome.get_result()
+     xfailed = item._store.get(xfailed_key, None)
++    
++    # Re-evaluate xfail marks if we're in the call phase
++    # This handles markers added dynamically during test execution
++    if call.when == "call" and xfailed is None:
++        xfailed = evaluate_xfail_marks(item)
++        if xfailed:
++            item._store[xfailed_key] = xfailed
++    
+     # unittest special case, see setting of unexpectedsuccess_key
+     if unexpectedsuccess_key in item._store and rep.when == "call":
+         reason = item._store[unexpectedsuccess_key]
+diff --git a/testing/test_dynamic_xfail.py b/testing/test_dynamic_xfail.py
+new file mode 100644
+index 000000000..e7f5f0e73
+--- /dev/null
++++ b/testing/test_dynamic_xfail.py
+@@ -0,0 +1,54 @@
++import pytest
++
++
++def test_dynamic_xfail_marker(testdir):
++    """Test that dynamically added xfail markers work correctly."""
++    testdir.makepyfile("""
++        import pytest
++
++        def test_dynamic_xfail(request):
++            mark = pytest.mark.xfail(reason="dynamic xfail")
++            request.node.add_marker(mark)
++            assert 0
++    """)
++    result = testdir.runpytest("-v")
++    result.stdout.fnmatch_lines([
++        "*::test_dynamic_xfail XFAIL*",
++    ])
++    assert result.ret == 0
++
++
++def test_dynamic_xfail_marker_passing(testdir):
++    """Test that dynamically added xfail markers work correctly with passing tests."""
++    testdir.makepyfile("""
++        import pytest
++
++        def test_dynamic_xfail_pass(request):
++            mark = pytest.mark.xfail(reason="dynamic xfail", strict=False)
++            request.node.add_marker(mark)
++            assert True
++    """)
++    result = testdir.runpytest("-v")
++    result.stdout.fnmatch_lines([
++        "*::test_dynamic_xfail_pass XPASS*",
++    ])
++    assert result.ret == 0
++
++
++def test_dynamic_xfail_marker_conditional(testdir):
++    """Test that conditionally added xfail markers work correctly."""
++    testdir.makepyfile("""
++        import pytest
++
++        def test_conditional_xfail(request):
++            should_fail = True
++            if should_fail:
++                mark = pytest.mark.xfail(reason="conditional xfail")
++                request.node.add_marker(mark)
++            assert not should_fail
++    """)
++    result = testdir.runpytest("-v")
++    result.stdout.fnmatch_lines([
++        "*::test_conditional_xfail XFAIL*",
++    ])
++    assert result.ret == 0
+\ No newline at end of file

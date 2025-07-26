@@ -1,0 +1,97 @@
+diff --git a/lib/matplotlib/axes/_axes.py b/lib/matplotlib/axes/_axes.py
+index ecb6f5e209..e15c21e4fc 100644
+--- a/lib/matplotlib/axes/_axes.py
++++ b/lib/matplotlib/axes/_axes.py
+@@ -6446,6 +6446,8 @@ default: :rc:`scatter.edgecolors`
+         """
+         kwargs['filled'] = False
+         contours = mcontour.QuadContourSet(self, *args, **kwargs)
++        # Register the ContourSet object
++        self._contourset_objects.append(contours)
+         self._request_autoscale_view()
+         return contours
+ 
+@@ -6462,6 +6464,8 @@ default: :rc:`scatter.edgecolors`
+         """
+         kwargs['filled'] = True
+         contours = mcontour.QuadContourSet(self, *args, **kwargs)
++        # Register the ContourSet object
++        self._contourset_objects.append(contours)
+         self._request_autoscale_view()
+         return contours
+ 
+diff --git a/lib/matplotlib/axes/_base.py b/lib/matplotlib/axes/_base.py
+index 90b0bf117e..f5838f89ec 100644
+--- a/lib/matplotlib/axes/_base.py
++++ b/lib/matplotlib/axes/_base.py
+@@ -584,6 +584,8 @@ class _AxesBase(martist.Artist):
+                  box_aspect=None,
+                  **kwargs
+                  ):
++        # List to keep track of ContourSet objects
++        self._contourset_objects = []
+         """
+         Build an Axes in a figure.
+ 
+@@ -1283,6 +1285,19 @@ class _AxesBase(martist.Artist):
+ 
+         xaxis_visible = self.xaxis.get_visible()
+         yaxis_visible = self.yaxis.get_visible()
++        
++        # Unset the .axes attribute of all artists in the axes
++        for artist in self._children:
++            if hasattr(artist, 'axes') and artist.axes is self:
++                artist.axes = None
++                
++        # Unset the .axes attribute of all ContourSet objects
++        for cs in self._contourset_objects:
++            if hasattr(cs, 'axes') and cs.axes is self:
++                cs.axes = None
++                
++        # Clear the list of ContourSet objects
++        self._contourset_objects = []
+ 
+         for axis in self._axis_map.values():
+             axis.clear()  # Also resets the scale to linear.
+diff --git a/lib/matplotlib/contour.py b/lib/matplotlib/contour.py
+index 144eadeae2..bc06d16512 100644
+--- a/lib/matplotlib/contour.py
++++ b/lib/matplotlib/contour.py
+@@ -1369,6 +1369,9 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
+         super().remove()
+         for coll in self.collections:
+             coll.remove()
++        # Set axes to None when removed
++        if hasattr(self, 'axes'):
++            self.axes = None
+ 
+ 
+ @_docstring.dedent_interpd
+diff --git a/lib/matplotlib/figure.py b/lib/matplotlib/figure.py
+index 6c18ba1a64..c5e103ccbd 100644
+--- a/lib/matplotlib/figure.py
++++ b/lib/matplotlib/figure.py
+@@ -945,9 +945,23 @@ default: %(va)s
+             subfig.clear(keep_observers=keep_observers)
+         self.subfigs = []
+ 
++        # Get all artists that are directly attached to the figure
++        # (not those attached to axes)
++        figure_artists = [artist for artist in self.get_children()
++                         if hasattr(artist, 'figure') and artist.figure is self
++                         and not hasattr(artist, 'axes')]
++
+         for ax in tuple(self.axes):  # Iterate over the copy.
++            # Unset the .figure attribute of all artists in the axes
++            for artist in ax.get_children():
++                if hasattr(artist, 'figure') and artist.figure is self:
++                    artist.figure = None
+             ax.clear()
+             self.delaxes(ax)  # Remove ax from self._axstack.
++            
++        # Now unset the .figure attribute of figure-level artists
++        for artist in figure_artists:
++            artist.figure = None
+ 
+         self.artists = []
+         self.lines = []

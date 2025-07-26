@@ -1,0 +1,176 @@
+diff --git a/setup.py b/setup.py
+index 2538952e3..94e1d8b32 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 6):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.14,<0.18',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/domains/python.py b/sphinx/domains/python.py
+index 7d39d80ed..067766b9c 100644
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -304,12 +304,42 @@ class PyXrefMixin:
+     def make_xrefs(self, rolename: str, domain: str, target: str,
+                    innernode: Type[TextlikeNode] = nodes.emphasis,
+                    contnode: Node = None, env: BuildEnvironment = None) -> List[Node]:
++        # Check if we need to split the contnode
++        split_contnode = bool(contnode and contnode.astext() == target)
++        
++        # Handle complex nested types with balanced parentheses
++        # This is a more robust approach that handles any level of nesting
++        if '(' in target and ')' in target:
++            # Count opening and closing parentheses
++            open_count = target.count('(')
++            close_count = target.count(')')
++            
++            # If they're balanced and there's a comma inside, it's likely a complex type
++            if open_count == close_count and ',' in target:
++                # Check if the commas are inside parentheses
++                paren_level = 0
++                has_comma_inside_parens = False
++                
++                for char in target:
++                    if char == '(':
++                        paren_level += 1
++                    elif char == ')':
++                        paren_level -= 1
++                    elif char == ',' and paren_level > 0:
++                        has_comma_inside_parens = True
++                        break
++                
++                if has_comma_inside_parens or open_count > 1:
++                    # This is a complex nested type - don't split it
++                    if contnode is None or contnode.astext() != target:
++                        contnode = nodes.Text(target)
++                    return [self.make_xref(rolename, domain, target, innernode, contnode, env)]
++        
++        # Original implementation for other cases
+         delims = r'(\s*[\[\]\(\),](?:\s*or\s)?\s*|\s+or\s+|\.\.\.)'
+         delims_re = re.compile(delims)
+         sub_targets = re.split(delims, target)
+ 
+-        split_contnode = bool(contnode and contnode.astext() == target)
+-
+         results = []
+         for sub_target in filter(None, sub_targets):
+             if split_contnode:
+diff --git a/sphinx/util/docfields.py b/sphinx/util/docfields.py
+index 3a3367ebe..19a15ba81 100644
+--- a/sphinx/util/docfields.py
++++ b/sphinx/util/docfields.py
+@@ -9,6 +9,7 @@
+     :license: BSD, see LICENSE for details.
+ """
+ 
++import re
+ from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Type, Union, cast
+ 
+ from docutils import nodes
+@@ -183,8 +184,25 @@ class TypedField(GroupedField):
+                 fieldtype = types.pop(fieldarg)
+                 if len(fieldtype) == 1 and isinstance(fieldtype[0], nodes.Text):
+                     typename = fieldtype[0].astext()
+-                    par.extend(self.make_xrefs(self.typerolename, domain, typename,
+-                                               addnodes.literal_emphasis, env=env))
++                    
++                    # Special handling for complex nested types
++                    if '(' in typename and ')' in typename and ',' in typename:
++                        # Count opening and closing parentheses
++                        open_count = typename.count('(')
++                        close_count = typename.count(')')
++                        
++                        # If they're balanced, it's likely a complex type
++                        if open_count == close_count:
++                            # Add the type as a single entity
++                            par += addnodes.literal_emphasis(typename, typename)
++                        else:
++                            # Fall back to normal handling
++                            par.extend(self.make_xrefs(self.typerolename, domain, typename,
++                                                      addnodes.literal_emphasis, env=env))
++                    else:
++                        # Normal case
++                        par.extend(self.make_xrefs(self.typerolename, domain, typename,
++                                                  addnodes.literal_emphasis, env=env))
+                 else:
+                     par += fieldtype
+                 par += nodes.Text(')')
+@@ -298,7 +316,37 @@ class DocFieldTransformer:
+             # also support syntax like ``:param type name:``
+             if typedesc.is_typed:
+                 try:
+-                    argtype, argname = fieldarg.split(None, 1)
++                    # Handle complex nested types with balanced parentheses
++                    if '(' in fieldarg and ')' in fieldarg:
++                        # Find the position of the last space before the parameter name
++                        # This is more reliable for complex nested types
++                        
++                        # First, find all balanced parentheses
++                        paren_stack = []
++                        balanced_ranges = []
++                        
++                        for i, char in enumerate(fieldarg):
++                            if char == '(':
++                                paren_stack.append(i)
++                            elif char == ')' and paren_stack:
++                                start = paren_stack.pop()
++                                if not paren_stack:  # Only consider top-level parentheses
++                                    balanced_ranges.append((start, i))
++                        
++                        # Find the last space after all balanced parentheses
++                        last_paren_end = balanced_ranges[-1][1] if balanced_ranges else -1
++                        space_pos = fieldarg.find(' ', last_paren_end + 1)
++                        
++                        if space_pos != -1:
++                            # Split at the space after the last balanced parenthesis
++                            argtype = fieldarg[:space_pos].strip()
++                            argname = fieldarg[space_pos:].strip()
++                        else:
++                            # Fall back to normal splitting
++                            argtype, argname = fieldarg.split(None, 1)
++                    else:
++                        # Normal case
++                        argtype, argname = fieldarg.split(None, 1)
+                 except ValueError:
+                     pass
+                 else:
+diff --git a/tox.ini b/tox.ini
+index a363e187f..3b8bc12d0 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -27,7 +27,7 @@ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils,ignore::DeprecationWarning:pip._vendor.packaging.version
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -m pytest --durations 25 {posargs}
++    python -X dev -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3

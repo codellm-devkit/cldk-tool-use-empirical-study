@@ -1,0 +1,184 @@
+diff --git a/sympy/core/mul.py b/sympy/core/mul.py
+index b399e9d7ae..20d3d8a98b 100644
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -891,6 +891,34 @@ def _eval_expand_mul(self, **hints):
+                 return Add(*args)
+             else:
+                 return plain
++                
++    def _eval_expand_tensorproduct(self, **hints):
++        """
++        Expand products of TensorProducts.
++        
++        This method is only called internally from expand().
++        
++        Examples
++        ========
++        
++        >>> from sympy import symbols
++        >>> from sympy.physics.quantum import TensorProduct
++        >>> a, b, c, d = symbols('a b c d', commutative=False)
++        >>> (TensorProduct(a, b) * TensorProduct(c, d)).expand(tensorproduct=True)
++        (a*c)x(b*d)
++        
++        """
++        # Import here to avoid circular imports
++        from sympy.physics.quantum.tensorproduct import TensorProduct, tensor_product_simp
++        
++        # Check if this Mul contains TensorProducts
++        if self.has(TensorProduct):
++            # Try to simplify using tensor_product_simp
++            simplified = tensor_product_simp(self)
++            if simplified != self:
++                return simplified
++        
++        return self
+ 
+     @cacheit
+     def _eval_derivative(self, s):
+diff --git a/sympy/core/power.py b/sympy/core/power.py
+index 02ec6480cb..2b52374f71 100644
+--- a/sympy/core/power.py
++++ b/sympy/core/power.py
+@@ -1635,6 +1635,55 @@ def _eval_difference_delta(self, n, step):
+         if e.has(n) and not b.has(n):
+             new_e = e.subs(n, n + step)
+             return (b**(new_e - e) - 1) * self
++            
++    def _eval_expand_tensorproduct(self, **hints):
++        """Handle powers of TensorProducts.
++        
++        For integer powers, distribute the power to each component of the tensor product.
++        """
++        base, exp = self.args
++        
++        # Import here to avoid circular imports
++        from sympy.physics.quantum.tensorproduct import TensorProduct, tensor_product_simp
++        
++        if isinstance(base, TensorProduct) and exp.is_Integer and exp > 0:
++            # For integer powers, we can compute the power of each component
++            base_args = base.args
++            # Create a new TensorProduct with each component raised to the power
++            powered_args = [arg ** exp for arg in base_args]
++            return TensorProduct(*powered_args)
++        
++        # Handle powers of products of TensorProducts
++        if isinstance(base, Mul) and exp.is_Integer and exp > 0:
++            # First try to simplify the base using tensor_product_simp
++            simplified_base = tensor_product_simp(base)
++            
++            # If the simplification changed something, apply the power to the simplified base
++            if simplified_base != base:
++                if isinstance(simplified_base, TensorProduct):
++                    # If the simplified base is a TensorProduct, we can distribute the power
++                    base_args = simplified_base.args
++                    powered_args = [arg ** exp for arg in base_args]
++                    return TensorProduct(*powered_args)
++                else:
++                    # Otherwise, just apply the power to the simplified base
++                    return (simplified_base ** exp).expand(tensorproduct=True)
++            
++            # If simplification didn't work, try expanding the base
++            expanded_base = base.expand(tensorproduct=True)
++            
++            # If the expansion changed something, expand the power with the new base
++            if expanded_base != base:
++                # If the expanded base is a TensorProduct, we can distribute the power
++                if isinstance(expanded_base, TensorProduct):
++                    base_args = expanded_base.args
++                    powered_args = [arg ** exp for arg in base_args]
++                    return TensorProduct(*powered_args)
++                else:
++                    # Try to simplify the expanded base with the power
++                    return tensor_product_simp(expanded_base ** exp)
++        
++        return self
+ 
+ 
+ from .add import Add
+diff --git a/sympy/physics/quantum/tensorproduct.py b/sympy/physics/quantum/tensorproduct.py
+index 9dd10d219e..0fcec01210 100644
+--- a/sympy/physics/quantum/tensorproduct.py
++++ b/sympy/physics/quantum/tensorproduct.py
+@@ -251,6 +251,11 @@ def _eval_expand_tensorproduct(self, **hints):
+                         tp = tp._eval_expand_tensorproduct()
+                     add_args.append(tp)
+                 break
++            elif isinstance(args[i], Pow) and args[i].exp.is_Integer and args[i].exp > 0:
++                # Handle powers within tensor products
++                new_args = list(args)
++                new_args[i] = args[i].base ** args[i].exp
++                return TensorProduct(*new_args)._eval_expand_tensorproduct()
+ 
+         if add_args:
+             return Add(*add_args)
+@@ -319,7 +324,20 @@ def tensor_product_simp_Mul(e):
+     if n_nc == 0 or n_nc == 1:
+         return e
+     elif e.has(TensorProduct):
++        # First, handle any powers of TensorProducts in the expression
++        processed_nc_part = []
++        for part in nc_part:
++            if isinstance(part, Pow) and isinstance(part.base, TensorProduct) and part.exp.is_Integer and part.exp > 0:
++                # For integer powers, expand the power to the individual components
++                base_args = part.base.args
++                powered_args = [arg ** part.exp for arg in base_args]
++                processed_nc_part.append(TensorProduct(*powered_args))
++            else:
++                processed_nc_part.append(part)
++        
++        nc_part = processed_nc_part
+         current = nc_part[0]
++        
+         if not isinstance(current, TensorProduct):
+             raise TypeError('TensorProduct expected, got: %r' % current)
+         n_terms = len(current.args)
+@@ -376,12 +394,46 @@ def tensor_product_simp(e, **hints):
+     commutators and anticommutators as well:
+ 
+     >>> tensor_product_simp(e**2)
+-    (A*C)x(B*D)**2
++    (A*C)**2x(B*D)**2
++
++    It also works with powers of tensor products:
++
++    >>> t1 = TensorProduct(1, 1)**2
++    >>> tensor_product_simp(t1)
++    1x1
++
++    >>> from sympy.physics.paulialgebra import Pauli
++    >>> t2 = TensorProduct(1, Pauli(3))**2
++    >>> tensor_product_simp(t2)
++    1x1
+ 
+     """
+     if isinstance(e, Add):
+         return Add(*[tensor_product_simp(arg) for arg in e.args])
+     elif isinstance(e, Pow):
++        # Handle powers of TensorProduct
++        if isinstance(e.base, TensorProduct) and e.exp.is_Integer and e.exp > 0:
++            # For integer powers, we can compute the power of each component
++            base_args = e.base.args
++            # Create a new TensorProduct with each component raised to the power
++            powered_args = [arg ** e.exp for arg in base_args]
++            return TensorProduct(*powered_args)
++        # Handle powers of products of TensorProducts
++        elif isinstance(e.base, Mul) and e.exp.is_Integer and e.exp > 0:
++            # First simplify the base
++            simplified_base = tensor_product_simp_Mul(e.base)
++            
++            # If the simplification changed something, apply the power to the simplified base
++            if simplified_base != e.base:
++                if isinstance(simplified_base, TensorProduct):
++                    # If the simplified base is a TensorProduct, we can distribute the power
++                    base_args = simplified_base.args
++                    powered_args = [arg ** e.exp for arg in base_args]
++                    return TensorProduct(*powered_args)
++                else:
++                    # Otherwise, just apply the power to the simplified base
++                    return simplified_base ** e.exp
++            
+         return tensor_product_simp(e.base) ** e.exp
+     elif isinstance(e, Mul):
+         return tensor_product_simp_Mul(e)

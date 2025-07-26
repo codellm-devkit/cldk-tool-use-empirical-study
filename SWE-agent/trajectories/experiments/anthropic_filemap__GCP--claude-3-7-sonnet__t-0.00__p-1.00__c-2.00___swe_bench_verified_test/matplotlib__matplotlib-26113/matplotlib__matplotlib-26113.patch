@@ -1,0 +1,68 @@
+diff --git a/lib/matplotlib/figure.py b/lib/matplotlib/figure.py
+index dab2bc4a5a..a5b3fb60c8 100644
+--- a/lib/matplotlib/figure.py
++++ b/lib/matplotlib/figure.py
+@@ -2276,10 +2276,59 @@ class SubFigure(FigureBase):
+         gs = self._subplotspec.get_gridspec()
+         wr = np.asarray(gs.get_width_ratios())
+         hr = np.asarray(gs.get_height_ratios())
+-        dx = wr[self._subplotspec.colspan].sum() / wr.sum()
+-        dy = hr[self._subplotspec.rowspan].sum() / hr.sum()
+-        x0 = wr[:self._subplotspec.colspan.start].sum() / wr.sum()
+-        y0 = 1 - hr[:self._subplotspec.rowspan.stop].sum() / hr.sum()
++        
++        # Get the wspace and hspace values from the gridspec
++        wspace = gs.wspace
++        hspace = gs.hspace
++        
++        # Calculate the total number of rows and columns
++        nrows, ncols = gs.get_geometry()
++        
++        # Calculate the width and height of each cell, accounting for spacing
++        total_width = 1.0
++        total_height = 1.0
++        
++        # Calculate the width of each column, accounting for spacing
++        if wspace is not None:
++            # Ensure wspace is not negative to avoid overlapping subfigures
++            wspace_safe = max(0, wspace)
++            # The width of all columns plus the spacing between them equals the total width
++            # ncols * col_width + (ncols - 1) * spacing = total_width
++            # col_width = (total_width - (ncols - 1) * spacing) / ncols
++            col_width = total_width / (ncols + wspace_safe * (ncols - 1))
++            spacing_width = wspace_safe * col_width
++        else:
++            col_width = total_width / ncols
++            spacing_width = 0
++            
++        # Calculate the height of each row, accounting for spacing
++        if hspace is not None:
++            # Ensure hspace is not negative to avoid overlapping subfigures
++            hspace_safe = max(0, hspace)
++            # The height of all rows plus the spacing between them equals the total height
++            # nrows * row_height + (nrows - 1) * spacing = total_height
++            # row_height = (total_height - (nrows - 1) * spacing) / nrows
++            row_height = total_height / (nrows + hspace_safe * (nrows - 1))
++            spacing_height = hspace_safe * row_height
++        else:
++            row_height = total_height / nrows
++            spacing_height = 0
++            
++        # Calculate the width and height of this subfigure
++        colspan_size = self._subplotspec.colspan.stop - self._subplotspec.colspan.start
++        rowspan_size = self._subplotspec.rowspan.stop - self._subplotspec.rowspan.start
++        
++        # Calculate the width of this subfigure, accounting for spacing
++        dx = colspan_size * col_width + (colspan_size - 1) * spacing_width
++        
++        # Calculate the height of this subfigure, accounting for spacing
++        dy = rowspan_size * row_height + (rowspan_size - 1) * spacing_height
++        
++        # Calculate the position of this subfigure
++        x0 = self._subplotspec.colspan.start * (col_width + spacing_width)
++        y0 = 1.0 - (self._subplotspec.rowspan.stop * row_height + 
++                   (self._subplotspec.rowspan.stop - 1) * spacing_height)
++        
+         if self.bbox_relative is None:
+             self.bbox_relative = Bbox.from_bounds(x0, y0, dx, dy)
+         else:

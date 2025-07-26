@@ -1,0 +1,65 @@
+diff --git a/django/db/models/query.py b/django/db/models/query.py
+index de49e1c58c..1e9ba94040 100644
+--- a/django/db/models/query.py
++++ b/django/db/models/query.py
+@@ -621,8 +621,59 @@ class QuerySet(AltersData):
+         """
+         if self._result_cache is not None:
+             return len(self._result_cache)
+-
++            
++        # Check if we have annotations that are not used in filters or ordering
++        if self.query.annotations:
++            # Check if annotations are used in where clause
++            annotations_used = False
++            
++            # Check where clause
++            if self.query.where:
++                for child in self.query.where.children:
++                    if self._is_annotation_referenced(child):
++                        annotations_used = True
++                        break
++            
++            # Check order_by
++            if not annotations_used and self.query.order_by:
++                for ordering in self.query.order_by:
++                    # Skip ordering indicators like '-' or '?'
++                    if ordering == '?' or (ordering and ordering[0] in '-+'):
++                        continue
++                    # Extract the field name from the ordering
++                    field_name = ordering.lstrip('+-')
++                    if field_name in self.query.annotations:
++                        annotations_used = True
++                        break
++            
++            # If annotations are not used, create a new queryset without them
++            if not annotations_used:
++                # Create a new queryset without annotations
++                return self.model.objects.filter(pk__in=self.values('pk')).count()
++        
+         return self.query.get_count(using=self.db)
++        
++    def _is_annotation_referenced(self, node):
++        """
++        Check if a node in the where tree references an annotation.
++        """
++        # Check if this is a lookup with an annotation on the left side
++        if hasattr(node, 'lhs') and hasattr(node.lhs, 'name') and node.lhs.name in self.query.annotations:
++            return True
++            
++        # Check if this is a Q node
++        if isinstance(node, Q):
++            for child in node.children:
++                if self._is_annotation_referenced(child):
++                    return True
++                    
++        # Check source expressions
++        if hasattr(node, 'get_source_expressions'):
++            for expr in node.get_source_expressions():
++                if expr and self._is_annotation_referenced(expr):
++                    return True
++                    
++        return False
+ 
+     async def acount(self):
+         return await sync_to_async(self.count)()

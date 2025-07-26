@@ -1,0 +1,782 @@
+diff --git a/django/db/models/fields/related_lookups.py b/django/db/models/fields/related_lookups.py
+index 1a845a1f7f..b9115bfffa 100644
+--- a/django/db/models/fields/related_lookups.py
++++ b/django/db/models/fields/related_lookups.py
+@@ -74,6 +74,16 @@ def get_normalized_value(value, lhs):
+ 
+ class RelatedIn(In):
+     def get_prep_lookup(self):
++        # If the RHS is a QuerySet with annotations, we need to use values_list
++        # to avoid the "sub-select returns N columns - expected 1" error
++        if hasattr(self.rhs, 'query') and hasattr(self.rhs.query, 'annotations') and self.rhs.query.annotations:
++            # Use values_list to get only the primary key
++            from django.db.models.query import QuerySet
++            if isinstance(self.rhs, QuerySet):
++                self.rhs = self.rhs.values_list('pk', flat=True)
++                # Return early since we've already transformed the RHS
++                return self.rhs
++            
+         if not isinstance(self.lhs, MultiColSource):
+             if self.rhs_is_direct_value():
+                 # If we get here, we are dealing with single-column relations.
+@@ -106,6 +116,13 @@ class RelatedIn(In):
+                 else:
+                     target_field = self.lhs.field.target_field.name
+                 self.rhs.add_fields([target_field], True)
++                
++                # If we have annotations, we need to clear them to avoid including them in the SELECT
++                if hasattr(self.rhs, 'annotations') and self.rhs.annotations:
++                    # Clear annotations
++                    self.rhs.annotations = {}
++                    self.rhs.annotation_select_mask = None
++                    self.rhs._annotation_select_cache = None
+         return super().get_prep_lookup()
+ 
+     def as_sql(self, compiler, connection):
+diff --git a/django/db/models/lookups.py b/django/db/models/lookups.py
+index 866e38df83..8bd8b27a97 100644
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -417,12 +417,29 @@ class In(FieldGetDbPrepValueIterableMixin, BuiltinLookup):
+ 
+     def get_prep_lookup(self):
+         from django.db.models.sql.query import Query  # avoid circular import
+-
++        
++        # If the RHS is a QuerySet with annotations, we need to use values_list
++        # to avoid the "sub-select returns N columns - expected 1" error
++        if hasattr(self.rhs, 'query') and hasattr(self.rhs.query, 'annotations') and self.rhs.query.annotations:
++            # Use values_list to get only the primary key
++            from django.db.models.query import QuerySet
++            if isinstance(self.rhs, QuerySet):
++                self.rhs = self.rhs.values_list('pk', flat=True)
++                # Return early since we've already transformed the RHS
++                return self.rhs
++        
+         if isinstance(self.rhs, Query):
+             self.rhs.clear_ordering(clear_default=True)
+             if not self.rhs.has_select_fields:
++                # Clear the select clause
+                 self.rhs.clear_select_clause()
++                # Add only the primary key field
+                 self.rhs.add_fields(["pk"])
++                # Clear annotations
++                if self.rhs.annotations:
++                    self.rhs.annotations = {}
++                    self.rhs.annotation_select_mask = None
++                    self.rhs._annotation_select_cache = None
+         return super().get_prep_lookup()
+ 
+     def process_rhs(self, compiler, connection):
+@@ -449,6 +466,25 @@ class In(FieldGetDbPrepValueIterableMixin, BuiltinLookup):
+             sqls, sqls_params = self.batch_process_rhs(compiler, connection, rhs)
+             placeholder = "(" + ", ".join(sqls) + ")"
+             return (placeholder, sqls_params)
++        
++        # For subqueries, if it has annotations, create a new query with just the pk
++        if hasattr(self.rhs, 'query') and hasattr(self.rhs.query, 'annotations') and self.rhs.query.annotations:
++            from django.db.models.sql.query import Query
++            
++            # Create a new query with only the primary key field
++            new_query = Query(self.rhs.query.model)
++            # Copy the WHERE clause
++            new_query.where = self.rhs.query.where.clone()
++            # Copy other necessary attributes
++            new_query.distinct = self.rhs.query.distinct
++            new_query.distinct_fields = self.rhs.query.distinct_fields
++            # Add only the primary key field
++            new_query.add_fields(["pk"])
++            
++            # Compile the new query
++            sql, params = compiler.compile(new_query)
++            return sql, params
++            
+         return super().process_rhs(compiler, connection)
+ 
+     def get_rhs_op(self, connection, rhs):
+diff --git a/reproduce_issue.py b/reproduce_issue.py
+new file mode 100644
+index 0000000000..07b60d270b
+--- /dev/null
++++ b/reproduce_issue.py
+@@ -0,0 +1,204 @@
++import os
++import sys
++import django
++
++# Set up Django environment
++os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django.conf.settings")
++sys.path.insert(0, "/testbed")
++
++# Configure minimal settings
++from django.conf import settings
++if not settings.configured:
++    settings.configure(
++        DATABASES={
++            'default': {
++                'ENGINE': 'django.db.backends.sqlite3',
++                'NAME': ':memory:',
++            }
++        },
++        INSTALLED_APPS=[
++            'tests.annotations',
++        ],
++    )
++
++django.setup()
++
++from django.db.models import Value
++from django.db import connection
++from tests.annotations.models import Book, Publisher, Author
++
++def setup_test_data():
++    # Create test data similar to what's in the test case
++    author = Author.objects.create(name='Test Author', age=30)
++    
++    publisher1 = Publisher.objects.create(name='Apress', num_awards=3)
++    publisher2 = Publisher.objects.create(name='Sams', num_awards=1)
++    publisher3 = Publisher.objects.create(name='Prentice Hall', num_awards=2)
++    publisher4 = Publisher.objects.create(name='Morgan Kaufmann', num_awards=4)
++    
++    # Create some books with pages > 400
++    Book.objects.create(
++        isbn='159059725', 
++        name='The Definitive Guide to Django: Web Development Done Right',
++        pages=450, 
++        rating=4.5,
++        price=30.00,
++        contact=author,
++        publisher=publisher1,
++        pubdate='2007-12-06'
++    )
++    
++    Book.objects.create(
++        isbn='067232959', 
++        name='Sams Teach Yourself Django in 24 Hours',
++        pages=410, 
++        rating=3.0,
++        price=23.99,
++        contact=author,
++        publisher=publisher2,
++        pubdate='2008-03-03'
++    )
++    
++    Book.objects.create(
++        isbn='159059996', 
++        name='Practical Django Projects',
++        pages=420, 
++        rating=4.0,
++        price=29.99,
++        contact=author,
++        publisher=publisher3,
++        pubdate='2008-06-23'
++    )
++    
++    Book.objects.create(
++        isbn='013235613', 
++        name='Python Web Development with Django',
++        pages=430, 
++        rating=4.0,
++        price=29.69,
++        contact=author,
++        publisher=publisher4,
++        pubdate='2008-11-03'
++    )
++
++def reproduce_issue():
++    # Create the same query as in the test case
++    long_books_qs = (
++        Book.objects.filter(
++            pages__gt=400,
++        )
++        .annotate(book_annotate=Value(1))
++        .alias(book_alias=Value(1))
++    )
++    
++    # Print debug info about the query
++    print("Original Query Info:")
++    print(f"Annotations: {long_books_qs.query.annotations}")
++    print(f"Annotation Select Mask: {long_books_qs.query.annotation_select_mask}")
++    
++    # Try a simpler query without alias to see if it works
++    simple_books_qs = Book.objects.filter(pages__gt=400).annotate(book_annotate=Value(1))
++    print("\nSimple Query (no alias) Info:")
++    print(f"Annotations: {simple_books_qs.query.annotations}")
++    print(f"Annotation Select Mask: {simple_books_qs.query.annotation_select_mask}")
++    
++    # Try a query with only alias to see if it works
++    alias_books_qs = Book.objects.filter(pages__gt=400).alias(book_alias=Value(1))
++    print("\nAlias-only Query Info:")
++    print(f"Annotations: {alias_books_qs.query.annotations}")
++    print(f"Annotation Select Mask: {alias_books_qs.query.annotation_select_mask}")
++    
++    # Try a direct approach - evaluate the queryset first
++    direct_books_qs = list(Book.objects.filter(pages__gt=400).values_list('id', flat=True))
++    print("\nDirect approach - evaluate the queryset first:")
++    print(f"IDs: {direct_books_qs}")
++    
++    try:
++        # Try the direct approach
++        direct_publisher_books_qs = Publisher.objects.filter(book__id__in=direct_books_qs).values("name")
++        print("\nDirect Query SQL:")
++        print(direct_publisher_books_qs.query)
++        
++        # Try to execute the direct query
++        direct_result = list(direct_publisher_books_qs)
++        print("Direct query executed successfully!")
++        print("Direct Result:", direct_result)
++        
++        # Try the simple query
++        simple_publisher_books_qs = Publisher.objects.filter(book__in=simple_books_qs).values("name")
++        print("\nSimple Query SQL:")
++        print(simple_publisher_books_qs.query)
++        
++        # Try to execute the simple query
++        simple_result = list(simple_publisher_books_qs)
++        print("Simple query executed successfully!")
++        print("Simple Result:", simple_result)
++        
++        # Try the alias-only query
++        alias_publisher_books_qs = Publisher.objects.filter(book__in=alias_books_qs).values("name")
++        print("\nAlias-only Query SQL:")
++        print(alias_publisher_books_qs.query)
++        
++        # Try to execute the alias-only query
++        alias_result = list(alias_publisher_books_qs)
++        print("Alias-only query executed successfully!")
++        print("Alias Result:", alias_result)
++        
++        # Try a workaround for the original query
++        # First, get the IDs from the original query
++        long_books_ids = list(long_books_qs.values_list('id', flat=True))
++        print("\nLong books IDs:", long_books_ids)
++        
++        # Then use the IDs directly
++        workaround_publisher_books_qs = Publisher.objects.filter(book__id__in=long_books_ids).values("name")
++        print("\nWorkaround Query SQL:")
++        print(workaround_publisher_books_qs.query)
++        
++        # Try to execute the workaround query
++        workaround_result = list(workaround_publisher_books_qs)
++        print("Workaround query executed successfully!")
++        print("Workaround Result:", workaround_result)
++        
++        # Try a different approach - evaluate the queryset first
++        # This is a workaround for the issue
++        long_books_list = list(long_books_qs)
++        print("\nLong books list:", long_books_list)
++        
++        # Try a different approach - use values_list to get only the primary key
++        long_books_qs_pk_only = long_books_qs.values_list('pk', flat=True)
++        print("\nModified Query Info (values_list):")
++        print(f"Type: {type(long_books_qs_pk_only)}")
++        
++        publisher_books_qs = (
++            Publisher.objects.filter(
++                book__id__in=long_books_qs_pk_only
++            )
++            .values("name")
++        )
++        
++        # Print the SQL query
++        print("\nOriginal Query SQL:")
++        print(publisher_books_qs.query)
++        
++        # Try to execute the query
++        result = list(publisher_books_qs)
++        print("Original query executed successfully!")
++        print("Result:", result)
++        
++    except Exception as e:
++        print(f"Error: {e}")
++        import traceback
++        traceback.print_exc()
++
++if __name__ == "__main__":
++    # Create tables
++    with connection.schema_editor() as schema_editor:
++        schema_editor.create_model(Author)
++        schema_editor.create_model(Publisher)
++        schema_editor.create_model(Book)
++    
++    # Set up test data
++    setup_test_data()
++    
++    # Reproduce the issue
++    reproduce_issue()
+\ No newline at end of file
+diff --git a/run_django_test.py b/run_django_test.py
+new file mode 100644
+index 0000000000..172877f89a
+--- /dev/null
++++ b/run_django_test.py
+@@ -0,0 +1,60 @@
++import os
++import sys
++import django
++
++# Set up Django environment
++os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django.conf.settings")
++sys.path.insert(0, "/testbed")
++
++# Configure minimal settings
++from django.conf import settings
++if not settings.configured:
++    settings.configure(
++        DATABASES={
++            'default': {
++                'ENGINE': 'django.db.backends.sqlite3',
++                'NAME': ':memory:',
++            }
++        },
++        INSTALLED_APPS=[
++            'tests.annotations',
++        ],
++    )
++
++django.setup()
++
++from django.test.runner import DiscoverRunner
++from django.test import TestCase
++from django.db.models import Value
++from tests.annotations.models import Book, Publisher
++
++class TestAnnotationAndAliasFilterInSubquery(TestCase):
++    def test_annotation_and_alias_filter_in_subquery(self):
++        long_books_qs = (
++            Book.objects.filter(
++                pages__gt=400,
++            )
++            .annotate(book_annotate=Value(1))
++            .alias(book_alias=Value(1))
++        )
++        publisher_books_qs = (
++            Publisher.objects.filter(
++                book__in=long_books_qs
++            )
++            .values("name")
++        )
++        self.assertCountEqual(
++            publisher_books_qs,
++            [
++                {'name': 'Apress'},
++                {'name': 'Sams'},
++                {'name': 'Prentice Hall'},
++                {'name': 'Morgan Kaufmann'}
++            ]
++        )
++
++if __name__ == "__main__":
++    # Create a test suite with our test case
++    test_runner = DiscoverRunner(verbosity=2)
++    failures = test_runner.run_tests(['run_django_test'])
++    sys.exit(bool(failures))
+\ No newline at end of file
+diff --git a/run_test.py b/run_test.py
+new file mode 100644
+index 0000000000..f2e726248e
+--- /dev/null
++++ b/run_test.py
+@@ -0,0 +1,122 @@
++import os
++import sys
++import django
++
++# Set up Django environment
++os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django.conf.settings")
++sys.path.insert(0, "/testbed")
++
++# Configure minimal settings
++from django.conf import settings
++if not settings.configured:
++    settings.configure(
++        DATABASES={
++            'default': {
++                'ENGINE': 'django.db.backends.sqlite3',
++                'NAME': ':memory:',
++            }
++        },
++        INSTALLED_APPS=[
++            'tests.annotations',
++        ],
++    )
++
++django.setup()
++
++from django.db.models import Value
++from django.db import connection
++from django.test import TestCase
++from tests.annotations.models import Book, Publisher, Author
++
++class TestAnnotationAndAliasFilterInSubquery(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        author = Author.objects.create(name='Test Author', age=30)
++        
++        publisher1 = Publisher.objects.create(name='Apress', num_awards=3)
++        publisher2 = Publisher.objects.create(name='Sams', num_awards=1)
++        publisher3 = Publisher.objects.create(name='Prentice Hall', num_awards=2)
++        publisher4 = Publisher.objects.create(name='Morgan Kaufmann', num_awards=4)
++        
++        # Create some books with pages > 400
++        Book.objects.create(
++            isbn='159059725', 
++            name='The Definitive Guide to Django: Web Development Done Right',
++            pages=450, 
++            rating=4.5,
++            price=30.00,
++            contact=author,
++            publisher=publisher1,
++            pubdate='2007-12-06'
++        )
++        
++        Book.objects.create(
++            isbn='067232959', 
++            name='Sams Teach Yourself Django in 24 Hours',
++            pages=410, 
++            rating=3.0,
++            price=23.99,
++            contact=author,
++            publisher=publisher2,
++            pubdate='2008-03-03'
++        )
++        
++        Book.objects.create(
++            isbn='159059996', 
++            name='Practical Django Projects',
++            pages=420, 
++            rating=4.0,
++            price=29.99,
++            contact=author,
++            publisher=publisher3,
++            pubdate='2008-06-23'
++        )
++        
++        Book.objects.create(
++            isbn='013235613', 
++            name='Python Web Development with Django',
++            pages=430, 
++            rating=4.0,
++            price=29.69,
++            contact=author,
++            publisher=publisher4,
++            pubdate='2008-11-03'
++        )
++    
++    def test_annotation_and_alias_filter_in_subquery(self):
++        long_books_qs = (
++            Book.objects.filter(
++                pages__gt=400,
++            )
++            .annotate(book_annotate=Value(1))
++            .alias(book_alias=Value(1))
++        )
++        publisher_books_qs = (
++            Publisher.objects.filter(
++                book__in=long_books_qs
++            )
++            .values("name")
++        )
++        self.assertCountEqual(
++            publisher_books_qs,
++            [
++                {'name': 'Apress'},
++                {'name': 'Sams'},
++                {'name': 'Prentice Hall'},
++                {'name': 'Morgan Kaufmann'}
++            ]
++        )
++
++if __name__ == "__main__":
++    # Create tables
++    with connection.schema_editor() as schema_editor:
++        schema_editor.create_model(Author)
++        schema_editor.create_model(Publisher)
++        schema_editor.create_model(Book)
++    
++    # Run the test
++    test_case = TestAnnotationAndAliasFilterInSubquery()
++    test_case.setUpClass()
++    test_case.setUp()
++    test_case.test_annotation_and_alias_filter_in_subquery()
++    print("Test passed successfully!")
+\ No newline at end of file
+diff --git a/test_fix.py b/test_fix.py
+new file mode 100644
+index 0000000000..9356de21f2
+--- /dev/null
++++ b/test_fix.py
+@@ -0,0 +1,131 @@
++import os
++import sys
++import django
++
++# Set up Django environment
++os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django.conf.settings")
++sys.path.insert(0, "/testbed")
++
++# Configure minimal settings
++from django.conf import settings
++if not settings.configured:
++    settings.configure(
++        DATABASES={
++            'default': {
++                'ENGINE': 'django.db.backends.sqlite3',
++                'NAME': ':memory:',
++            }
++        },
++        INSTALLED_APPS=[
++            'tests.annotations',
++        ],
++    )
++
++django.setup()
++
++from django.db.models import Value
++from django.db import connection
++from tests.annotations.models import Book, Publisher, Author
++
++def setup_test_data():
++    author = Author.objects.create(name='Test Author', age=30)
++    
++    publisher1 = Publisher.objects.create(name='Apress', num_awards=3)
++    publisher2 = Publisher.objects.create(name='Sams', num_awards=1)
++    publisher3 = Publisher.objects.create(name='Prentice Hall', num_awards=2)
++    publisher4 = Publisher.objects.create(name='Morgan Kaufmann', num_awards=4)
++    
++    # Create some books with pages > 400
++    Book.objects.create(
++        isbn='159059725', 
++        name='The Definitive Guide to Django: Web Development Done Right',
++        pages=450, 
++        rating=4.5,
++        price=30.00,
++        contact=author,
++        publisher=publisher1,
++        pubdate='2007-12-06'
++    )
++    
++    Book.objects.create(
++        isbn='067232959', 
++        name='Sams Teach Yourself Django in 24 Hours',
++        pages=410, 
++        rating=3.0,
++        price=23.99,
++        contact=author,
++        publisher=publisher2,
++        pubdate='2008-03-03'
++    )
++    
++    Book.objects.create(
++        isbn='159059996', 
++        name='Practical Django Projects',
++        pages=420, 
++        rating=4.0,
++        price=29.99,
++        contact=author,
++        publisher=publisher3,
++        pubdate='2008-06-23'
++    )
++    
++    Book.objects.create(
++        isbn='013235613', 
++        name='Python Web Development with Django',
++        pages=430, 
++        rating=4.0,
++        price=29.69,
++        contact=author,
++        publisher=publisher4,
++        pubdate='2008-11-03'
++    )
++
++def test_annotation_and_alias_filter_in_subquery():
++    # Create the same query as in the test case
++    long_books_qs = (
++        Book.objects.filter(
++            pages__gt=400,
++        )
++        .annotate(book_annotate=Value(1))
++        .alias(book_alias=Value(1))
++    )
++    
++    # Use the queryset directly in the filter
++    publisher_books_qs = (
++        Publisher.objects.filter(
++            book__in=long_books_qs
++        )
++        .values("name")
++    )
++    
++    # Print the result
++    result = list(publisher_books_qs)
++    print("Result:", result)
++    
++    # Check if the result is correct
++    expected = [
++        {'name': 'Apress'},
++        {'name': 'Sams'},
++        {'name': 'Prentice Hall'},
++        {'name': 'Morgan Kaufmann'}
++    ]
++    
++    if sorted(result, key=lambda x: x['name']) == sorted(expected, key=lambda x: x['name']):
++        print("Test passed successfully!")
++    else:
++        print("Test failed!")
++        print("Expected:", expected)
++        print("Got:", result)
++
++if __name__ == "__main__":
++    # Create tables
++    with connection.schema_editor() as schema_editor:
++        schema_editor.create_model(Author)
++        schema_editor.create_model(Publisher)
++        schema_editor.create_model(Book)
++    
++    # Set up test data
++    setup_test_data()
++    
++    # Run the test
++    test_annotation_and_alias_filter_in_subquery()
+\ No newline at end of file
+diff --git a/test_workaround.py b/test_workaround.py
+new file mode 100644
+index 0000000000..ed6fccb592
+--- /dev/null
++++ b/test_workaround.py
+@@ -0,0 +1,134 @@
++import os
++import sys
++import django
++
++# Set up Django environment
++os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django.conf.settings")
++sys.path.insert(0, "/testbed")
++
++# Configure minimal settings
++from django.conf import settings
++if not settings.configured:
++    settings.configure(
++        DATABASES={
++            'default': {
++                'ENGINE': 'django.db.backends.sqlite3',
++                'NAME': ':memory:',
++            }
++        },
++        INSTALLED_APPS=[
++            'tests.annotations',
++        ],
++    )
++
++django.setup()
++
++from django.db.models import Value
++from django.db import connection
++from tests.annotations.models import Book, Publisher, Author
++
++def setup_test_data():
++    author = Author.objects.create(name='Test Author', age=30)
++    
++    publisher1 = Publisher.objects.create(name='Apress', num_awards=3)
++    publisher2 = Publisher.objects.create(name='Sams', num_awards=1)
++    publisher3 = Publisher.objects.create(name='Prentice Hall', num_awards=2)
++    publisher4 = Publisher.objects.create(name='Morgan Kaufmann', num_awards=4)
++    
++    # Create some books with pages > 400
++    Book.objects.create(
++        isbn='159059725', 
++        name='The Definitive Guide to Django: Web Development Done Right',
++        pages=450, 
++        rating=4.5,
++        price=30.00,
++        contact=author,
++        publisher=publisher1,
++        pubdate='2007-12-06'
++    )
++    
++    Book.objects.create(
++        isbn='067232959', 
++        name='Sams Teach Yourself Django in 24 Hours',
++        pages=410, 
++        rating=3.0,
++        price=23.99,
++        contact=author,
++        publisher=publisher2,
++        pubdate='2008-03-03'
++    )
++    
++    Book.objects.create(
++        isbn='159059996', 
++        name='Practical Django Projects',
++        pages=420, 
++        rating=4.0,
++        price=29.99,
++        contact=author,
++        publisher=publisher3,
++        pubdate='2008-06-23'
++    )
++    
++    Book.objects.create(
++        isbn='013235613', 
++        name='Python Web Development with Django',
++        pages=430, 
++        rating=4.0,
++        price=29.69,
++        contact=author,
++        publisher=publisher4,
++        pubdate='2008-11-03'
++    )
++
++def test_annotation_and_alias_filter_in_subquery():
++    # Create the same query as in the test case
++    long_books_qs = (
++        Book.objects.filter(
++            pages__gt=400,
++        )
++        .annotate(book_annotate=Value(1))
++        .alias(book_alias=Value(1))
++    )
++    
++    # Use values_list to get only the primary key
++    long_books_qs_pk_only = long_books_qs.values_list('pk', flat=True)
++    
++    # Use the primary keys in the filter
++    publisher_books_qs = (
++        Publisher.objects.filter(
++            book__id__in=long_books_qs_pk_only
++        )
++        .values("name")
++    )
++    
++    # Print the result
++    result = list(publisher_books_qs)
++    print("Result:", result)
++    
++    # Check if the result is correct
++    expected = [
++        {'name': 'Apress'},
++        {'name': 'Sams'},
++        {'name': 'Prentice Hall'},
++        {'name': 'Morgan Kaufmann'}
++    ]
++    
++    if sorted(result, key=lambda x: x['name']) == sorted(expected, key=lambda x: x['name']):
++        print("Test passed successfully!")
++    else:
++        print("Test failed!")
++        print("Expected:", expected)
++        print("Got:", result)
++
++if __name__ == "__main__":
++    # Create tables
++    with connection.schema_editor() as schema_editor:
++        schema_editor.create_model(Author)
++        schema_editor.create_model(Publisher)
++        schema_editor.create_model(Book)
++    
++    # Set up test data
++    setup_test_data()
++    
++    # Run the test
++    test_annotation_and_alias_filter_in_subquery()
+\ No newline at end of file

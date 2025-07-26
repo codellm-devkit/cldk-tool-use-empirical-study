@@ -1,0 +1,37 @@
+diff --git a/requests/models.py b/requests/models.py
+index 99260453..bffbf9d2 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -341,6 +341,9 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+         length = None
+         is_stream = False
+ 
++        # Don't set Content-Length for GET requests
++        is_get_request = self.method is not None and self.method.upper() == 'GET'
++
+         is_stream = all([
+             hasattr(data, '__iter__'),
+             not isinstance(data, basestring),
+@@ -358,9 +361,9 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+             if files:
+                 raise NotImplementedError('Streamed bodies and files are mutually exclusive.')
+ 
+-            if length:
++            if length and not is_get_request:
+                 self.headers['Content-Length'] = length
+-            else:
++            elif not is_get_request:
+                 self.headers['Transfer-Encoding'] = 'chunked'
+         # Check if file, fo, generator, iterator.
+         # If not, run through normal process.
+@@ -377,7 +380,9 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+                     else:
+                         content_type = 'application/x-www-form-urlencoded'
+ 
+-            self.prepare_content_length(body)
++            # Only set Content-Length for non-GET requests
++            if not is_get_request:
++                self.prepare_content_length(body)
+ 
+             # Add content-type if it wasn't explicitly provided.
+             if (content_type) and (not 'content-type' in self.headers):

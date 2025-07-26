@@ -1,0 +1,139 @@
+diff --git a/xarray/core/duck_array_ops.py b/xarray/core/duck_array_ops.py
+index e64fea2c..af13c4d7 100644
+--- a/xarray/core/duck_array_ops.py
++++ b/xarray/core/duck_array_ops.py
+@@ -324,8 +324,11 @@ def _create_nan_agg_method(name, dask_module=dask_array, coerce_strings=False):
+         if coerce_strings and values.dtype.kind in "SU":
+             values = values.astype(object)
+ 
++        # Always use nanops functions if min_count is specified
++        min_count = kwargs.get('min_count', None)
++        
+         func = None
+-        if skipna or (skipna is None and values.dtype.kind in "cfO"):
++        if min_count is not None or skipna or (skipna is None and values.dtype.kind in "cfO"):
+             nanname = "nan" + name
+             func = getattr(nanops, nanname)
+         else:
+diff --git a/xarray/core/nanops.py b/xarray/core/nanops.py
+index 41c8d258..a339e8d7 100644
+--- a/xarray/core/nanops.py
++++ b/xarray/core/nanops.py
+@@ -26,13 +26,15 @@ def _maybe_null_out(result, axis, mask, min_count=1):
+     """
+     xarray version of pandas.core.nanops._maybe_null_out
+     """
+-    if hasattr(axis, "__len__"):  # if tuple or list
+-        raise ValueError(
+-            "min_count is not available for reduction with more than one dimensions."
+-        )
+-
+     if axis is not None and getattr(result, "ndim", False):
+-        null_mask = (mask.shape[axis] - mask.sum(axis) - min_count) < 0
++        if hasattr(axis, "__len__"):  # if tuple or list
++            # For multiple dimensions, calculate the product of the dimensions' sizes
++            # to get the total count of elements along those dimensions
++            axis_sizes = np.take(mask.shape, axis).prod()
++            null_mask = (axis_sizes - mask.sum(axis=axis) - min_count) < 0
++        else:
++            null_mask = (mask.shape[axis] - mask.sum(axis) - min_count) < 0
++            
+         if null_mask.any():
+             dtype, fill_value = dtypes.maybe_promote(result.dtype)
+             result = result.astype(dtype)
+@@ -110,11 +112,43 @@ def nanargmax(a, axis=None):
+ 
+ def nansum(a, axis=None, dtype=None, out=None, min_count=None):
+     a, mask = _replace_nan(a, 0)
+-    result = _dask_or_eager_func("sum")(a, axis=axis, dtype=dtype)
+-    if min_count is not None:
+-        return _maybe_null_out(result, axis, mask, min_count)
++    
++    # Handle min_count with multiple dimensions
++    if min_count is not None and hasattr(axis, "__len__") and len(axis) > 1:
++        # We need to handle multiple dimensions manually
++        # For multiple axes, we need to reduce one by one
++        # Sort axes in descending order to avoid changing indices
++        sorted_axes = sorted(axis, reverse=True)
++        
++        # Make a copy to avoid modifying the original
++        data = a.copy()
++        mask_copy = mask.copy()
++        
++        # Reduce one axis at a time
++        for ax in sorted_axes:
++            data = np.sum(data, axis=ax)
++            # Count valid values along this axis
++            valid_count = np.sum(~mask_copy, axis=ax)
++            # Create a new mask for the reduced data
++            mask_copy = valid_count < min_count
++            # Set values to 0 where we don't have enough valid values
++            data = np.where(mask_copy, 0, data)
++        
++        # Final check: if any dimension didn't have enough valid values, result is NaN
++        if np.any(mask_copy):
++            if np.issubdtype(data.dtype, np.floating):
++                data = np.nan
++            else:
++                data = np.float64(np.nan)
++        
++        return data
+     else:
+-        return result
++        # Original behavior for single dimension or no min_count
++        result = _dask_or_eager_func("sum")(a, axis=axis, dtype=dtype)
++        if min_count is not None:
++            return _maybe_null_out(result, axis, mask, min_count)
++        else:
++            return result
+ 
+ 
+ def _nanmean_ddof_object(ddof, value, axis=None, dtype=None, **kwargs):
+@@ -180,11 +214,43 @@ def nanstd(a, axis=None, dtype=None, out=None, ddof=0):
+ 
+ def nanprod(a, axis=None, dtype=None, out=None, min_count=None):
+     a, mask = _replace_nan(a, 1)
+-    result = _dask_or_eager_func("nanprod")(a, axis=axis, dtype=dtype, out=out)
+-    if min_count is not None:
+-        return _maybe_null_out(result, axis, mask, min_count)
++    
++    # Handle min_count with multiple dimensions
++    if min_count is not None and hasattr(axis, "__len__") and len(axis) > 1:
++        # We need to handle multiple dimensions manually
++        # For multiple axes, we need to reduce one by one
++        # Sort axes in descending order to avoid changing indices
++        sorted_axes = sorted(axis, reverse=True)
++        
++        # Make a copy to avoid modifying the original
++        data = a.copy()
++        mask_copy = mask.copy()
++        
++        # Reduce one axis at a time
++        for ax in sorted_axes:
++            data = np.prod(data, axis=ax)
++            # Count valid values along this axis
++            valid_count = np.sum(~mask_copy, axis=ax)
++            # Create a new mask for the reduced data
++            mask_copy = valid_count < min_count
++            # Set values to 1 where we don't have enough valid values (neutral element for multiplication)
++            data = np.where(mask_copy, 1, data)
++        
++        # Final check: if any dimension didn't have enough valid values, result is NaN
++        if np.any(mask_copy):
++            if np.issubdtype(data.dtype, np.floating):
++                data = np.nan
++            else:
++                data = np.float64(np.nan)
++        
++        return data
+     else:
+-        return result
++        # Original behavior for single dimension or no min_count
++        result = _dask_or_eager_func("nanprod")(a, axis=axis, dtype=dtype, out=out)
++        if min_count is not None:
++            return _maybe_null_out(result, axis, mask, min_count)
++        else:
++            return result
+ 
+ 
+ def nancumsum(a, axis=None, dtype=None, out=None):

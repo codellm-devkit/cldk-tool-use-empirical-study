@@ -1,0 +1,24 @@
+diff --git a/django/db/models/fields/files.py b/django/db/models/fields/files.py
+index 7f8eb128e1..848115f4d2 100644
+--- a/django/db/models/fields/files.py
++++ b/django/db/models/fields/files.py
+@@ -441,7 +441,9 @@ class ImageField(FileField):
+         # after their corresponding image field don't stay cleared by
+         # Model.__init__, see bug #11196.
+         # Only run post-initialization dimension update on non-abstract models
+-        if not cls._meta.abstract:
++        # and only when the field has dimension fields
++        has_dimension_fields = self.width_field or self.height_field
++        if not cls._meta.abstract and has_dimension_fields:
+             signals.post_init.connect(self.update_dimension_fields, sender=cls)
+ 
+     def update_dimension_fields(self, instance, force=False, *args, **kwargs):
+@@ -459,6 +461,8 @@ class ImageField(FileField):
+         """
+         # Nothing to update if the field doesn't have dimension fields or if
+         # the field is deferred.
++        # Note: This check is now redundant with the check in contribute_to_class,
++        # but we keep it for backward compatibility and in case this method is called directly.
+         has_dimension_fields = self.width_field or self.height_field
+         if not has_dimension_fields or self.attname not in instance.__dict__:
+             return

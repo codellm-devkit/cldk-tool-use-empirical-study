@@ -1,0 +1,48 @@
+diff --git a/sphinx/ext/graphviz.py b/sphinx/ext/graphviz.py
+index 8b21d9e3b..e63110d43 100644
+--- a/sphinx/ext/graphviz.py
++++ b/sphinx/ext/graphviz.py
+@@ -234,15 +234,34 @@ def fix_svg_relative_paths(self: SphinxTranslator, filepath: str) -> None:
+             # not a relative link
+             continue
+ 
+-        old_path = path.join(self.builder.outdir, url)
+-        new_path = path.relpath(
+-            old_path,
+-            start=path.join(self.builder.outdir, self.builder.imgpath),
+-        )
+-        modified_url = urlunsplit((scheme, hostname, new_path, query, fragment))
+-
+-        element.set(href_name, modified_url)
+-        modified = True
++        # For SVG files in _images directory, we need to adjust the relative paths
++        # to account for the fact that the SVG file is in a different directory
++        # than the HTML file that includes it
++        
++        # If the URL starts with "../", it's a relative URL that was generated
++        # by the inheritance diagram extension
++        if url.startswith("../"):
++            # Remove the leading "../" as we'll recalculate the correct relative path
++            url = url[3:]
++            
++            # Calculate the correct relative path from _images to the target URL
++            # For SVG files in _images directory, we need to go up one level
++            # to get to the document root, then follow the URL
++            new_path = "../" + url
++            
++            modified_url = urlunsplit((scheme, hostname, new_path, query, fragment))
++            element.set(href_name, modified_url)
++            modified = True
++        else:
++            # Handle other relative URLs as before
++            old_path = path.join(self.builder.outdir, url)
++            new_path = path.relpath(
++                old_path,
++                start=path.join(self.builder.outdir, self.builder.imgpath),
++            )
++            modified_url = urlunsplit((scheme, hostname, new_path, query, fragment))
++            element.set(href_name, modified_url)
++            modified = True
+ 
+     if modified:
+         tree.write(filepath)

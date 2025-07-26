@@ -1,0 +1,48 @@
+diff --git a/xarray/core/weighted.py b/xarray/core/weighted.py
+index 996d2e4c..b54eb454 100644
+--- a/xarray/core/weighted.py
++++ b/xarray/core/weighted.py
+@@ -142,7 +142,10 @@ class Weighted:
+         # we need to mask data values that are nan; else the weights are wrong
+         mask = da.notnull()
+ 
+-        sum_of_weights = self._reduce(mask, self.weights, dim=dim, skipna=False)
++        # Convert boolean weights to numeric to ensure proper summation
++        weights = self.weights * 1 if self.weights.dtype == bool else self.weights
++        
++        sum_of_weights = self._reduce(mask, weights, dim=dim, skipna=False)
+ 
+         # 0-weights are not valid
+         valid_weights = sum_of_weights != 0.0
+diff --git a/xarray/tests/test_weighted.py b/xarray/tests/test_weighted.py
+index 24531215..1ede8db4 100644
+--- a/xarray/tests/test_weighted.py
++++ b/xarray/tests/test_weighted.py
+@@ -139,6 +139,27 @@ def test_weighted_mean_no_nan(weights, expected):
+     assert_equal(expected, result)
+ 
+ 
++def test_weighted_mean_bool_weights():
++    """Test that boolean weights work correctly."""
++    da = DataArray([1., 1., 1.])
++    weights = DataArray(np.array([True, True, False]))
++    
++    # Test weighted mean
++    expected = DataArray(1.0)
++    result = da.weighted(weights).mean()
++    assert_equal(expected, result)
++    
++    # Test sum of weights
++    expected_weights = DataArray(2.0)
++    result_weights = da.weighted(weights).sum_of_weights()
++    assert_equal(expected_weights, result_weights)
++    
++    # Test that bool weights give same result as int weights
++    weights_int = DataArray(np.array([1, 1, 0]))
++    result_int = da.weighted(weights_int).mean()
++    assert_equal(result, result_int)
++
++
+ @pytest.mark.parametrize(
+     ("weights", "expected"), (([4, 6], 2.0), ([1, 0], np.nan), ([0, 0], np.nan))
+ )

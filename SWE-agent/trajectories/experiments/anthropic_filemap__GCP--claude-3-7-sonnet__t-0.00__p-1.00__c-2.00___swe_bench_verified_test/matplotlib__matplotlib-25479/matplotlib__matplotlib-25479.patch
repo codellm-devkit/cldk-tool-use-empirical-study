@@ -1,0 +1,114 @@
+diff --git a/lib/matplotlib/legend.py b/lib/matplotlib/legend.py
+index ff6abdb958..50227c076e 100644
+--- a/lib/matplotlib/legend.py
++++ b/lib/matplotlib/legend.py
+@@ -717,6 +717,17 @@ class Legend(Artist):
+         # docstring inherited
+         if not self.get_visible():
+             return
++            
++        # Check if we need to restore draggable state after unpickling
++        if hasattr(self, '_restore_draggable') and self._restore_draggable:
++            try:
++                self.set_draggable(True)
++            except Exception:
++                # If setting draggable fails (e.g., no canvas yet), we'll try again next time
++                pass
++            else:
++                # Only remove the attribute if we successfully restored the draggable state
++                delattr(self, '_restore_draggable')
+ 
+         renderer.open_group('legend', gid=self.get_gid())
+ 
+@@ -1207,6 +1218,29 @@ class Legend(Artist):
+     def get_draggable(self):
+         """Return ``True`` if the legend is draggable, ``False`` otherwise."""
+         return self._draggable is not None
++        
++    def __getstate__(self):
++        """
++        Return state of the legend for pickling.
++        Excludes unpicklable attributes like the draggable state.
++        """
++        state = self.__dict__.copy()
++        # Remove unpicklable attributes
++        state['_draggable'] = None
++        # Store whether the legend was draggable
++        state['_was_draggable'] = self.get_draggable()
++        return state
++        
++    def __setstate__(self, state):
++        """
++        Restore the legend state after unpickling.
++        Recreates the draggable state if it was enabled before pickling.
++        """
++        was_draggable = state.pop('_was_draggable', False)
++        self.__dict__ = state
++        # We'll restore the draggable state later when the figure has a canvas
++        # Store the draggable state for later
++        self._restore_draggable = was_draggable
+ 
+ 
+ # Helper functions to parse legend arguments for both `figure.legend` and
+diff --git a/lib/matplotlib/text.py b/lib/matplotlib/text.py
+index 0f874ba33d..6b5a4645b0 100644
+--- a/lib/matplotlib/text.py
++++ b/lib/matplotlib/text.py
+@@ -237,6 +237,9 @@ class Text(Artist):
+         # remove the cached _renderer (if it exists)
+         d['_renderer'] = None
+         return d
++        
++    def __setstate__(self, state):
++        self.__dict__ = state
+ 
+     def contains(self, mouseevent):
+         """
+@@ -1649,6 +1652,29 @@ class _AnnotationBase:
+             self._draggable = None
+ 
+         return self._draggable
++        
++    def __getstate__(self):
++        """
++        Return state of the annotation for pickling.
++        Excludes unpicklable attributes like the draggable state.
++        """
++        state = super().__getstate__()
++        # Remove unpicklable attributes
++        state['_draggable'] = None
++        # Store whether the annotation was draggable
++        state['_was_draggable'] = self._draggable is not None
++        return state
++        
++    def __setstate__(self, state):
++        """
++        Restore the annotation state after unpickling.
++        Recreates the draggable state if it was enabled before pickling.
++        """
++        was_draggable = state.pop('_was_draggable', False)
++        super().__setstate__(state)
++        # We'll restore the draggable state later when the figure has a canvas
++        # Store the draggable state for later
++        self._restore_draggable = was_draggable
+ 
+ 
+ class Annotation(Text, _AnnotationBase):
+@@ -2019,6 +2045,17 @@ or callable, default: value of *xycoords*
+             self._renderer = renderer
+         if not self.get_visible() or not self._check_xy(renderer):
+             return
++            
++        # Check if we need to restore draggable state after unpickling
++        if hasattr(self, '_restore_draggable') and self._restore_draggable:
++            try:
++                self.draggable(True)
++            except Exception:
++                # If setting draggable fails (e.g., no canvas yet), we'll try again next time
++                pass
++            else:
++                # Only remove the attribute if we successfully restored the draggable state
++                delattr(self, '_restore_draggable')
+         # Update text positions before `Text.draw` would, so that the
+         # FancyArrowPatch is correctly positioned.
+         self.update_positions(renderer)

@@ -1,0 +1,57 @@
+diff --git a/seaborn/_core/plot.py b/seaborn/_core/plot.py
+index 8915616b..4e489b1d 100644
+--- a/seaborn/_core/plot.py
++++ b/seaborn/_core/plot.py
+@@ -1561,7 +1561,13 @@ class Plotter:
+         for var in legend_vars:
+             var_legend = scales[var]._legend
+             if var_legend is not None:
+-                values, labels = var_legend
++                # Check if we have an offset in the legend data
++                if len(var_legend) == 3:
++                    values, labels, offset = var_legend
++                else:
++                    values, labels = var_legend
++                    offset = None
++                
+                 for (_, part_id), part_vars, _ in schema:
+                     if data.ids[var] == part_id:
+                         # Allow multiple plot semantics to represent same data variable
+@@ -1569,6 +1575,9 @@ class Plotter:
+                         break
+                 else:
+                     title = self._resolve_label(p, var, data.names[var])
++                    # If we have an offset, append it to the title
++                    if offset:
++                        title = f"{title} ({offset})"
+                     entry = (title, data.ids[var]), [var], (values, labels)
+                     schema.append(entry)
+ 
+diff --git a/seaborn/_core/scales.py b/seaborn/_core/scales.py
+index 55874bf2..f21f1b2e 100644
+--- a/seaborn/_core/scales.py
++++ b/seaborn/_core/scales.py
+@@ -379,7 +379,22 @@ class ContinuousBase(Scale):
+             locs = axis.major.locator()
+             locs = locs[(vmin <= locs) & (locs <= vmax)]
+             labels = axis.major.formatter.format_ticks(locs)
+-            new._legend = list(locs), list(labels)
++            
++            # Store the original values and labels
++            values = list(locs)
++            formatted_labels = list(labels)
++            
++            # Check if the formatter is a ScalarFormatter and has an offset
++            if isinstance(axis.major.formatter, ScalarFormatter):
++                offset = axis.major.formatter.get_offset()
++                if offset and offset != "":
++                    # If there's an offset, we'll modify the legend title in Plot._update_legend_contents
++                    # Store the offset with the legend data
++                    new._legend = (values, formatted_labels, offset)
++                else:
++                    new._legend = (values, formatted_labels, None)
++            else:
++                new._legend = (values, formatted_labels, None)
+ 
+         return new
+ 

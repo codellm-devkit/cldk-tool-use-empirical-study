@@ -1,0 +1,134 @@
+diff --git a/pylint/pyreverse/diagrams.py b/pylint/pyreverse/diagrams.py
+index bf9f67af6..c800c1470 100644
+--- a/pylint/pyreverse/diagrams.py
++++ b/pylint/pyreverse/diagrams.py
+@@ -84,6 +84,8 @@ class ClassDiagram(Figure, FilterMixIn):
+             for n, m in node.items()
+             if isinstance(m, astroid.FunctionDef) and decorated_with_property(m)
+         ]
++        
++        # Process all attributes
+         for node_name, associated_nodes in (
+             list(node.instance_attrs_type.items())
+             + list(node.locals_type.items())
+@@ -91,9 +93,34 @@ class ClassDiagram(Figure, FilterMixIn):
+         ):
+             if not self.show_attr(node_name):
+                 continue
+-            names = self.class_names(associated_nodes)
+-            if names:
+-                node_name = "{} : {}".format(node_name, ", ".join(names))
++            
++            # Try to determine type from associated nodes
++            type_annotation = None
++            for associated_node in associated_nodes:
++                if isinstance(associated_node, astroid.nodes.Subscript):
++                    # Handle subscripted types like List[str]
++                    type_annotation = associated_node.as_string()
++                    break
++                elif isinstance(associated_node, astroid.nodes.Name):
++                    # Handle simple types like str, int
++                    type_annotation = associated_node.name
++                    break
++                elif isinstance(associated_node, astroid.nodes.Attribute):
++                    # Handle module.attribute types
++                    type_annotation = associated_node.as_string()
++                    break
++                elif hasattr(associated_node, 'name'):
++                    # Handle class types
++                    type_annotation = associated_node.name
++                    break
++            
++            if type_annotation:
++                node_name = "{} : {}".format(node_name, type_annotation)
++            else:
++                names = self.class_names(associated_nodes)
++                if names:
++                    node_name = "{} : {}".format(node_name, ", ".join(names))
++            
+             attrs.append(node_name)
+         return sorted(attrs)
+ 
+diff --git a/pylint/pyreverse/inspector.py b/pylint/pyreverse/inspector.py
+index 8fa122022..285c0c2fa 100644
+--- a/pylint/pyreverse/inspector.py
++++ b/pylint/pyreverse/inspector.py
+@@ -177,12 +177,20 @@ class Linker(IdGeneratorMixIn, utils.LocalsVisitor):
+ 
+         * set the locals_type mapping
+         * optionally tag the node with a unique id
++        * handle parameter type annotations
+         """
+         if hasattr(node, "locals_type"):
+             return
+         node.locals_type = collections.defaultdict(list)
+         if self.tag:
+             node.uid = self.generate_id()
++        
++        # Handle parameter type annotations
++        if node.args and hasattr(node.args, 'args') and node.args.args:
++            for arg in node.args.args:
++                if hasattr(arg, 'annotation') and arg.annotation:
++                    # Add the annotation to locals_type
++                    node.locals_type[arg.name].append(arg.annotation)
+ 
+     link_project = visit_project
+     link_module = visit_module
+@@ -218,7 +226,14 @@ class Linker(IdGeneratorMixIn, utils.LocalsVisitor):
+                     self.visit_module(frame)
+ 
+             current = frame.locals_type[node.name]
+-            values = set(node.infer())
++            
++            # Check if the node has a type annotation
++            if hasattr(node, 'parent') and hasattr(node.parent, 'annotation') and node.parent.annotation:
++                # Use the type annotation instead of inferring from the value
++                values = set([node.parent.annotation])
++            else:
++                values = set(node.infer())
++                
+             frame.locals_type[node.name] = list(set(current) | values)
+         except astroid.InferenceError:
+             pass
+@@ -230,11 +245,41 @@ class Linker(IdGeneratorMixIn, utils.LocalsVisitor):
+         handle instance_attrs_type
+         """
+         try:
++            # Find the attribute's type annotation from the __init__ method parameters
++            if isinstance(parent, astroid.ClassDef) and node.attrname:
++                # Look for self.attr = param pattern in __init__ method
++                if '__init__' in parent.locals:
++                    init_method = parent.locals['__init__'][0]
++                    
++                    # Find all assignments to this attribute
++                    for assign_node in init_method.nodes_of_class(astroid.AssignAttr):
++                        if assign_node.attrname == node.attrname and isinstance(assign_node.parent, astroid.Assign):
++                            # Check if the right side is a parameter name
++                            if isinstance(assign_node.parent.value, astroid.Name):
++                                param_name = assign_node.parent.value.name
++                                
++                                # Find the parameter with this name in the __init__ method
++                                if hasattr(init_method, 'args') and init_method.args and init_method.args.args:
++                                    args = init_method.args.args
++                                    annotations = init_method.args.annotations if hasattr(init_method.args, 'annotations') else []
++                                    
++                                    # Find the parameter index
++                                    for i, arg in enumerate(args):
++                                        if arg.name == param_name and i < len(annotations) and annotations[i] is not None:
++                                            # We found a type annotation for this parameter
++                                            current = set(parent.instance_attrs_type[node.attrname])
++                                            values = set([annotations[i]])
++                                            parent.instance_attrs_type[node.attrname] = list(current | values)
++                                            return
++            
++            # If we didn't find a type annotation from parameters, proceed with normal inference
+             values = set(node.infer())
+             current = set(parent.instance_attrs_type[node.attrname])
+             parent.instance_attrs_type[node.attrname] = list(current | values)
+         except astroid.InferenceError:
+             pass
++        except Exception:
++            pass
+ 
+     def visit_import(self, node):
+         """visit an astroid.Import node

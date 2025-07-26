@@ -1,0 +1,86 @@
+diff --git a/sympy/sets/sets.py b/sympy/sets/sets.py
+index 917717bb74..3afe75a59c 100644
+--- a/sympy/sets/sets.py
++++ b/sympy/sets/sets.py
+@@ -1724,6 +1724,25 @@ def reduce(A, B):
+ 
+         if isinstance(B, Union):
+             return Intersection(s.complement(A) for s in B.args)
++            
++        # Special case for FiniteSet with only symbols and Interval
++        if isinstance(A, FiniteSet) and isinstance(B, Interval):
++            nums = [m for m in A.args if m.is_number]
++            non_nums = [m for m in A.args if not m.is_number]
++            
++            # If we only have symbols and no numbers, return the symbols directly
++            if not nums and non_nums:
++                return A
++                
++            # Check if we can determine which numbers are in the interval
++            can_determine = True
++            if hasattr(B.start, 'is_Symbol') and B.start.is_Symbol:
++                can_determine = False
++            if hasattr(B.end, 'is_Symbol') and B.end.is_Symbol:
++                can_determine = False
++                
++            if not can_determine:
++                return Complement(A, B, evaluate=False)
+ 
+         result = B._complement(A)
+         if result != None:
+@@ -1933,6 +1952,8 @@ def _intersect(self, other):
+     def _complement(self, other):
+         if isinstance(other, Interval):
+             nums = sorted(m for m in self.args if m.is_number)
++            non_nums = [m for m in self.args if not m.is_number]
++            
+             if other == S.Reals and nums != []:
+                 syms = [m for m in self.args if m.is_Symbol]
+                 # Reals cannot contain elements other than numbers and symbols.
+@@ -1948,8 +1969,45 @@ def _complement(self, other):
+                             FiniteSet(*syms), evaluate=False)
+                 else:
+                     return Union(intervals, evaluate=False)
+-            elif nums == []:
++            elif nums == [] and non_nums == []:
+                 return None
++            else:
++                # Handle mixed case with both numbers and non-numbers (like symbols)
++                # Check if we can determine which numbers are in the interval
++                can_determine = True
++                
++                # Check if the interval has symbolic bounds
++                if hasattr(other.start, 'is_Symbol') and other.start.is_Symbol:
++                    can_determine = False
++                if hasattr(other.end, 'is_Symbol') and other.end.is_Symbol:
++                    can_determine = False
++                
++                # Special case: if we only have symbols and no numbers, return the symbols directly
++                if not nums and non_nums:
++                    return FiniteSet(*non_nums)
++                
++                if can_determine:
++                    # Filter out numbers that are in the interval
++                    in_interval = []
++                    for num in nums:
++                        if other.contains(num) == True:
++                            in_interval.append(num)
++                    
++                    if in_interval:
++                        # Create a new FiniteSet without the numbers in the interval
++                        remaining_nums = [num for num in nums if num not in in_interval]
++                        if non_nums and not remaining_nums:
++                            # If we only have non-numbers left, return them directly
++                            return FiniteSet(*non_nums)
++                        else:
++                            return FiniteSet(*(remaining_nums + non_nums))
++                    else:
++                        # If no numbers are in the interval, return the original set
++                        return self
++                else:
++                    # If we can't determine which numbers are in the interval,
++                    # return the original complement expression
++                    return Complement(self, other, evaluate=False)
+ 
+         elif isinstance(other, FiniteSet):
+             unk = []

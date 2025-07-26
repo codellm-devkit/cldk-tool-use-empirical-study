@@ -1,0 +1,62 @@
+diff --git a/lib/matplotlib/dates.py b/lib/matplotlib/dates.py
+index 0766156d64..ca20a16ce3 100644
+--- a/lib/matplotlib/dates.py
++++ b/lib/matplotlib/dates.py
+@@ -592,12 +592,51 @@ def drange(dstart, dend, delta):
+ 
+ 
+ def _wrap_in_tex(text):
+-    p = r'([a-zA-Z]+)'
+-    ret_text = re.sub(p, r'}$\1$\\mathdefault{', text)
+-
+-    # Braces ensure dashes are not spaced like binary operators.
+-    ret_text = '$\\mathdefault{'+ret_text.replace('-', '{-}')+'}$'
+-    ret_text = ret_text.replace('$\\mathdefault{}$', '')
++    """
++    Wraps text in TeX to ensure proper rendering with usetex=True.
++    
++    For dates and times, we want to keep the numbers and letters together
++    to maintain proper spacing.
++    """
++    # Check if this is likely a date/time string
++    date_time_indicators = [':', '-', '/', '.']
++    is_datetime = any(indicator in text for indicator in date_time_indicators)
++    
++    # Check for month names with years (e.g., "Jan 2020")
++    month_year_pattern = re.match(r'^([a-zA-Z]{3})\s+(\d{4})$', text)
++    
++    # Check for day with month (e.g., "01 Jan")
++    day_month_pattern = re.match(r'^(\d{1,2})\s+([a-zA-Z]{3})$', text)
++    
++    # Check for full month names with years (e.g., "January 2020")
++    full_month_year = re.match(r'^([a-zA-Z]+)\s+(\d{4})$', text)
++    
++    # Check for weekday abbreviations (e.g., "Mon", "Tue")
++    weekday_abbr = re.match(r'^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$', text)
++    
++    # Check for full weekday names (e.g., "Monday", "Tuesday")
++    weekday_full = re.match(r'^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$', text)
++    
++    # Check for strings that contain both numbers and letters with spaces
++    # This helps with formats like "01 Jan", "1st Jan", etc.
++    mixed_alpha_num = bool(re.search(r'\d', text) and re.search(r'[a-zA-Z]', text) and ' ' in text)
++    
++    # For weekday names, don't apply any TeX formatting
++    if weekday_abbr or weekday_full:
++        return text
++    
++    # For date/time strings and other date patterns, keep everything together
++    if is_datetime or month_year_pattern or day_month_pattern or full_month_year or mixed_alpha_num:
++        # Braces ensure dashes are not spaced like binary operators
++        ret_text = '$\\mathdefault{' + text.replace('-', '{-}') + '}$'
++    else:
++        # Original behavior for non-date/time strings
++        p = r'([a-zA-Z]+)'
++        ret_text = re.sub(p, r'}$\1$\\mathdefault{', text)
++        # Braces ensure dashes are not spaced like binary operators
++        ret_text = '$\\mathdefault{'+ret_text.replace('-', '{-}')+'}$'
++        ret_text = ret_text.replace('$\\mathdefault{}$', '')
++    
+     return ret_text
+ 
+ 

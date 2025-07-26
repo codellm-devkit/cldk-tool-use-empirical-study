@@ -1,0 +1,133 @@
+diff --git a/django/core/management/commands/runserver.py b/django/core/management/commands/runserver.py
+index 3c39f57e4d..5cf2e5b216 100644
+--- a/django/core/management/commands/runserver.py
++++ b/django/core/management/commands/runserver.py
+@@ -147,7 +147,7 @@ class Command(BaseCommand):
+                 "version": self.get_version(),
+                 "settings": settings.SETTINGS_MODULE,
+                 "protocol": self.protocol,
+-                "addr": "[%s]" % self.addr if self._raw_ipv6 else self.addr,
++                "addr": "[%s]" % self.addr if self._raw_ipv6 else "0.0.0.0" if self.addr == "0" else self.addr,
+                 "port": self.port,
+                 "quit_command": quit_command,
+             }
+diff --git a/reproduce.py b/reproduce.py
+new file mode 100755
+index 0000000000..e6523f1153
+--- /dev/null
++++ b/reproduce.py
+@@ -0,0 +1,28 @@
++#!/usr/bin/env python
++import sys
++import os
++
++# Add the testbed directory to the Python path
++sys.path.insert(0, '/testbed')
++
++# Set up minimal Django settings
++os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'settings')
++
++# Create a minimal settings module
++if not os.path.exists('/testbed/settings.py'):
++    with open('/testbed/settings.py', 'w') as f:
++        f.write('''
++DEBUG = True
++SECRET_KEY = 'dummy'
++ALLOWED_HOSTS = ['*']
++INSTALLED_APPS = [
++    'django.contrib.staticfiles',
++]
++STATIC_URL = '/static/'
++''')
++
++# Import and run the runserver command
++from django.core.management import execute_from_command_line
++
++# Run the command with the address 0:8000
++execute_from_command_line(['manage.py', 'runserver', '0:8000'])
+\ No newline at end of file
+diff --git a/settings.py b/settings.py
+new file mode 100644
+index 0000000000..f6b09ba639
+--- /dev/null
++++ b/settings.py
+@@ -0,0 +1,8 @@
++
++DEBUG = True
++SECRET_KEY = 'dummy'
++ALLOWED_HOSTS = ['*']
++INSTALLED_APPS = [
++    'django.contrib.staticfiles',
++]
++STATIC_URL = '/static/'
+diff --git a/test_addresses.py b/test_addresses.py
+new file mode 100644
+index 0000000000..80c1889975
+--- /dev/null
++++ b/test_addresses.py
+@@ -0,0 +1,64 @@
++#!/usr/bin/env python
++import sys
++import os
++import re
++from django.core.management.commands.runserver import Command, naiveip_re
++
++# Test different address formats
++test_cases = [
++    ('0:8000', 'Explicit zero address with port'),
++    ('127.0.0.1:8000', 'IPv4 address with port'),
++    ('localhost:8000', 'Hostname with port'),
++    ('::1:8000', 'IPv6 address with port (no brackets)'),
++    ('[::1]:8000', 'IPv6 address with port (with brackets)'),
++    ('8000', 'Port only (should use default address)'),
++    ('', 'No address or port (should use defaults)'),
++]
++
++# Create a mock command instance
++cmd = Command()
++cmd.protocol = 'http'
++cmd.default_addr = '127.0.0.1'
++cmd.default_addr_ipv6 = '::1'
++cmd.default_port = '8000'
++
++for addrport, description in test_cases:
++    print(f"\nTesting: {description}")
++    print(f"Input: {repr(addrport)}")
++    
++    # Simulate Django's address parsing logic
++    cmd.use_ipv6 = False
++    cmd._raw_ipv6 = False
++    
++    if not addrport:
++        cmd.addr = ''
++        cmd.port = cmd.default_port
++    else:
++        m = re.match(naiveip_re, addrport)
++        if m is None:
++            print(f"  Invalid address format: {addrport}")
++            continue
++        
++        cmd.addr, _ipv4, _ipv6, _fqdn, cmd.port = m.groups()
++        if not cmd.port.isdigit():
++            print(f"  Invalid port: {cmd.port}")
++            continue
++            
++        if cmd.addr:
++            if _ipv6:
++                cmd.addr = cmd.addr[1:-1]
++                cmd.use_ipv6 = True
++                cmd._raw_ipv6 = True
++    
++    # Set default address if none provided
++    if not cmd.addr:
++        cmd.addr = cmd.default_addr_ipv6 if cmd.use_ipv6 else cmd.default_addr
++        cmd._raw_ipv6 = cmd.use_ipv6
++    
++    # Format the address as it would appear in the output
++    formatted_addr = "[%s]" % cmd.addr if cmd._raw_ipv6 else "0.0.0.0" if cmd.addr == "0" else cmd.addr
++    
++    print(f"  Parsed address: {cmd.addr}")
++    print(f"  Parsed port: {cmd.port}")
++    print(f"  Formatted address: {formatted_addr}")
++    print(f"  Output URL: {cmd.protocol}://{formatted_addr}:{cmd.port}/")
+\ No newline at end of file

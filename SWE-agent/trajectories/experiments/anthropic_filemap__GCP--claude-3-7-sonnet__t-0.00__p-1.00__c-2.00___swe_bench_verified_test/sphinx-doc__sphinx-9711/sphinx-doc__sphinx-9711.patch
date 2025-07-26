@@ -1,0 +1,125 @@
+diff --git a/setup.py b/setup.py
+index 3dbc8746b..31bd48c0a 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 6):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp>=2.0.0',
+-    'sphinxcontrib-serializinghtml>=1.1.5',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp>=2.0.0,<=2.0.4',
++    'sphinxcontrib-serializinghtml>=1.1.5,<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.14,<0.18',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/extension.py b/sphinx/extension.py
+index 7ec6c8518..4e5a28903 100644
+--- a/sphinx/extension.py
++++ b/sphinx/extension.py
+@@ -10,6 +10,12 @@
+ 
+ from typing import TYPE_CHECKING, Any, Dict
+ 
++try:
++    from packaging.version import Version, InvalidVersion
++    HAS_PACKAGING = True
++except ImportError:
++    HAS_PACKAGING = False
++
+ from sphinx.config import Config
+ from sphinx.errors import VersionRequirementError
+ from sphinx.locale import __
+@@ -51,11 +57,50 @@ def verify_needs_extensions(app: "Sphinx", config: Config) -> None:
+                               'but it is not loaded.'), extname)
+             continue
+ 
+-        if extension.version == 'unknown version' or reqversion > extension.version:
++        if extension.version == 'unknown version':
+             raise VersionRequirementError(__('This project needs the extension %s at least in '
+                                              'version %s and therefore cannot be built with '
+                                              'the loaded version (%s).') %
+                                           (extname, reqversion, extension.version))
++        
++        # Compare versions properly using packaging.version if available
++        if HAS_PACKAGING:
++            try:
++                # Parse versions as Version objects for proper comparison
++                parsed_reqversion = Version(reqversion)
++                parsed_extversion = Version(extension.version)
++                
++                if parsed_extversion < parsed_reqversion:
++                    raise VersionRequirementError(__('This project needs the extension %s at least in '
++                                                    'version %s and therefore cannot be built with '
++                                                    'the loaded version (%s).') %
++                                                (extname, reqversion, extension.version))
++            except InvalidVersion:
++                # If either version is invalid, fall back to string comparison
++                # This is safer than assuming the version is valid
++                try:
++                    # Try to parse the required version
++                    Version(reqversion)
++                    # If we get here, reqversion is valid but extension.version is not
++                    # We should reject since we can't verify the extension version
++                    raise VersionRequirementError(__('This project needs the extension %s at least in '
++                                                    'version %s and therefore cannot be built with '
++                                                    'the loaded version (%s).') %
++                                                (extname, reqversion, extension.version))
++                except InvalidVersion:
++                    # Both versions are invalid, fall back to string comparison
++                    if reqversion > extension.version:
++                        raise VersionRequirementError(__('This project needs the extension %s at least in '
++                                                        'version %s and therefore cannot be built with '
++                                                        'the loaded version (%s).') %
++                                                    (extname, reqversion, extension.version))
++        else:
++            # Fall back to string comparison if packaging is not available
++            if reqversion > extension.version:
++                raise VersionRequirementError(__('This project needs the extension %s at least in '
++                                                'version %s and therefore cannot be built with '
++                                                'the loaded version (%s).') %
++                                            (extname, reqversion, extension.version))
+ 
+ 
+ def setup(app: "Sphinx") -> Dict[str, Any]:
+diff --git a/tox.ini b/tox.ini
+index 00c8e13bd..11d3352df 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -22,14 +22,14 @@ deps =
+     du15: docutils==0.15.*
+     du16: docutils==0.16.*
+     du17: docutils==0.17.*
+-    py311: git+https://github.com/pytest-dev/py
++    py311: git+https://github.com/pytest -rA-dev/py
+ extras =
+     test
+ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils,ignore::DeprecationWarning:pip._vendor.packaging.version
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -m pytest --durations 25 {posargs}
++    python -X dev -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:du-latest]
+ commands =

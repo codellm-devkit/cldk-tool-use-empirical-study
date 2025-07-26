@@ -1,0 +1,59 @@
+diff --git a/sphinx/directives/other.py b/sphinx/directives/other.py
+index 19f7c0a8d..9f635c053 100644
+--- a/sphinx/directives/other.py
++++ b/sphinx/directives/other.py
+@@ -8,6 +8,7 @@ from docutils.parsers.rst import directives
+ from docutils.parsers.rst.directives.admonitions import BaseAdmonition
+ from docutils.parsers.rst.directives.misc import Class
+ from docutils.parsers.rst.directives.misc import Include as BaseInclude
++from docutils import statemachine
+ 
+ from sphinx import addnodes
+ from sphinx.domains.changeset import VersionChange  # noqa: F401  # for compatibility
+@@ -376,6 +377,46 @@ class Include(BaseInclude, SphinxDirective):
+         rel_filename, filename = self.env.relfn2path(self.arguments[0])
+         self.arguments[0] = filename
+         self.env.note_included(filename)
++        
++        # Get the docname for the included file
++        docname = self.env.path2doc(filename)
++        
++        # If we're including a document that's been processed by source-read event,
++        # we need to use a custom implementation to ensure the processed content is used
++        if docname and self.env.events.listeners.get('source-read', []):
++            # We need to handle the include ourselves to ensure source-read changes are applied
++            encoding = self.options.get(
++                'encoding', self.state.document.settings.input_encoding)
++            error_handler = self.state.document.settings.input_encoding_error_handler
++            
++            # Read the file content
++            with open(filename, encoding=encoding, errors=error_handler) as f:
++                content = f.read()
++            
++            # Apply source-read event to the content
++            source = [content]
++            self.env.events.emit('source-read', docname, source)
++            processed_content = source[0]
++            
++            # Create a temporary file with the processed content
++            import tempfile
++            import os
++            with tempfile.NamedTemporaryFile(mode='w', encoding=encoding, delete=False) as temp:
++                temp.write(processed_content)
++                temp_filename = temp.name
++            
++            # Use the temporary file for inclusion
++            original_filename = self.arguments[0]
++            self.arguments[0] = temp_filename
++            try:
++                result = super().run()
++            finally:
++                self.arguments[0] = original_filename
++                os.unlink(temp_filename)
++            
++            return result
++        
++        # Fall back to the standard behavior if no source-read listeners
+         return super().run()
+ 
+ 

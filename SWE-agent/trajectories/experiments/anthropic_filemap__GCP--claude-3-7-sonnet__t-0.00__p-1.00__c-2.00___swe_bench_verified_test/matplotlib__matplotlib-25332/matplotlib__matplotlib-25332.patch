@@ -1,0 +1,41 @@
+diff --git a/lib/matplotlib/cbook.py b/lib/matplotlib/cbook.py
+index c9699b2e21..7b7999c498 100644
+--- a/lib/matplotlib/cbook.py
++++ b/lib/matplotlib/cbook.py
+@@ -845,6 +845,36 @@ class Grouper:
+         self.clean()
+         siblings = self._mapping.get(weakref.ref(a), [weakref.ref(a)])
+         return [x() for x in siblings]
++        
++    def __getstate__(self):
++        """Return state for pickling."""
++        # Convert weak references to strong references for pickling
++        # We'll convert them back to weak references when unpickling
++        state = {}
++        mapping = {}
++        for key, value in self._mapping.items():
++            # Skip dead references
++            if key() is None:
++                continue
++            # Convert weak ref key to strong ref
++            strong_key = key()
++            # Convert list of weak refs to list of strong refs
++            strong_value = [ref() for ref in value if ref() is not None]
++            mapping[strong_key] = strong_value
++        state['_mapping'] = mapping
++        return state
++        
++    def __setstate__(self, state):
++        """Restore state when unpickling."""
++        # Convert strong references back to weak references
++        mapping = {}
++        for key, value in state['_mapping'].items():
++            # Convert strong ref key to weak ref
++            weak_key = weakref.ref(key)
++            # Convert list of strong refs to list of weak refs
++            weak_value = [weakref.ref(obj) for obj in value]
++            mapping[weak_key] = weak_value
++        self._mapping = mapping
+ 
+ 
+ class GrouperView:

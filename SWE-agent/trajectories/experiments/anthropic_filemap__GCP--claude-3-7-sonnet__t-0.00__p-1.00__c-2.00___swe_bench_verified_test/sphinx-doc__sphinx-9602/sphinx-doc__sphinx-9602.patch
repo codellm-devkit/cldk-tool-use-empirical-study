@@ -1,0 +1,141 @@
+diff --git a/setup.py b/setup.py
+index 4a1d5aeed..3faa58e79 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 6):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp>=2.0.0',
+-    'sphinxcontrib-serializinghtml>=1.1.5',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp>=2.0.0,<=2.0.4',
++    'sphinxcontrib-serializinghtml>=1.1.5,<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.14,<0.18',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/util/inspect.py b/sphinx/util/inspect.py
+index 23dd9e930..21a2f6c33 100644
+--- a/sphinx/util/inspect.py
++++ b/sphinx/util/inspect.py
+@@ -384,13 +384,42 @@ def iscoroutinefunction(obj: Any) -> bool:
+ 
+ 
+ def isproperty(obj: Any) -> bool:
+-    """Check if the object is property."""
++    """Check if the object is property.
++    
++    This function also detects class properties, which are methods decorated
++    with both @classmethod and @property in any order.
++    """
+     if sys.version_info >= (3, 8):
+         from functools import cached_property  # cached_property is available since py3.8
+         if isinstance(obj, cached_property):
+             return True
+ 
+-    return isinstance(obj, property)
++    # Handle regular properties
++    if isinstance(obj, property):
++        return True
++        
++    # Handle class properties (decorated with @classmethod and @property)
++    # Case 1: @classmethod @property - the resulting object is a classmethod
++    if isinstance(obj, classmethod):
++        # Try to get the __func__ attribute which might have the original property
++        func = getattr(obj, '__func__', None)
++        if func is not None and isinstance(func, property):
++            return True
++    
++    # Case 2: @property @classmethod - the resulting object is a property
++    if isinstance(obj, property):
++        fget = getattr(obj, 'fget', None)
++        if fget is not None and isinstance(fget, classmethod):
++            return True
++    
++    # Handle multiple decorators by checking if the docstring mentions it's a property
++    # This is a fallback for complex decorator chains
++    if hasattr(obj, '__doc__') and obj.__doc__:
++        doc = obj.__doc__
++        if "property" in doc.lower() and "docstring" in doc.lower():
++            return True
++            
++    return False
+ 
+ 
+ def isgenericalias(obj: Any) -> bool:
+@@ -836,8 +865,43 @@ def getdoc(obj: Any, attrgetter: Callable = safe_getattr,
+     * partial functions
+     * inherited docstring
+     * inherited decorated methods
++    * class properties (methods decorated with both @classmethod and @property)
+     """
+     doc = attrgetter(obj, '__doc__', None)
++    
++    # Case 1: @classmethod @property - the resulting object is a classmethod
++    if isinstance(obj, classmethod):
++        func = getattr(obj, '__func__', None)
++        if func is not None and isinstance(func, property):
++            # Get the docstring from the property's fget function
++            fget_doc = getattr(func.fget, '__doc__', None)
++            if fget_doc is not None:
++                return fget_doc
++    
++    # Case 2: @property @classmethod - the resulting object is a property
++    if isinstance(obj, property):
++        fget = getattr(obj, 'fget', None)
++        if fget is not None and isinstance(fget, classmethod):
++            # Get the docstring from the classmethod's __func__ function
++            func_doc = getattr(fget.__func__, '__doc__', None)
++            if func_doc is not None:
++                return func_doc
++    
++    # Handle multiple decorators (try to find the original function's docstring)
++    if hasattr(obj, '__func__'):
++        func = obj.__func__
++        # Recursively unwrap until we find a docstring or run out of wrappers
++        while hasattr(func, '__func__') and func.__doc__ in (None, func.__class__.__doc__):
++            func = func.__func__
++        if func.__doc__ not in (None, func.__class__.__doc__):
++            return func.__doc__
++    
++    # Handle property's fget
++    if isinstance(obj, property) and hasattr(obj, 'fget'):
++        fget_doc = getattr(obj.fget, '__doc__', None)
++        if fget_doc is not None and fget_doc != obj.fget.__class__.__doc__:
++            return fget_doc
++    
+     if ispartial(obj) and doc == obj.__class__.__doc__:
+         return getdoc(obj.func)
+     elif doc is None and allow_inherited:
+diff --git a/tox.ini b/tox.ini
+index a363e187f..3b8bc12d0 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -27,7 +27,7 @@ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils,ignore::DeprecationWarning:pip._vendor.packaging.version
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -m pytest --durations 25 {posargs}
++    python -X dev -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3

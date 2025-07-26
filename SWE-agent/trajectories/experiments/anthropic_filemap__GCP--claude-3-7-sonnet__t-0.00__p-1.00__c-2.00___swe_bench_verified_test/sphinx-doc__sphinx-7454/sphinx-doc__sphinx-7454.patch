@@ -1,0 +1,191 @@
+diff --git a/sphinx/environment/collectors/title.py b/sphinx/environment/collectors/title.py
+index 45dfbd095..3fccda5be 100644
+--- a/sphinx/environment/collectors/title.py
++++ b/sphinx/environment/collectors/title.py
+@@ -29,22 +29,55 @@ class TitleCollector(EnvironmentCollector):
+         """Add a title node to the document (just copy the first section title),
+         and store that title in the environment.
+         """
++        from docutils.nodes import paragraph, Text, transition, literal
++        from sphinx.addnodes import pending_xref
++        
+         titlenode = nodes.title()
+         longtitlenode = titlenode
++        
+         # explicit title set with title directive; use this only for
+         # the <title> tag in HTML output
+         if 'title' in doctree:
+             longtitlenode = nodes.title()
+             longtitlenode += nodes.Text(doctree['title'])
+-        # look for first section title and use that as the title
+-        for node in doctree.findall(nodes.section):
+-            visitor = SphinxContentsFilter(doctree)
+-            node[0].walkabout(visitor)
+-            titlenode += visitor.get_entry_text()
+-            break
+-        else:
+-            # document has no title
+-            titlenode += nodes.Text(doctree.get('title', '<no title>'))
++        
++        # Special handling for domain directives at the beginning of the document
++        # This is needed when rst_prolog is set and the document starts with a domain directive
++        domain_directive_found = False
++        
++        # Check if the document starts with a paragraph containing a domain directive
++        if (len(doctree.children) >= 1 and
++            isinstance(doctree.children[0], paragraph) and
++            len(doctree.children[0]) == 1 and
++            isinstance(doctree.children[0][0], pending_xref) and
++            'refdomain' in doctree.children[0][0]):
++            
++            # This looks like a domain directive that was affected by rst_prolog
++            # Use the domain directive as the title
++            domain_directive_found = True
++            titlenode = nodes.title()
++            
++            # Get the target of the pending_xref
++            ref_node = doctree.children[0][0]
++            if len(ref_node) == 1 and isinstance(ref_node[0], literal):
++                # Use the literal text as the title
++                titlenode += nodes.Text(ref_node[0].astext())
++            else:
++                # Use the target as the title
++                titlenode += nodes.Text(ref_node['reftarget'])
++        
++        # If we didn't find a domain directive at the beginning, look for the first section title
++        if not domain_directive_found:
++            # Normal case - look for first section title
++            for node in doctree.findall(nodes.section):
++                visitor = SphinxContentsFilter(doctree)
++                node[0].walkabout(visitor)
++                titlenode += visitor.get_entry_text()
++                break
++            else:
++                # document has no title
++                titlenode += nodes.Text(doctree.get('title', '<no title>'))
++        
+         app.env.titles[app.env.docname] = titlenode
+         app.env.longtitles[app.env.docname] = longtitlenode
+ 
+diff --git a/sphinx/transforms/__init__.py b/sphinx/transforms/__init__.py
+index f36473084..b01af1401 100644
+--- a/sphinx/transforms/__init__.py
++++ b/sphinx/transforms/__init__.py
+@@ -130,6 +130,36 @@ class MoveModuleTargets(SphinxTransform):
+                     node.parent.index(node) == 1):
+                 node.parent['ids'][0:0] = node['ids']
+                 node.parent.remove(node)
++                
++        # Handle the case where a domain directive is used in a section title
++        # This is needed when rst_prolog is set, as it can interfere with the normal processing
++        from docutils.nodes import section, title, paragraph, Text
++        from sphinx.addnodes import pending_xref
++        
++        for section_node in self.document.findall(section):
++            title_node = section_node[0]
++            if not isinstance(title_node, title):
++                continue
++                
++            # Check if there's a paragraph right after the title that contains a pending_xref
++            # with a domain directive (like :mod:)
++            if (len(section_node) > 1 and 
++                isinstance(section_node[1], paragraph) and
++                len(section_node[1]) == 1 and
++                isinstance(section_node[1][0], pending_xref) and
++                'refdomain' in section_node[1][0]):
++                
++                # Move the pending_xref from the paragraph to the title
++                pending_ref = section_node[1][0]
++                section_node.remove(section_node[1])  # Remove the paragraph
++                
++                # If the title is empty or just contains whitespace, replace it with the pending_xref
++                if len(title_node) == 0 or (len(title_node) == 1 and isinstance(title_node[0], Text) and not title_node[0].strip()):
++                    title_node.clear()
++                    title_node += pending_ref
++                # Otherwise, add the pending_xref to the beginning of the title
++                else:
++                    title_node.insert(0, pending_ref)
+ 
+ 
+ class HandleCodeBlocks(SphinxTransform):
+diff --git a/sphinx/util/rst.py b/sphinx/util/rst.py
+index 7a1538325..9c2ce0104 100644
+--- a/sphinx/util/rst.py
++++ b/sphinx/util/rst.py
+@@ -77,24 +77,48 @@ def default_role(docname: str, name: str) -> Generator[None, None, None]:
+ 
+ def prepend_prolog(content: StringList, prolog: str) -> None:
+     """Prepend a string to content body as prolog."""
+-    if prolog:
+-        pos = 0
+-        for line in content:
+-            if docinfo_re.match(line):
+-                pos += 1
+-            else:
+-                break
+-
++    if not prolog:
++        return
++    
++    # Check if the document starts with a domain directive heading
++    has_domain_directive_heading = False
++    if len(content) >= 2:
++        first_line = content[0]
++        second_line = content[1]
++        if (first_line.startswith(':') and '`' in first_line and 
++            all(c == '=' for c in second_line.strip())):
++            has_domain_directive_heading = True
++    
++    # Find the position to insert the prolog
++    pos = 0
++    for line in content:
++        if docinfo_re.match(line):
++            pos += 1
++        else:
++            break
++    
++    # If we have a domain directive heading and no docinfo,
++    # we need to add the prolog after the heading to preserve the structure
++    if has_domain_directive_heading and pos == 0:
++        # Skip the heading (line with domain directive and underline)
++        pos = 2
++        
++        # Insert a blank line after the heading
++        content.insert(pos, '', '<generated>', 0)
++        pos += 1
++    else:
++        # Normal case - insert after docinfo
+         if pos > 0:
+-            # insert a blank line after docinfo
++            # Insert a blank line after docinfo
+             content.insert(pos, '', '<generated>', 0)
+             pos += 1
+-
+-        # insert prolog (after docinfo if exists)
+-        for lineno, line in enumerate(prolog.splitlines()):
+-            content.insert(pos + lineno, line, '<rst_prolog>', lineno)
+-
+-        content.insert(pos + lineno + 1, '', '<generated>', 0)
++    
++    # Insert the prolog
++    for lineno, line in enumerate(prolog.splitlines()):
++        content.insert(pos + lineno, line, '<rst_prolog>', lineno)
++    
++    # Always insert a blank line after the prolog
++    content.insert(pos + lineno + 1, '', '<generated>', 0)
+ 
+ 
+ def append_epilog(content: StringList, epilog: str) -> None:
+diff --git a/tox.ini b/tox.ini
+index 512aa5f74..84c8093a3 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -24,7 +24,7 @@ setenv =
+     PYTHONWARNINGS = error
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -X warn_default_encoding -m pytest --durations 25 {posargs}
++    python -X dev -X warn_default_encoding -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:docs]
+ basepython = python3

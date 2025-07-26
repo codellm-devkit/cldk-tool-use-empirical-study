@@ -1,0 +1,58 @@
+diff --git a/lib/matplotlib/contour.py b/lib/matplotlib/contour.py
+index 3f84250b64..67b02e7592 100644
+--- a/lib/matplotlib/contour.py
++++ b/lib/matplotlib/contour.py
+@@ -942,6 +942,53 @@ class ContourSet(ContourLabeler, mcoll.Collection):
+         (w,) for w in self.get_linewidths()]))
+     alpha = property(lambda self: self.get_alpha())
+     linestyles = property(lambda self: self._orig_linestyles)
++    
++    def get_paths(self):
++        """
++        Return a list of paths for this ContourSet.
++        
++        Returns
++        -------
++        list
++            A list of all paths in this ContourSet.
++        """
++        # Use collections property with warning suppression
++        with _api.suppress_matplotlib_deprecation_warning():
++            return [p for c in self.collections for p in c.get_paths()]
++    
++    def set_paths(self, paths):
++        """
++        Set the paths of this ContourSet.
++        
++        Parameters
++        ----------
++        paths : list
++            A list of paths to be set. The length of the list must match
++            the total number of paths in all collections.
++        
++        Raises
++        ------
++        ValueError
++            If the number of paths does not match the number of paths
++            in the ContourSet.
++        """
++        all_paths = self.get_paths()
++        if len(paths) != len(all_paths):
++            raise ValueError(
++                f"Number of paths ({len(paths)}) does not match the number of "
++                f"paths in the ContourSet ({len(all_paths)})")
++        
++        path_index = 0
++        # Use collections property with warning suppression
++        with _api.suppress_matplotlib_deprecation_warning():
++            for collection in self.collections:
++                collection_paths = collection.get_paths()
++                n_paths = len(collection_paths)
++                if n_paths > 0:
++                    collection_paths[:] = paths[path_index:path_index + n_paths]
++                    path_index += n_paths
++        
++        self.stale = True
+ 
+     @_api.deprecated("3.8")
+     @property

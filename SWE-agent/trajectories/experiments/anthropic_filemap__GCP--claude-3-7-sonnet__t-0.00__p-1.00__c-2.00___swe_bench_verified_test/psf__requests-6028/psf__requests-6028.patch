@@ -1,0 +1,82 @@
+diff --git a/requests/adapters.py b/requests/adapters.py
+index fe22ff45..ac907780 100644
+--- a/requests/adapters.py
++++ b/requests/adapters.py
+@@ -28,6 +28,7 @@ from urllib3.exceptions import ReadTimeoutError
+ from urllib3.exceptions import SSLError as _SSLError
+ from urllib3.exceptions import ResponseError
+ from urllib3.exceptions import LocationValueError
++from urllib3.exceptions import LocationParseError
+ 
+ from .models import Response
+ from .compat import urlparse, basestring
+@@ -413,6 +414,12 @@ class HTTPAdapter(BaseAdapter):
+             conn = self.get_connection(request.url, proxies)
+         except LocationValueError as e:
+             raise InvalidURL(e, request=request)
++        except LocationParseError as e:
++            # Check if this is an invalid label error (empty or too long)
++            if 'label empty or too long' in str(e):
++                raise InvalidURL('URL has an invalid label.', request=request)
++            else:
++                raise InvalidURL(e, request=request)
+ 
+         self.cert_verify(conn, request.url, verify, cert)
+         url = self.request_url(request, proxies)
+@@ -515,6 +522,10 @@ class HTTPAdapter(BaseAdapter):
+             if isinstance(e.reason, _SSLError):
+                 # This branch is for urllib3 v1.22 and later.
+                 raise SSLError(e, request=request)
++                
++            # Check if this is an invalid label error
++            if isinstance(e.reason, NewConnectionError) and 'URL has an invalid label' in str(e.reason):
++                raise InvalidURL('URL has an invalid label.', request=request)
+ 
+             raise ConnectionError(e, request=request)
+ 
+@@ -534,5 +545,19 @@ class HTTPAdapter(BaseAdapter):
+                 raise InvalidHeader(e, request=request)
+             else:
+                 raise
++                
++        except LocationParseError as e:
++            # Check if this is an invalid label error (empty or too long)
++            if 'label empty or too long' in str(e):
++                raise InvalidURL('URL has an invalid label.', request=request)
++            else:
++                raise InvalidURL(e, request=request)
++                
++        except NewConnectionError as e:
++            # Check if this is an invalid label error
++            if 'URL has an invalid label' in str(e):
++                raise InvalidURL('URL has an invalid label.', request=request)
++            else:
++                raise ConnectionError(e, request=request)
+ 
+         return self.build_response(request, resp)
+diff --git a/requests/models.py b/requests/models.py
+index e7d292d5..250f999b 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -354,7 +354,7 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+         try:
+             host = idna.encode(host, uts46=True).decode('utf-8')
+         except idna.IDNAError:
+-            raise UnicodeError
++            raise InvalidURL('URL has an invalid label.')
+         return host
+ 
+     def prepare_url(self, url, params):
+@@ -383,7 +383,11 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+         try:
+             scheme, auth, host, port, path, query, fragment = parse_url(url)
+         except LocationParseError as e:
+-            raise InvalidURL(*e.args)
++            # Check if this is an invalid label error (empty or too long)
++            if 'label empty or too long' in str(e):
++                raise InvalidURL('URL has an invalid label.')
++            else:
++                raise InvalidURL(*e.args)
+ 
+         if not scheme:
+             error = ("Invalid URL {0!r}: No schema supplied. Perhaps you meant http://{0}?")

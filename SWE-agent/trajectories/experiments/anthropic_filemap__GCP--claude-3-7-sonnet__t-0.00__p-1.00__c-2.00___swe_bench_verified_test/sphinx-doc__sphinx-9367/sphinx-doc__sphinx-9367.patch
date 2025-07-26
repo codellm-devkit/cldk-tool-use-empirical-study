@@ -1,0 +1,2296 @@
+diff --git a/comprehensive_test.py b/comprehensive_test.py
+new file mode 100644
+index 000000000..994b195c0
+--- /dev/null
++++ b/comprehensive_test.py
+@@ -0,0 +1,114 @@
++import os
++import tempfile
++import shutil
++import subprocess
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with various test cases
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test cases for :meta public: and :meta private: directives
++_foo = None  #: :meta public:
++_bar = None  #: This is a private variable without meta directive
++_baz = None  #: :meta private:
++public_var = None  #: :meta private:
++another_public_var = None  #: This is a public variable without meta directive
++
++# Test with multi-line comment docstrings
++_multi_line = None  #: :meta public: This is a multi-line
++                    #: comment docstring
++                    
++# Test with regular docstrings
++class TestClass:
++    '''A test class'''
++    
++    def __init__(self):
++        '''Constructor'''
++        self._private_attr = None  # This won't be documented
++        
++    def _private_method(self):
++        '''A private method with no meta directive'''
++        pass
++        
++    def _public_method(self):
++        '''A private method with public meta directive
++        
++        :meta public:
++        '''
++        pass
++""")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("""Test Document
++============
++
++.. automodule:: example
++   :members:
++
++.. autoclass:: example.TestClass
++   :members:
++""")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("""
++import os
++import sys
++sys.path.insert(0, os.path.abspath('.'))
++extensions = ['sphinx.ext.autodoc']
++master_doc = 'index'
++""")
++    
++    # Build the documentation
++    print("Building documentation...")
++    result = subprocess.run(
++        ["sphinx-build", "-b", "html", temp_dir, os.path.join(temp_dir, "_build")],
++        capture_output=True,
++        text=True
++    )
++    
++    print("Build output:")
++    print(result.stdout)
++    
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++    
++    # Check if the expected variables are in the generated HTML
++    with open(os.path.join(temp_dir, "_build", "index.html"), "r") as f:
++        html_content = f.read()
++        
++        # Variables that should be included
++        should_include = ['_foo', '_public_method', '_multi_line']
++        # Variables that should be excluded
++        should_exclude = ['_bar', '_baz', 'public_var', '_private_method', '_private_attr']
++        
++        success = True
++        for var in should_include:
++            if var in html_content:
++                print(f"SUCCESS: {var} is included in the documentation as expected")
++            else:
++                print(f"FAILURE: {var} should be included in the documentation but is not")
++                success = False
++                
++        for var in should_exclude:
++            if var not in html_content:
++                print(f"SUCCESS: {var} is excluded from the documentation as expected")
++            else:
++                print(f"FAILURE: {var} should be excluded from the documentation but is included")
++                success = False
++        
++        if success:
++            print("\nAll tests passed successfully!")
++        else:
++            print("\nSome tests failed!")
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/reproduce_issue.py b/reproduce_issue.py
+new file mode 100644
+index 000000000..33a3c29f8
+--- /dev/null
++++ b/reproduce_issue.py
+@@ -0,0 +1,57 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with a private variable that has :meta public: in its docstring
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("_foo = None  #: :meta public:\n")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("Test Document\n")
++        f.write("============\n\n")
++        f.write(".. automodule:: example\n")
++        f.write("   :members:\n")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("import os\n")
++        f.write("import sys\n")
++        f.write(f"sys.path.insert(0, '{temp_dir}')\n")
++        f.write("extensions = ['sphinx.ext.autodoc']\n")
++        f.write("master_doc = 'index'\n")
++    
++    # Build the documentation
++    print("Building documentation...")
++    result = subprocess.run(
++        ["sphinx-build", "-b", "html", temp_dir, os.path.join(temp_dir, "_build")],
++        capture_output=True,
++        text=True
++    )
++    
++    print("Build output:")
++    print(result.stdout)
++    
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++    
++    # Check if _foo is in the generated HTML
++    with open(os.path.join(temp_dir, "_build", "index.html"), "r") as f:
++        html_content = f.read()
++        if "_foo" in html_content:
++            print("SUCCESS: _foo is included in the documentation as expected")
++        else:
++            print("FAILURE: _foo is not included in the documentation")
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/setup.py b/setup.py
+index 8d40de1a8..03f325278 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 5):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.12',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/ext/autodoc/__init__.py b/sphinx/ext/autodoc/__init__.py
+index 76265f5be..2bcd5563c 100644
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -737,6 +737,18 @@ class Documenter:
+                 isprivate = False
+             else:
+                 isprivate = membername.startswith('_')
++                
++            # Check for metadata in comment docstrings
++            if (namespace, membername) in attr_docs:
++                comment_doc = attr_docs.get((namespace, membername), [])
++                if comment_doc:
++                    comment_metadata = extract_metadata('\n'.join(comment_doc))
++                    if 'private' in comment_metadata:
++                        # consider a member private if comment docstring has "private" metadata
++                        isprivate = True
++                    elif 'public' in comment_metadata:
++                        # consider a member public if comment docstring has "public" metadata
++                        isprivate = False
+ 
+             keep = False
+             if safe_getattr(member, '__sphinx_mock__', None) is not None:
+@@ -757,6 +769,15 @@ class Documenter:
+                 else:
+                     keep = False
+             elif (namespace, membername) in attr_docs:
++                # Check for metadata in comment docstrings
++                comment_doc = attr_docs.get((namespace, membername), [])
++                if comment_doc:
++                    comment_metadata = extract_metadata('\n'.join(comment_doc))
++                    if 'private' in comment_metadata:
++                        isprivate = True
++                    elif 'public' in comment_metadata:
++                        isprivate = False
++                
+                 if want_all and isprivate:
+                     if self.options.private_members is None:
+                         keep = False
+@@ -766,6 +787,9 @@ class Documenter:
+                     # keep documented attributes
+                     keep = True
+                 isattr = True
++            elif not membername.startswith('_'):
++                # Default behavior for public members
++                keep = True
+             elif want_all and isprivate:
+                 if has_doc or self.options.undoc_members:
+                     if self.options.private_members is None:
+@@ -788,6 +812,17 @@ class Documenter:
+                 # forcedly skipped member (ex. a module attribute not defined in __all__)
+                 keep = False
+ 
++            # Check for metadata in comment docstrings for public variables
++            if (namespace, membername) in attr_docs:
++                comment_doc = attr_docs.get((namespace, membername), [])
++                if comment_doc:
++                    comment_metadata = extract_metadata('\n'.join(comment_doc))
++                    if 'private' in comment_metadata:
++                        # If a member has :meta private:, don't include it
++                        keep = False
++                        # Skip the rest of the loop
++                        continue
++            
+             # give the user a chance to decide whether this member
+             # should be skipped
+             if self.env.app:
+diff --git a/test_multiline.py b/test_multiline.py
+new file mode 100644
+index 000000000..08dc03e7f
+--- /dev/null
++++ b/test_multiline.py
+@@ -0,0 +1,80 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with a multi-line comment docstring
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test with multi-line comment docstrings
++_multi_line = None  #: This is a multi-line
++                    #: comment docstring with
++                    #: :meta public:
++""")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("""Test Document
++============
++
++.. automodule:: example
++   :members:
++""")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("""
++import os
++import sys
++sys.path.insert(0, os.path.abspath('.'))
++extensions = ['sphinx.ext.autodoc']
++master_doc = 'index'
++""")
++    
++    # Build the documentation
++    print("Building documentation...")
++    result = subprocess.run(
++        ["sphinx-build", "-b", "html", temp_dir, os.path.join(temp_dir, "_build")],
++        capture_output=True,
++        text=True
++    )
++    
++    # Print the content of the generated HTML file
++    with open(os.path.join(temp_dir, "_build", "index.html"), "r") as f:
++        html_content = f.read()
++        print("\nHTML content:")
++        print(html_content)
++    
++    # Print the content of the attr_docs
++    print("\nRunning a script to inspect attr_docs:")
++    with open(os.path.join(temp_dir, "inspect_attr_docs.py"), "w") as f:
++        f.write("""
++import sys
++from sphinx.pycode import ModuleAnalyzer
++
++analyzer = ModuleAnalyzer.for_module('example')
++analyzer.analyze()
++print("attr_docs:", analyzer.attr_docs)
++""")
++    
++    result = subprocess.run(
++        [sys.executable, os.path.join(temp_dir, "inspect_attr_docs.py")],
++        cwd=temp_dir,
++        capture_output=True,
++        text=True
++    )
++    print(result.stdout)
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_multiline2.py b/test_multiline2.py
+new file mode 100644
+index 000000000..d0d164b15
+--- /dev/null
++++ b/test_multiline2.py
+@@ -0,0 +1,57 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with a multi-line comment docstring
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test with multi-line comment docstrings
++_multi_line = None  #: This is a multi-line
++                    #: comment docstring with
++                    #: :meta public:
++""")
++    
++    # Create a script to inspect the comment docstring
++    with open(os.path.join(temp_dir, "inspect_comments.py"), "w") as f:
++        f.write("""
++import sys
++from sphinx.pycode import ModuleAnalyzer
++from sphinx.util.docstrings import extract_metadata
++
++analyzer = ModuleAnalyzer.for_module('example')
++analyzer.analyze()
++print("attr_docs:", analyzer.attr_docs)
++
++# Try to extract metadata from the comment docstring
++for key, value in analyzer.attr_docs.items():
++    print(f"Key: {key}, Value: {value}")
++    comment = '\\n'.join(value)
++    print(f"Comment: {comment}")
++    metadata = extract_metadata(comment)
++    print(f"Metadata: {metadata}")
++""")
++    
++    # Run the script
++    print("Running the script to inspect comments:")
++    result = subprocess.run(
++        [sys.executable, os.path.join(temp_dir, "inspect_comments.py")],
++        cwd=temp_dir,
++        capture_output=True,
++        text=True
++    )
++    print(result.stdout)
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_multiline3.py b/test_multiline3.py
+new file mode 100644
+index 000000000..4bbf1c5eb
+--- /dev/null
++++ b/test_multiline3.py
+@@ -0,0 +1,60 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with a multi-line comment docstring
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test with multi-line comment docstrings
++_multi_line = None  #: This is a multi-line
++                    #: comment docstring with
++                    #: :meta public:
++
++# Test with single-line comment docstring with meta directive
++_single_line = None  #: :meta public:
++""")
++    
++    # Create a script to inspect the comment docstring
++    with open(os.path.join(temp_dir, "inspect_comments.py"), "w") as f:
++        f.write("""
++import sys
++from sphinx.pycode import ModuleAnalyzer
++from sphinx.util.docstrings import extract_metadata
++
++analyzer = ModuleAnalyzer.for_module('example')
++analyzer.analyze()
++print("attr_docs:", analyzer.attr_docs)
++
++# Try to extract metadata from the comment docstring
++for key, value in analyzer.attr_docs.items():
++    print(f"Key: {key}, Value: {value}")
++    comment = '\\n'.join(value)
++    print(f"Comment: {comment}")
++    metadata = extract_metadata(comment)
++    print(f"Metadata: {metadata}")
++""")
++    
++    # Run the script
++    print("Running the script to inspect comments:")
++    result = subprocess.run(
++        [sys.executable, os.path.join(temp_dir, "inspect_comments.py")],
++        cwd=temp_dir,
++        capture_output=True,
++        text=True
++    )
++    print(result.stdout)
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var.py b/test_public_var.py
+new file mode 100644
+index 000000000..f0ebcc930
+--- /dev/null
++++ b/test_public_var.py
+@@ -0,0 +1,55 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with a public variable with :meta private: directive
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test with public variable with :meta private: directive
++public_var = None  #: :meta private:
++""")
++    
++    # Create a script to inspect the comment docstring
++    with open(os.path.join(temp_dir, "inspect_comments.py"), "w") as f:
++        f.write("""
++import sys
++from sphinx.pycode import ModuleAnalyzer
++from sphinx.util.docstrings import extract_metadata
++
++analyzer = ModuleAnalyzer.for_module('example')
++analyzer.analyze()
++print("attr_docs:", analyzer.attr_docs)
++
++# Try to extract metadata from the comment docstring
++for key, value in analyzer.attr_docs.items():
++    print(f"Key: {key}, Value: {value}")
++    comment = '\\n'.join(value)
++    print(f"Comment: {comment}")
++    metadata = extract_metadata(comment)
++    print(f"Metadata: {metadata}")
++""")
++    
++    # Run the script
++    print("Running the script to inspect comments:")
++    result = subprocess.run(
++        [sys.executable, os.path.join(temp_dir, "inspect_comments.py")],
++        cwd=temp_dir,
++        capture_output=True,
++        text=True
++    )
++    print(result.stdout)
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var10.py b/test_public_var10.py
+new file mode 100644
+index 000000000..28037b74c
+--- /dev/null
++++ b/test_public_var10.py
+@@ -0,0 +1,141 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with a public variable with :meta private: directive
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test with public variable with :meta private: directive
++public_var = None  #: :meta private:
++""")
++    
++    # Create a script to debug the document_members method
++    with open(os.path.join(temp_dir, "debug.py"), "w") as f:
++        f.write("""
++import sys
++import os
++import logging
++from sphinx.ext.autodoc import ModuleDocumenter
++from sphinx.ext.autodoc.directive import DocumenterBridge, Options
++from docutils.statemachine import StringList
++from sphinx.environment import BuildEnvironment
++from sphinx.application import Sphinx
++from sphinx.config import Config
++
++# Set up logging
++logging.basicConfig(level=logging.INFO)
++logger = logging.getLogger(__name__)
++
++# Create a minimal Sphinx application
++app = Sphinx(
++    srcdir=os.path.abspath('.'),
++    confdir=None,
++    outdir=os.path.abspath('_build'),
++    doctreedir=os.path.abspath('_build/.doctrees'),
++    buildername='html',
++)
++
++# Create a minimal environment
++env = BuildEnvironment(app)
++env.app = app
++env.config = Config()
++env.config.autodoc_member_order = 'alphabetical'
++env.config.autodoc_inherit_docstrings = True
++env.config.autodoc_type_aliases = {}
++env.config.autodoc_mock_imports = []
++env.config.autodoc_warningiserror = False
++
++# Create a minimal directive
++from sphinx.ext.autodoc import ALL
++options = Options()
++options.members = ALL
++options.undoc_members = False
++options.private_members = None
++options.special_members = None
++options.inherited_members = None
++options.exclude_members = set()
++options.ignore_module_all = False
++
++directive = DocumenterBridge(env, StringList(), options, 'module', 'example')
++
++# Create a ModuleDocumenter
++documenter = ModuleDocumenter(directive, 'example')
++documenter.parse_name()
++documenter.import_object()
++
++# Create the analyzer
++from sphinx.pycode import ModuleAnalyzer
++analyzer = ModuleAnalyzer.for_module('example')
++analyzer.analyze()
++attr_docs = analyzer.find_attr_docs()
++print(f"\\nattr_docs: {attr_docs}")
++
++# Set the analyzer
++documenter.analyzer = analyzer
++
++# Monkey patch the filter_members method to print debug info
++original_filter_members = documenter.filter_members
++def debug_filter_members(members, want_all):
++    print("\\nCalling filter_members with:")
++    print(f"  members: {members}")
++    print(f"  want_all: {want_all}")
++    
++    # Debug the filter_members method
++    namespace = '.'.join(documenter.objpath)
++    print(f"  namespace: {namespace}")
++    print(f"  attr_docs: {attr_docs}")
++    
++    # Check if public_var is in attr_docs
++    if ('', 'public_var') in attr_docs:
++        print("  public_var is in attr_docs")
++        comment_doc = attr_docs.get(('', 'public_var'), [])
++        print(f"  comment_doc: {comment_doc}")
++        if comment_doc:
++            from sphinx.util.docstrings import extract_metadata
++            comment_metadata = extract_metadata('\\n'.join(comment_doc))
++            print(f"  comment_metadata: {comment_metadata}")
++            if 'private' in comment_metadata:
++                print("  'private' is in comment_metadata")
++    
++    result = original_filter_members(members, want_all)
++    
++    print(f"\\nResult of filter_members: {result}")
++    return result
++
++documenter.filter_members = debug_filter_members
++
++# Get the members
++print("\\nCalling get_object_members:")
++want_all = True
++members_check_module, members = documenter.get_object_members(want_all)
++print(f"  members: {members}")
++
++# Call document_members
++print("\\nCalling document_members:")
++documenter.document_members(all_members=True)
++""")
++    
++    # Run the script
++    print("Running the script to debug document_members:")
++    result = subprocess.run(
++        [sys.executable, os.path.join(temp_dir, "debug.py")],
++        cwd=temp_dir,
++        capture_output=True,
++        text=True
++    )
++    print(result.stdout)
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var11.py b/test_public_var11.py
+new file mode 100644
+index 000000000..2222be262
+--- /dev/null
++++ b/test_public_var11.py
+@@ -0,0 +1,189 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with the same content as in comprehensive_test.py
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test cases for :meta public: and :meta private: directives
++_foo = None  #: :meta public:
++_bar = None  #: This is a private variable without meta directive
++_baz = None  #: :meta private:
++public_var = None  #: :meta private:
++another_public_var = None  #: This is a public variable without meta directive
++
++# Test with multi-line comment docstrings
++_multi_line = None  #: :meta public: This is a multi-line
++                    #: comment docstring
++                    
++# Test with regular docstrings
++class TestClass:
++    '''A test class'''
++    
++    def __init__(self):
++        '''Constructor'''
++        self._private_attr = None  # This won't be documented
++        
++    def _private_method(self):
++        '''A private method with no meta directive'''
++        pass
++        
++    def _public_method(self):
++        '''A private method with public meta directive
++        
++        :meta public:
++        '''
++        pass
++""")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("""Test Document
++============
++
++.. automodule:: example
++   :members:
++
++.. autoclass:: example.TestClass
++   :members:
++""")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("""
++import os
++import sys
++sys.path.insert(0, os.path.abspath('.'))
++extensions = ['sphinx.ext.autodoc']
++master_doc = 'index'
++""")
++    
++    # Create a script to debug the document_members method
++    with open(os.path.join(temp_dir, "debug.py"), "w") as f:
++        f.write("""
++import sys
++import os
++import logging
++from sphinx.ext.autodoc import ModuleDocumenter
++from sphinx.ext.autodoc.directive import DocumenterBridge, Options
++from docutils.statemachine import StringList
++from sphinx.environment import BuildEnvironment
++from sphinx.application import Sphinx
++from sphinx.config import Config
++
++# Set up logging
++logging.basicConfig(level=logging.INFO)
++logger = logging.getLogger(__name__)
++
++# Create a minimal Sphinx application
++app = Sphinx(
++    srcdir=os.path.abspath('.'),
++    confdir=None,
++    outdir=os.path.abspath('_build'),
++    doctreedir=os.path.abspath('_build/.doctrees'),
++    buildername='html',
++)
++
++# Create a minimal environment
++env = BuildEnvironment(app)
++env.app = app
++env.config = Config()
++env.config.autodoc_member_order = 'alphabetical'
++env.config.autodoc_inherit_docstrings = True
++env.config.autodoc_type_aliases = {}
++env.config.autodoc_mock_imports = []
++env.config.autodoc_warningiserror = False
++
++# Create a minimal directive
++from sphinx.ext.autodoc import ALL
++options = Options()
++options.members = ALL
++options.undoc_members = False
++options.private_members = None
++options.special_members = None
++options.inherited_members = None
++options.exclude_members = set()
++options.ignore_module_all = False
++
++directive = DocumenterBridge(env, StringList(), options, 'module', 'example')
++
++# Create a ModuleDocumenter
++documenter = ModuleDocumenter(directive, 'example')
++documenter.parse_name()
++documenter.import_object()
++
++# Create the analyzer
++from sphinx.pycode import ModuleAnalyzer
++analyzer = ModuleAnalyzer.for_module('example')
++analyzer.analyze()
++attr_docs = analyzer.find_attr_docs()
++print(f"\\nattr_docs: {attr_docs}")
++
++# Set the analyzer
++documenter.analyzer = analyzer
++
++# Monkey patch the filter_members method to print debug info
++original_filter_members = documenter.filter_members
++def debug_filter_members(members, want_all):
++    print("\\nCalling filter_members with:")
++    print(f"  members: {[m[0] for m in members]}")
++    print(f"  want_all: {want_all}")
++    
++    # Debug the filter_members method
++    namespace = '.'.join(documenter.objpath)
++    print(f"  namespace: {namespace}")
++    
++    # Check if public_var is in attr_docs
++    if ('', 'public_var') in attr_docs:
++        print("  public_var is in attr_docs")
++        comment_doc = attr_docs.get(('', 'public_var'), [])
++        print(f"  comment_doc: {comment_doc}")
++        if comment_doc:
++            from sphinx.util.docstrings import extract_metadata
++            comment_metadata = extract_metadata('\\n'.join(comment_doc))
++            print(f"  comment_metadata: {comment_metadata}")
++            if 'private' in comment_metadata:
++                print("  'private' is in comment_metadata")
++    
++    result = original_filter_members(members, want_all)
++    
++    print(f"\\nResult of filter_members: {[m[0] for m in result]}")
++    return result
++
++documenter.filter_members = debug_filter_members
++
++# Get the members
++print("\\nCalling get_object_members:")
++want_all = True
++members_check_module, members = documenter.get_object_members(want_all)
++print(f"  members: {[m[0] for m in members]}")
++
++# Call document_members
++print("\\nCalling document_members:")
++documenter.document_members(all_members=True)
++""")
++    
++    # Run the script
++    print("Running the script to debug document_members:")
++    result = subprocess.run(
++        [sys.executable, os.path.join(temp_dir, "debug.py")],
++        cwd=temp_dir,
++        capture_output=True,
++        text=True
++    )
++    print(result.stdout)
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var12.py b/test_public_var12.py
+new file mode 100644
+index 000000000..d13e37b95
+--- /dev/null
++++ b/test_public_var12.py
+@@ -0,0 +1,94 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with the same content as in comprehensive_test.py
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test cases for :meta public: and :meta private: directives
++_foo = None  #: :meta public:
++_bar = None  #: This is a private variable without meta directive
++_baz = None  #: :meta private:
++public_var = None  #: :meta private:
++another_public_var = None  #: This is a public variable without meta directive
++
++# Test with multi-line comment docstrings
++_multi_line = None  #: :meta public: This is a multi-line
++                    #: comment docstring
++                    
++# Test with regular docstrings
++class TestClass:
++    '''A test class'''
++    
++    def __init__(self):
++        '''Constructor'''
++        self._private_attr = None  # This won't be documented
++        
++    def _private_method(self):
++        '''A private method with no meta directive'''
++        pass
++        
++    def _public_method(self):
++        '''A private method with public meta directive
++        
++        :meta public:
++        '''
++        pass
++""")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("""Test Document
++============
++
++.. automodule:: example
++   :members:
++
++.. autoclass:: example.TestClass
++   :members:
++""")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("""
++import os
++import sys
++sys.path.insert(0, os.path.abspath('.'))
++extensions = ['sphinx.ext.autodoc']
++master_doc = 'index'
++""")
++    
++    # Build the documentation
++    print("Building documentation...")
++    result = subprocess.run(
++        ["sphinx-build", "-b", "html", "-v", temp_dir, os.path.join(temp_dir, "_build")],
++        capture_output=True,
++        text=True
++    )
++    
++    print("Build output:")
++    print(result.stdout)
++    
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++    
++    # Check if the variable is in the generated HTML
++    with open(os.path.join(temp_dir, "_build", "index.html"), "r") as f:
++        html_content = f.read()
++        if "public_var" in html_content:
++            print("FAILURE: public_var is included in the documentation but should be excluded")
++        else:
++            print("SUCCESS: public_var is excluded from the documentation as expected")
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var13.py b/test_public_var13.py
+new file mode 100644
+index 000000000..a656a680a
+--- /dev/null
++++ b/test_public_var13.py
+@@ -0,0 +1,64 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with only public_var
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test with public variable with :meta private: directive
++public_var = None  #: :meta private:
++""")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("""Test Document
++============
++
++.. automodule:: example
++   :members:
++""")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("""
++import os
++import sys
++sys.path.insert(0, os.path.abspath('.'))
++extensions = ['sphinx.ext.autodoc']
++master_doc = 'index'
++""")
++    
++    # Build the documentation
++    print("Building documentation...")
++    result = subprocess.run(
++        ["sphinx-build", "-b", "html", temp_dir, os.path.join(temp_dir, "_build")],
++        capture_output=True,
++        text=True
++    )
++    
++    print("Build output:")
++    print(result.stdout)
++    
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++    
++    # Check if the variable is in the generated HTML
++    with open(os.path.join(temp_dir, "_build", "index.html"), "r") as f:
++        html_content = f.read()
++        if "public_var" in html_content:
++            print("FAILURE: public_var is included in the documentation but should be excluded")
++        else:
++            print("SUCCESS: public_var is excluded from the documentation as expected")
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var14.py b/test_public_var14.py
+new file mode 100644
+index 000000000..27ea30612
+--- /dev/null
++++ b/test_public_var14.py
+@@ -0,0 +1,171 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with the same content as in comprehensive_test.py
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test cases for :meta public: and :meta private: directives
++_foo = None  #: :meta public:
++_bar = None  #: This is a private variable without meta directive
++_baz = None  #: :meta private:
++public_var = None  #: :meta private:
++another_public_var = None  #: This is a public variable without meta directive
++
++# Test with multi-line comment docstrings
++_multi_line = None  #: :meta public: This is a multi-line
++                    #: comment docstring
++                    
++# Test with regular docstrings
++class TestClass:
++    '''A test class'''
++    
++    def __init__(self):
++        '''Constructor'''
++        self._private_attr = None  # This won't be documented
++        
++    def _private_method(self):
++        '''A private method with no meta directive'''
++        pass
++        
++    def _public_method(self):
++        '''A private method with public meta directive
++        
++        :meta public:
++        '''
++        pass
++""")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("""Test Document
++============
++
++.. automodule:: example
++   :members:
++
++.. autoclass:: example.TestClass
++   :members:
++""")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("""
++import os
++import sys
++sys.path.insert(0, os.path.abspath('.'))
++extensions = ['sphinx.ext.autodoc']
++master_doc = 'index'
++""")
++    
++    # Create a script to debug the document_members method
++    with open(os.path.join(temp_dir, "debug.py"), "w") as f:
++        f.write("""
++import sys
++import os
++import logging
++from sphinx.ext.autodoc import ModuleDocumenter
++from sphinx.ext.autodoc.directive import DocumenterBridge, Options
++from docutils.statemachine import StringList
++from sphinx.environment import BuildEnvironment
++from sphinx.application import Sphinx
++from sphinx.config import Config
++
++# Set up logging
++logging.basicConfig(level=logging.INFO)
++logger = logging.getLogger(__name__)
++
++# Create a minimal Sphinx application
++app = Sphinx(
++    srcdir=os.path.abspath('.'),
++    confdir=None,
++    outdir=os.path.abspath('_build'),
++    doctreedir=os.path.abspath('_build/.doctrees'),
++    buildername='html',
++)
++
++# Create a minimal environment
++env = BuildEnvironment(app)
++env.app = app
++env.config = Config()
++env.config.autodoc_member_order = 'alphabetical'
++env.config.autodoc_inherit_docstrings = True
++env.config.autodoc_type_aliases = {}
++env.config.autodoc_mock_imports = []
++env.config.autodoc_warningiserror = False
++
++# Create a minimal directive
++from sphinx.ext.autodoc import ALL
++options = Options()
++options.members = ALL
++options.undoc_members = False
++options.private_members = None
++options.special_members = None
++options.inherited_members = None
++options.exclude_members = set()
++options.ignore_module_all = False
++
++directive = DocumenterBridge(env, StringList(), options, 'module', 'example')
++
++# Create a ModuleDocumenter
++documenter = ModuleDocumenter(directive, 'example')
++documenter.parse_name()
++documenter.import_object()
++
++# Create the analyzer
++from sphinx.pycode import ModuleAnalyzer
++analyzer = ModuleAnalyzer.for_module('example')
++analyzer.analyze()
++attr_docs = analyzer.find_attr_docs()
++print(f"\\nattr_docs: {attr_docs}")
++
++# Set the analyzer
++documenter.analyzer = analyzer
++
++# Monkey patch the document_members method to print debug info
++original_document_members = documenter.document_members
++def debug_document_members(all_members=False):
++    print("\\nCalling document_members with:")
++    print(f"  all_members: {all_members}")
++    
++    # Debug the document_members method
++    want_all = all_members or documenter.options.inherited_members or documenter.options.members is ALL
++    print(f"  want_all: {want_all}")
++    
++    # Call the original method
++    result = original_document_members(all_members)
++    
++    print("\\nAfter document_members")
++    return result
++
++documenter.document_members = debug_document_members
++
++# Call document_members
++print("\\nCalling document_members:")
++documenter.document_members(all_members=True)
++""")
++    
++    # Run the script
++    print("Running the script to debug document_members:")
++    result = subprocess.run(
++        [sys.executable, os.path.join(temp_dir, "debug.py")],
++        cwd=temp_dir,
++        capture_output=True,
++        text=True
++    )
++    print(result.stdout)
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var15.py b/test_public_var15.py
+new file mode 100644
+index 000000000..782b129d2
+--- /dev/null
++++ b/test_public_var15.py
+@@ -0,0 +1,210 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with the same content as in comprehensive_test.py
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test cases for :meta public: and :meta private: directives
++_foo = None  #: :meta public:
++_bar = None  #: This is a private variable without meta directive
++_baz = None  #: :meta private:
++public_var = None  #: :meta private:
++another_public_var = None  #: This is a public variable without meta directive
++
++# Test with multi-line comment docstrings
++_multi_line = None  #: :meta public: This is a multi-line
++                    #: comment docstring
++                    
++# Test with regular docstrings
++class TestClass:
++    '''A test class'''
++    
++    def __init__(self):
++        '''Constructor'''
++        self._private_attr = None  # This won't be documented
++        
++    def _private_method(self):
++        '''A private method with no meta directive'''
++        pass
++        
++    def _public_method(self):
++        '''A private method with public meta directive
++        
++        :meta public:
++        '''
++        pass
++""")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("""Test Document
++============
++
++.. automodule:: example
++   :members:
++
++.. autoclass:: example.TestClass
++   :members:
++""")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("""
++import os
++import sys
++sys.path.insert(0, os.path.abspath('.'))
++extensions = ['sphinx.ext.autodoc']
++master_doc = 'index'
++""")
++    
++    # Create a script to debug the document_members method
++    with open(os.path.join(temp_dir, "debug.py"), "w") as f:
++        f.write("""
++import sys
++import os
++import logging
++from sphinx.ext.autodoc import ModuleDocumenter
++from sphinx.ext.autodoc.directive import DocumenterBridge, Options
++from docutils.statemachine import StringList
++from sphinx.environment import BuildEnvironment
++from sphinx.application import Sphinx
++from sphinx.config import Config
++
++# Set up logging
++logging.basicConfig(level=logging.INFO)
++logger = logging.getLogger(__name__)
++
++# Create a minimal Sphinx application
++app = Sphinx(
++    srcdir=os.path.abspath('.'),
++    confdir=None,
++    outdir=os.path.abspath('_build'),
++    doctreedir=os.path.abspath('_build/.doctrees'),
++    buildername='html',
++)
++
++# Create a minimal environment
++env = BuildEnvironment(app)
++env.app = app
++env.config = Config()
++env.config.autodoc_member_order = 'alphabetical'
++env.config.autodoc_inherit_docstrings = True
++env.config.autodoc_type_aliases = {}
++env.config.autodoc_mock_imports = []
++env.config.autodoc_warningiserror = False
++
++# Create a minimal directive
++from sphinx.ext.autodoc import ALL
++options = Options()
++options.members = ALL
++options.undoc_members = False
++options.private_members = None
++options.special_members = None
++options.inherited_members = None
++options.exclude_members = set()
++options.ignore_module_all = False
++
++directive = DocumenterBridge(env, StringList(), options, 'module', 'example')
++
++# Create a ModuleDocumenter
++documenter = ModuleDocumenter(directive, 'example')
++documenter.parse_name()
++documenter.import_object()
++
++# Create the analyzer
++from sphinx.pycode import ModuleAnalyzer
++analyzer = ModuleAnalyzer.for_module('example')
++analyzer.analyze()
++attr_docs = analyzer.find_attr_docs()
++print(f"\\nattr_docs: {attr_docs}")
++
++# Set the analyzer
++documenter.analyzer = analyzer
++
++# Monkey patch the filter_members method to print debug info
++original_filter_members = documenter.filter_members
++def debug_filter_members(members, want_all):
++    print("\\nCalling filter_members with:")
++    print(f"  members: {[m[0] for m in members]}")
++    print(f"  want_all: {want_all}")
++    
++    # Debug the filter_members method
++    namespace = '.'.join(documenter.objpath)
++    print(f"  namespace: {namespace}")
++    
++    # Check if public_var is in attr_docs
++    if ('', 'public_var') in attr_docs:
++        print("  public_var is in attr_docs")
++        comment_doc = attr_docs.get(('', 'public_var'), [])
++        print(f"  comment_doc: {comment_doc}")
++        if comment_doc:
++            from sphinx.util.docstrings import extract_metadata
++            comment_metadata = extract_metadata('\\n'.join(comment_doc))
++            print(f"  comment_metadata: {comment_metadata}")
++            if 'private' in comment_metadata:
++                print("  'private' is in comment_metadata")
++    
++    # Call the original method
++    result = original_filter_members(members, want_all)
++    
++    print(f"\\nResult of filter_members: {[m[0] for m in result]}")
++    return result
++
++documenter.filter_members = debug_filter_members
++
++# Monkey patch the document_members method to print debug info
++original_document_members = documenter.document_members
++def debug_document_members(all_members=False):
++    print("\\nCalling document_members with:")
++    print(f"  all_members: {all_members}")
++    
++    # Debug the document_members method
++    want_all = all_members or documenter.options.inherited_members or documenter.options.members is ALL
++    print(f"  want_all: {want_all}")
++    
++    # Get the members
++    members_check_module, members = documenter.get_object_members(want_all)
++    print(f"  members: {[m[0] for m in members]}")
++    
++    # Filter the members
++    filtered_members = documenter.filter_members(members, want_all)
++    print(f"  filtered_members: {[m[0] for m in filtered_members]}")
++    
++    # Call the original method
++    result = original_document_members(all_members)
++    
++    print("\\nAfter document_members")
++    return result
++
++documenter.document_members = debug_document_members
++
++# Call document_members
++print("\\nCalling document_members:")
++documenter.document_members(all_members=True)
++""")
++    
++    # Run the script
++    print("Running the script to debug document_members:")
++    result = subprocess.run(
++        [sys.executable, os.path.join(temp_dir, "debug.py")],
++        cwd=temp_dir,
++        capture_output=True,
++        text=True
++    )
++    print(result.stdout)
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var16.py b/test_public_var16.py
+new file mode 100644
+index 000000000..2d90170c4
+--- /dev/null
++++ b/test_public_var16.py
+@@ -0,0 +1,63 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with only public_var
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test with public variable with :meta private: directive
++public_var = None  #: :meta private:
++""")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("""Test Document
++============
++
++.. autodata:: example.public_var
++""")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("""
++import os
++import sys
++sys.path.insert(0, os.path.abspath('.'))
++extensions = ['sphinx.ext.autodoc']
++master_doc = 'index'
++""")
++    
++    # Build the documentation
++    print("Building documentation...")
++    result = subprocess.run(
++        ["sphinx-build", "-b", "html", temp_dir, os.path.join(temp_dir, "_build")],
++        capture_output=True,
++        text=True
++    )
++    
++    print("Build output:")
++    print(result.stdout)
++    
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++    
++    # Check if the variable is in the generated HTML
++    with open(os.path.join(temp_dir, "_build", "index.html"), "r") as f:
++        html_content = f.read()
++        if "public_var" in html_content:
++            print("FAILURE: public_var is included in the documentation but should be excluded")
++        else:
++            print("SUCCESS: public_var is excluded from the documentation as expected")
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var2.py b/test_public_var2.py
+new file mode 100644
+index 000000000..90df89182
+--- /dev/null
++++ b/test_public_var2.py
+@@ -0,0 +1,65 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with a public variable with :meta private: directive
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test with public variable with :meta private: directive
++public_var = None  #: :meta private:
++another_var = None  #: This is another variable
++""")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("""Test Document
++============
++
++.. automodule:: example
++   :members:
++""")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("""
++import os
++import sys
++sys.path.insert(0, os.path.abspath('.'))
++extensions = ['sphinx.ext.autodoc']
++master_doc = 'index'
++""")
++    
++    # Build the documentation
++    print("Building documentation...")
++    result = subprocess.run(
++        ["sphinx-build", "-b", "html", temp_dir, os.path.join(temp_dir, "_build")],
++        capture_output=True,
++        text=True
++    )
++    
++    print("Build output:")
++    print(result.stdout)
++    
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++    
++    # Check if the variable is in the generated HTML
++    with open(os.path.join(temp_dir, "_build", "index.html"), "r") as f:
++        html_content = f.read()
++        if "public_var" in html_content:
++            print("FAILURE: public_var is included in the documentation but should be excluded")
++        else:
++            print("SUCCESS: public_var is excluded from the documentation as expected")
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var3.py b/test_public_var3.py
+new file mode 100644
+index 000000000..eb5acea19
+--- /dev/null
++++ b/test_public_var3.py
+@@ -0,0 +1,94 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with the same content as in comprehensive_test.py
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test cases for :meta public: and :meta private: directives
++_foo = None  #: :meta public:
++_bar = None  #: This is a private variable without meta directive
++_baz = None  #: :meta private:
++public_var = None  #: :meta private:
++another_public_var = None  #: This is a public variable without meta directive
++
++# Test with multi-line comment docstrings
++_multi_line = None  #: :meta public: This is a multi-line
++                    #: comment docstring
++                    
++# Test with regular docstrings
++class TestClass:
++    '''A test class'''
++    
++    def __init__(self):
++        '''Constructor'''
++        self._private_attr = None  # This won't be documented
++        
++    def _private_method(self):
++        '''A private method with no meta directive'''
++        pass
++        
++    def _public_method(self):
++        '''A private method with public meta directive
++        
++        :meta public:
++        '''
++        pass
++""")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("""Test Document
++============
++
++.. automodule:: example
++   :members:
++
++.. autoclass:: example.TestClass
++   :members:
++""")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("""
++import os
++import sys
++sys.path.insert(0, os.path.abspath('.'))
++extensions = ['sphinx.ext.autodoc']
++master_doc = 'index'
++""")
++    
++    # Build the documentation
++    print("Building documentation...")
++    result = subprocess.run(
++        ["sphinx-build", "-b", "html", temp_dir, os.path.join(temp_dir, "_build")],
++        capture_output=True,
++        text=True
++    )
++    
++    print("Build output:")
++    print(result.stdout)
++    
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++    
++    # Check if the variable is in the generated HTML
++    with open(os.path.join(temp_dir, "_build", "index.html"), "r") as f:
++        html_content = f.read()
++        if "public_var" in html_content:
++            print("FAILURE: public_var is included in the documentation but should be excluded")
++        else:
++            print("SUCCESS: public_var is excluded from the documentation as expected")
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var4.py b/test_public_var4.py
+new file mode 100644
+index 000000000..75ebfa94e
+--- /dev/null
++++ b/test_public_var4.py
+@@ -0,0 +1,56 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with a public variable with :meta private: directive
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test with public variable with :meta private: directive
++public_var = None  #: :meta private:
++""")
++    
++    # Create a script to inspect the comment docstring
++    with open(os.path.join(temp_dir, "inspect_comments.py"), "w") as f:
++        f.write("""
++import sys
++from sphinx.pycode import ModuleAnalyzer
++from sphinx.util.docstrings import extract_metadata
++
++analyzer = ModuleAnalyzer.for_module('example')
++analyzer.analyze()
++print("attr_docs:", analyzer.attr_docs)
++
++# Try to extract metadata from the comment docstring
++for key, value in analyzer.attr_docs.items():
++    print(f"Key: {key}, Value: {value}")
++    comment = '\\n'.join(value)
++    print(f"Comment: {comment}")
++    metadata = extract_metadata(comment)
++    print(f"Metadata: {metadata}")
++
++""")
++    
++    # Run the script
++    print("Running the script to inspect comments:")
++    result = subprocess.run(
++        [sys.executable, os.path.join(temp_dir, "inspect_comments.py")],
++        cwd=temp_dir,
++        capture_output=True,
++        text=True
++    )
++    print(result.stdout)
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var5.py b/test_public_var5.py
+new file mode 100644
+index 000000000..a9f270d8c
+--- /dev/null
++++ b/test_public_var5.py
+@@ -0,0 +1,101 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with a public variable with :meta private: directive
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test with public variable with :meta private: directive
++public_var = None  #: :meta private:
++""")
++    
++    # Create a script to debug the filter_members method
++    with open(os.path.join(temp_dir, "debug_filter_members.py"), "w") as f:
++        f.write("""
++import sys
++import os
++from sphinx.ext.autodoc import ModuleDocumenter
++from sphinx.ext.autodoc.directive import DocumenterBridge, Options
++from docutils.statemachine import StringList
++from sphinx.environment import BuildEnvironment
++from sphinx.application import Sphinx
++from sphinx.config import Config
++
++# Create a minimal Sphinx application
++app = Sphinx(
++    srcdir=os.path.abspath('.'),
++    confdir=None,
++    outdir=os.path.abspath('_build'),
++    doctreedir=os.path.abspath('_build/.doctrees'),
++    buildername='html',
++)
++
++# Create a minimal environment
++env = BuildEnvironment(app)
++env.app = app
++env.config = Config()
++env.config.autodoc_member_order = 'alphabetical'
++env.config.autodoc_inherit_docstrings = True
++env.config.autodoc_type_aliases = {}
++env.config.autodoc_mock_imports = []
++env.config.autodoc_warningiserror = False
++
++# Create a minimal directive
++options = Options()
++options.members = None
++options.undoc_members = False
++options.private_members = None
++options.special_members = None
++options.inherited_members = None
++options.exclude_members = set()
++options.ignore_module_all = False
++
++directive = DocumenterBridge(env, StringList(), options, 'module', 'example')
++
++# Create a ModuleDocumenter
++documenter = ModuleDocumenter(directive, 'example')
++documenter.parse_name()
++documenter.import_object()
++
++# Get the members
++want_all = True
++members_check_module, members = documenter.get_object_members(want_all)
++
++# Print the members
++print("Members:")
++for member in members:
++    print(f"  {member}")
++
++# Filter the members
++filtered_members = documenter.filter_members(members, want_all)
++
++# Print the filtered members
++print("\\nFiltered members:")
++for member in filtered_members:
++    print(f"  {member}")
++""")
++    
++    # Run the script
++    print("Running the script to debug filter_members:")
++    result = subprocess.run(
++        [sys.executable, os.path.join(temp_dir, "debug_filter_members.py")],
++        cwd=temp_dir,
++        capture_output=True,
++        text=True
++    )
++    print(result.stdout)
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var6.py b/test_public_var6.py
+new file mode 100644
+index 000000000..5ba569491
+--- /dev/null
++++ b/test_public_var6.py
+@@ -0,0 +1,140 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with a public variable with :meta private: directive
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test with public variable with :meta private: directive
++public_var = None  #: :meta private:
++""")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("""Test Document
++============
++
++.. automodule:: example
++   :members:
++""")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("""
++import os
++import sys
++sys.path.insert(0, os.path.abspath('.'))
++extensions = ['sphinx.ext.autodoc']
++master_doc = 'index'
++""")
++    
++    # Create a script to debug the filter_members method
++    with open(os.path.join(temp_dir, "debug.py"), "w") as f:
++        f.write("""
++import sys
++import os
++import logging
++from sphinx.ext.autodoc import ModuleDocumenter
++from sphinx.ext.autodoc.directive import DocumenterBridge, Options
++from docutils.statemachine import StringList
++from sphinx.environment import BuildEnvironment
++from sphinx.application import Sphinx
++from sphinx.config import Config
++from sphinx.util import logging as sphinx_logging
++
++# Set up logging
++logging.basicConfig(level=logging.INFO)
++logger = logging.getLogger(__name__)
++
++# Create a minimal Sphinx application
++app = Sphinx(
++    srcdir=os.path.abspath('.'),
++    confdir=None,
++    outdir=os.path.abspath('_build'),
++    doctreedir=os.path.abspath('_build/.doctrees'),
++    buildername='html',
++)
++
++# Create a minimal environment
++env = BuildEnvironment(app)
++env.app = app
++env.config = Config()
++env.config.autodoc_member_order = 'alphabetical'
++env.config.autodoc_inherit_docstrings = True
++env.config.autodoc_type_aliases = {}
++env.config.autodoc_mock_imports = []
++env.config.autodoc_warningiserror = False
++
++# Create a minimal directive
++options = Options()
++options.members = None
++options.undoc_members = False
++options.private_members = None
++options.special_members = None
++options.inherited_members = None
++options.exclude_members = set()
++options.ignore_module_all = False
++
++directive = DocumenterBridge(env, StringList(), options, 'module', 'example')
++
++# Create a ModuleDocumenter
++documenter = ModuleDocumenter(directive, 'example')
++documenter.parse_name()
++documenter.import_object()
++
++# Get the members
++want_all = True
++members_check_module, members = documenter.get_object_members(want_all)
++
++# Print the members
++print("Members:")
++for member in members:
++    print(f"  {member}")
++
++# Get the namespace
++namespace = '.'.join(documenter.objpath)
++print(f"\\nNamespace: {namespace}")
++
++# Create the analyzer
++from sphinx.pycode import ModuleAnalyzer
++analyzer = ModuleAnalyzer.for_module('example')
++analyzer.analyze()
++attr_docs = analyzer.find_attr_docs()
++print(f"\\nattr_docs: {attr_docs}")
++
++# Set the analyzer
++documenter.analyzer = analyzer
++
++# Filter the members
++filtered_members = documenter.filter_members(members, want_all)
++
++# Print the filtered members
++print("\\nFiltered members:")
++for member in filtered_members:
++    print(f"  {member}")
++""")
++    
++    # Run the script
++    print("Running the script to debug filter_members:")
++    result = subprocess.run(
++        [sys.executable, os.path.join(temp_dir, "debug.py")],
++        cwd=temp_dir,
++        capture_output=True,
++        text=True
++    )
++    print(result.stdout)
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var7.py b/test_public_var7.py
+new file mode 100644
+index 000000000..e38d3229b
+--- /dev/null
++++ b/test_public_var7.py
+@@ -0,0 +1,64 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with a public variable with :meta private: directive
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test with public variable with :meta private: directive
++public_var = None  #: :meta private:
++""")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("""Test Document
++============
++
++.. automodule:: example
++   :members:
++""")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("""
++import os
++import sys
++sys.path.insert(0, os.path.abspath('.'))
++extensions = ['sphinx.ext.autodoc']
++master_doc = 'index'
++""")
++    
++    # Build the documentation
++    print("Building documentation...")
++    result = subprocess.run(
++        ["sphinx-build", "-b", "html", temp_dir, os.path.join(temp_dir, "_build")],
++        capture_output=True,
++        text=True
++    )
++    
++    print("Build output:")
++    print(result.stdout)
++    
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++    
++    # Check if the variable is in the generated HTML
++    with open(os.path.join(temp_dir, "_build", "index.html"), "r") as f:
++        html_content = f.read()
++        if "public_var" in html_content:
++            print("FAILURE: public_var is included in the documentation but should be excluded")
++        else:
++            print("SUCCESS: public_var is excluded from the documentation as expected")
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var8.py b/test_public_var8.py
+new file mode 100644
+index 000000000..90df89182
+--- /dev/null
++++ b/test_public_var8.py
+@@ -0,0 +1,65 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with a public variable with :meta private: directive
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test with public variable with :meta private: directive
++public_var = None  #: :meta private:
++another_var = None  #: This is another variable
++""")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("""Test Document
++============
++
++.. automodule:: example
++   :members:
++""")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("""
++import os
++import sys
++sys.path.insert(0, os.path.abspath('.'))
++extensions = ['sphinx.ext.autodoc']
++master_doc = 'index'
++""")
++    
++    # Build the documentation
++    print("Building documentation...")
++    result = subprocess.run(
++        ["sphinx-build", "-b", "html", temp_dir, os.path.join(temp_dir, "_build")],
++        capture_output=True,
++        text=True
++    )
++    
++    print("Build output:")
++    print(result.stdout)
++    
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++    
++    # Check if the variable is in the generated HTML
++    with open(os.path.join(temp_dir, "_build", "index.html"), "r") as f:
++        html_content = f.read()
++        if "public_var" in html_content:
++            print("FAILURE: public_var is included in the documentation but should be excluded")
++        else:
++            print("SUCCESS: public_var is excluded from the documentation as expected")
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/test_public_var9.py b/test_public_var9.py
+new file mode 100644
+index 000000000..eb5acea19
+--- /dev/null
++++ b/test_public_var9.py
+@@ -0,0 +1,94 @@
++import os
++import tempfile
++import shutil
++import subprocess
++import sys
++
++# Create a temporary directory for our test
++temp_dir = tempfile.mkdtemp()
++print(f"Created temporary directory: {temp_dir}")
++
++try:
++    # Create example.py with the same content as in comprehensive_test.py
++    with open(os.path.join(temp_dir, "example.py"), "w") as f:
++        f.write("""
++# Test cases for :meta public: and :meta private: directives
++_foo = None  #: :meta public:
++_bar = None  #: This is a private variable without meta directive
++_baz = None  #: :meta private:
++public_var = None  #: :meta private:
++another_public_var = None  #: This is a public variable without meta directive
++
++# Test with multi-line comment docstrings
++_multi_line = None  #: :meta public: This is a multi-line
++                    #: comment docstring
++                    
++# Test with regular docstrings
++class TestClass:
++    '''A test class'''
++    
++    def __init__(self):
++        '''Constructor'''
++        self._private_attr = None  # This won't be documented
++        
++    def _private_method(self):
++        '''A private method with no meta directive'''
++        pass
++        
++    def _public_method(self):
++        '''A private method with public meta directive
++        
++        :meta public:
++        '''
++        pass
++""")
++    
++    # Create index.rst that uses automodule to document example.py
++    with open(os.path.join(temp_dir, "index.rst"), "w") as f:
++        f.write("""Test Document
++============
++
++.. automodule:: example
++   :members:
++
++.. autoclass:: example.TestClass
++   :members:
++""")
++    
++    # Create a minimal conf.py for Sphinx
++    with open(os.path.join(temp_dir, "conf.py"), "w") as f:
++        f.write("""
++import os
++import sys
++sys.path.insert(0, os.path.abspath('.'))
++extensions = ['sphinx.ext.autodoc']
++master_doc = 'index'
++""")
++    
++    # Build the documentation
++    print("Building documentation...")
++    result = subprocess.run(
++        ["sphinx-build", "-b", "html", temp_dir, os.path.join(temp_dir, "_build")],
++        capture_output=True,
++        text=True
++    )
++    
++    print("Build output:")
++    print(result.stdout)
++    
++    if result.stderr:
++        print("Errors:")
++        print(result.stderr)
++    
++    # Check if the variable is in the generated HTML
++    with open(os.path.join(temp_dir, "_build", "index.html"), "r") as f:
++        html_content = f.read()
++        if "public_var" in html_content:
++            print("FAILURE: public_var is included in the documentation but should be excluded")
++        else:
++            print("SUCCESS: public_var is excluded from the documentation as expected")
++
++finally:
++    # Clean up
++    shutil.rmtree(temp_dir)
++    print(f"Removed temporary directory: {temp_dir}")
+\ No newline at end of file
+diff --git a/tox.ini b/tox.ini
+index dbb705a3a..9f4fc3a32 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -28,7 +28,7 @@ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -m pytest --durations 25 {posargs}
++    python -X dev -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3

@@ -1,0 +1,127 @@
+diff --git a/sympy/polys/polytools.py b/sympy/polys/polytools.py
+index c9e77a901f..9366b1bbb0 100644
+--- a/sympy/polys/polytools.py
++++ b/sympy/polys/polytools.py
+@@ -5880,7 +5880,7 @@ def _sorted_factors(factors, method):
+         def key(obj):
+             poly, exp = obj
+             rep = poly.rep.rep
+-            return (exp, len(rep), len(poly.gens), rep)
++            return (len(rep), len(poly.gens), exp, rep)
+     else:
+         def key(obj):
+             poly, exp = obj
+@@ -5897,60 +5897,67 @@ def _factors_product(factors):
+ 
+ def _symbolic_factor_list(expr, opt, method):
+     """Helper function for :func:`_symbolic_factor`. """
+-    coeff, factors = S.One, []
+-
+-    args = [i._eval_factor() if hasattr(i, '_eval_factor') else i
+-        for i in Mul.make_args(expr)]
+-    for arg in args:
+-        if arg.is_Number:
+-            coeff *= arg
+-            continue
+-        if arg.is_Mul:
+-            args.extend(arg.args)
+-            continue
+-        if arg.is_Pow:
+-            base, exp = arg.args
+-            if base.is_Number and exp.is_Number:
++    # Try to convert the expression to a Poly and use Poly.sqf_list directly
++    try:
++        poly, _ = _poly_from_expr(expr, opt)
++        coeff, factors = getattr(poly, method + '_list')()
++        return coeff, factors
++    except (PolificationFailed, AttributeError):
++        # If that fails, use the original implementation
++        coeff, factors = S.One, []
++
++        args = [i._eval_factor() if hasattr(i, '_eval_factor') else i
++            for i in Mul.make_args(expr)]
++        for arg in args:
++            if arg.is_Number:
+                 coeff *= arg
+                 continue
+-            if base.is_Number:
+-                factors.append((base, exp))
++            if arg.is_Mul:
++                args.extend(arg.args)
+                 continue
+-        else:
+-            base, exp = arg, S.One
+-
+-        try:
+-            poly, _ = _poly_from_expr(base, opt)
+-        except PolificationFailed as exc:
+-            factors.append((exc.expr, exp))
+-        else:
+-            func = getattr(poly, method + '_list')
+-
+-            _coeff, _factors = func()
+-            if _coeff is not S.One:
+-                if exp.is_Integer:
+-                    coeff *= _coeff**exp
+-                elif _coeff.is_positive:
+-                    factors.append((_coeff, exp))
+-                else:
+-                    _factors.append((_coeff, S.One))
+-
+-            if exp is S.One:
+-                factors.extend(_factors)
+-            elif exp.is_integer:
+-                factors.extend([(f, k*exp) for f, k in _factors])
++            if arg.is_Pow:
++                base, exp = arg.args
++                if base.is_Number and exp.is_Number:
++                    coeff *= arg
++                    continue
++                if base.is_Number:
++                    factors.append((base, exp))
++                    continue
+             else:
+-                other = []
++                base, exp = arg, S.One
+ 
+-                for f, k in _factors:
+-                    if f.as_expr().is_positive:
+-                        factors.append((f, k*exp))
++            try:
++                poly, _ = _poly_from_expr(base, opt)
++            except PolificationFailed as exc:
++                factors.append((exc.expr, exp))
++            else:
++                func = getattr(poly, method + '_list')
++
++                _coeff, _factors = func()
++                if _coeff is not S.One:
++                    if exp.is_Integer:
++                        coeff *= _coeff**exp
++                    elif _coeff.is_positive:
++                        factors.append((_coeff, exp))
+                     else:
+-                        other.append((f, k))
++                        _factors.append((_coeff, S.One))
++
++                if exp is S.One:
++                    factors.extend(_factors)
++                elif exp.is_integer:
++                    factors.extend([(f, k*exp) for f, k in _factors])
++                else:
++                    other = []
++
++                    for f, k in _factors:
++                        if f.as_expr().is_positive:
++                            factors.append((f, k*exp))
++                        else:
++                            other.append((f, k))
+ 
+-                factors.append((_factors_product(other), exp))
++                    factors.append((_factors_product(other), exp))
+ 
+-    return coeff, factors
++        return coeff, factors
+ 
+ 
+ def _symbolic_factor(expr, opt, method):

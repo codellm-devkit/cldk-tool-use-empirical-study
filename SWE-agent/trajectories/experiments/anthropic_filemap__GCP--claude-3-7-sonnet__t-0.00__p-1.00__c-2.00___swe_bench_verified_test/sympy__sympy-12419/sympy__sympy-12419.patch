@@ -1,0 +1,48 @@
+diff --git a/sympy/core/function.py b/sympy/core/function.py
+index 1b8005e1d2..23c8c5e1db 100644
+--- a/sympy/core/function.py
++++ b/sympy/core/function.py
+@@ -498,6 +498,33 @@ def is_commutative(self):
+             return False
+ 
+     def _eval_evalf(self, prec):
++        # First, check if this is an implemented function with _imp_
++        if hasattr(self, '_imp_'):
++            try:
++                # Evaluate the arguments first if they have evalf method
++                evaled_args = []
++                for arg in self.args:
++                    if hasattr(arg, 'evalf'):
++                        evaled_args.append(arg.evalf(prec))
++                    else:
++                        evaled_args.append(arg)
++                
++                # Apply the implementation function to the evaluated arguments
++                result = self._imp_(*evaled_args)
++                
++                # If the result has evalf, call it recursively
++                if hasattr(result, 'evalf'):
++                    return result.evalf(prec)
++                
++                # Try to convert to Float if possible
++                try:
++                    return Float(result, prec)
++                except (TypeError, ValueError):
++                    # If we can't convert to Float, return the result as is
++                    return result
++            except (AttributeError, TypeError, ValueError):
++                pass  # Fall back to mpmath lookup
++        
+         # Lookup mpmath function based on name
+         fname = self.func.__name__
+         try:
+@@ -506,6 +533,9 @@ def _eval_evalf(self, prec):
+                 fname = MPMATH_TRANSLATIONS[fname]
+             func = getattr(mpmath, fname)
+         except (AttributeError, KeyError):
++            # If we already tried _imp_ above, just return
++            if hasattr(self, '_imp_'):
++                return
+             try:
+                 return Float(self._imp_(*self.args), prec)
+             except (AttributeError, TypeError, ValueError):

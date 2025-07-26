@@ -1,0 +1,83 @@
+diff --git a/reproduce_error.py b/reproduce_error.py
+new file mode 100644
+index 0000000000..cb745e8348
+--- /dev/null
++++ b/reproduce_error.py
+@@ -0,0 +1,13 @@
++from sympy import *
++from sympy.abc import a
++
++def f(n):
++    return det(Matrix([[i + a*j for i in range(n)] for j in range(n)]))
++
++# Test different matrix sizes
++for n in range(1, 7):
++    try:
++        result = f(n)
++        print(f"f({n}) = {result}")
++    except Exception as e:
++        print(f"f({n}) raised an exception: {type(e).__name__}: {e}")
+\ No newline at end of file
+diff --git a/sympy/matrices/matrices.py b/sympy/matrices/matrices.py
+index 97cde62e26..ab415ca21f 100644
+--- a/sympy/matrices/matrices.py
++++ b/sympy/matrices/matrices.py
+@@ -422,7 +422,13 @@ def det(self, method="bareiss"):
+                    - self[0, 0] * self[1, 2] * self[2, 1]
+                    - self[0, 1] * self[1, 0] * self[2, 2])
+ 
+-        if method == "bareiss":
++        # Check if matrix contains any symbolic entries
++        has_symbols = any(i.has(Symbol) for i in self)
++        
++        # Use Berkowitz algorithm for symbolic matrices as it's more robust
++        if has_symbols and method == "bareiss":
++            return self._eval_det_berkowitz()
++        elif method == "bareiss":
+             return self._eval_det_bareiss()
+         elif method == "berkowitz":
+             return self._eval_det_berkowitz()
+diff --git a/test_fix.py b/test_fix.py
+new file mode 100644
+index 0000000000..781a7f7ae5
+--- /dev/null
++++ b/test_fix.py
+@@ -0,0 +1,37 @@
++from sympy import *
++from sympy.abc import a
++
++def f(n):
++    return det(Matrix([[i + a*j for i in range(n)] for j in range(n)]))
++
++# Test the specific cases mentioned in the PR description
++print(f"f(1) = {f(1)}")
++print(f"f(2) = {f(2)}")
++print(f"f(3) = {f(3)}")
++print(f"f(4) = {f(4)}")
++print(f"f(5) = {f(5)}")
++print(f"f(6) = {f(6)}")
++
++# Test with a different symbolic variable
++from sympy.abc import x
++def g(n):
++    return det(Matrix([[i + x*j for i in range(n)] for j in range(n)]))
++
++print(f"\nTesting with a different symbolic variable x:")
++print(f"g(1) = {g(1)}")
++print(f"g(2) = {g(2)}")
++print(f"g(3) = {g(3)}")
++print(f"g(4) = {g(4)}")
++print(f"g(5) = {g(5)}")
++print(f"g(6) = {g(6)}")
++
++# Test with multiple symbolic variables
++from sympy.abc import b, c
++def h(n):
++    return det(Matrix([[i*a + j*b + c for i in range(n)] for j in range(n)]))
++
++print(f"\nTesting with multiple symbolic variables a, b, c:")
++print(f"h(1) = {h(1)}")
++print(f"h(2) = {h(2)}")
++print(f"h(3) = {h(3)}")
++print(f"h(4) = {h(4)}")
+\ No newline at end of file

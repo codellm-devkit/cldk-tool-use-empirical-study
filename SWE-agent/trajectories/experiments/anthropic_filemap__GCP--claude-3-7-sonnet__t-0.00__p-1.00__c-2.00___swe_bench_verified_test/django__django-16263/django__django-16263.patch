@@ -1,0 +1,34 @@
+diff --git a/django/contrib/sitemaps/__init__.py b/django/contrib/sitemaps/__init__.py
+index 27756d9d96..1f2433bc72 100644
+--- a/django/contrib/sitemaps/__init__.py
++++ b/django/contrib/sitemaps/__init__.py
+@@ -1,3 +1,4 @@
++import datetime
+ import warnings
+ from urllib.parse import urlencode
+ from urllib.request import urlopen
+@@ -167,8 +168,22 @@ class Sitemap:
+             return None
+         if callable(self.lastmod):
+             try:
+-                return max([self.lastmod(item) for item in self.items()])
+-            except TypeError:
++                # Filter out None values before calling max()
++                lastmod_values = [self.lastmod(item) for item in self.items()]
++                lastmod_values = [x for x in lastmod_values if x is not None]
++                
++                if not lastmod_values:
++                    return None
++                
++                # Convert all date objects to datetime objects for comparison
++                normalized_values = []
++                for value in lastmod_values:
++                    if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
++                        value = datetime.datetime.combine(value, datetime.time.min)
++                    normalized_values.append(value)
++                
++                return max(normalized_values)
++            except (TypeError, ValueError):
+                 return None
+         else:
+             return self.lastmod

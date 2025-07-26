@@ -1,0 +1,113 @@
+diff --git a/sphinx/domains/cpp.py b/sphinx/domains/cpp.py
+index fe52d881d..4f39e915b 100644
+--- a/sphinx/domains/cpp.py
++++ b/sphinx/domains/cpp.py
+@@ -882,6 +882,24 @@ class ASTCharLiteral(ASTLiteral):
+         signode.append(nodes.Text(txt, txt))
+ 
+ 
++class ASTUserDefinedLiteral(ASTLiteral):
++    def __init__(self, literal: ASTLiteral, suffix: str) -> None:
++        self.literal = literal
++        self.suffix = suffix
++
++    def _stringify(self, transform: StringifyTransform) -> str:
++        return str(self.literal) + self.suffix
++
++    def get_id(self, version: int) -> str:
++        # Use the same ID as the underlying literal, but add a suffix
++        return self.literal.get_id(version) + "u" + self.suffix
++
++    def describe_signature(self, signode: TextElement, mode: str,
++                           env: "BuildEnvironment", symbol: "Symbol") -> None:
++        self.literal.describe_signature(signode, mode, env, symbol)
++        signode.append(nodes.Text(self.suffix, self.suffix))
++
++
+ class ASTThisLiteral(ASTExpression):
+     def _stringify(self, transform: StringifyTransform) -> str:
+         return "this"
+@@ -4658,31 +4676,78 @@ class DefinitionParser(BaseParser):
+             return ASTBooleanLiteral(True)
+         if self.skip_word('false'):
+             return ASTBooleanLiteral(False)
++        
++        # Handle numeric literals
+         for regex in [float_literal_re, binary_literal_re, hex_literal_re,
+                       integer_literal_re, octal_literal_re]:
+             pos = self.pos
+             if self.match(regex):
++                # Handle standard suffixes
+                 while self.current_char in 'uUlLfF':
+                     self.pos += 1
+-                return ASTNumberLiteral(self.definition[pos:self.pos])
++                
++                # Get the numeric part
++                numeric_part = self.definition[pos:self.pos]
++                
++                # Check for user-defined literal suffix
++                if self.current_char and (self.current_char.isalpha() or self.current_char == '_'):
++                    suffix_start = self.pos
++                    
++                    # Parse the UDL suffix (identifier-like)
++                    # First character must be alphabetic or underscore
++                    self.pos += 1
++                    # Subsequent characters can be alphanumeric or underscore
++                    while self.pos < len(self.definition) and (self.definition[self.pos].isalnum() or self.definition[self.pos] == '_'):
++                        self.pos += 1
++                    
++                    suffix = self.definition[suffix_start:self.pos]
++                    return ASTUserDefinedLiteral(ASTNumberLiteral(numeric_part), suffix)
++                else:
++                    return ASTNumberLiteral(numeric_part)
+ 
++        # Handle string literals
+         string = self._parse_string()
+         if string is not None:
+-            return ASTStringLiteral(string)
++            # Check for user-defined literal suffix
++            if self.pos < len(self.definition) and (self.definition[self.pos].isalpha() or self.definition[self.pos] == '_'):
++                suffix_start = self.pos
++                
++                # Parse the UDL suffix (identifier-like)
++                self.pos += 1
++                while self.pos < len(self.definition) and (self.definition[self.pos].isalnum() or self.definition[self.pos] == '_'):
++                    self.pos += 1
++                
++                suffix = self.definition[suffix_start:self.pos]
++                return ASTUserDefinedLiteral(ASTStringLiteral(string), suffix)
++            else:
++                return ASTStringLiteral(string)
+ 
+-        # character-literal
++        # Handle character literals
+         if self.match(char_literal_re):
+             prefix = self.last_match.group(1)  # may be None when no prefix
+             data = self.last_match.group(2)
+             try:
+-                return ASTCharLiteral(prefix, data)
++                char_literal = ASTCharLiteral(prefix, data)
++                
++                # Check for user-defined literal suffix
++                if self.pos < len(self.definition) and (self.definition[self.pos].isalpha() or self.definition[self.pos] == '_'):
++                    suffix_start = self.pos
++                    
++                    # Parse the UDL suffix (identifier-like)
++                    self.pos += 1
++                    while self.pos < len(self.definition) and (self.definition[self.pos].isalnum() or self.definition[self.pos] == '_'):
++                        self.pos += 1
++                    
++                    suffix = self.definition[suffix_start:self.pos]
++                    return ASTUserDefinedLiteral(char_literal, suffix)
++                else:
++                    return char_literal
+             except UnicodeDecodeError as e:
+                 self.fail("Can not handle character literal. Internal error was: %s" % e)
+             except UnsupportedMultiCharacterCharLiteral:
+                 self.fail("Can not handle character literal"
+                           " resulting in multiple decoded characters.")
+ 
+-        # TODO: user-defined lit
+         return None
+ 
+     def _parse_fold_or_paren_expression(self) -> ASTExpression:

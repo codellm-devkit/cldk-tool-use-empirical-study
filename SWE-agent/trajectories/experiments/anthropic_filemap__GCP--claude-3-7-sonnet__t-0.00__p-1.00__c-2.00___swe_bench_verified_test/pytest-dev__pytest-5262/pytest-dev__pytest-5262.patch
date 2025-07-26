@@ -1,0 +1,25 @@
+diff --git a/src/_pytest/mark/structures.py b/src/_pytest/mark/structures.py
+index 800a25c92..e4775325d 100644
+--- a/src/_pytest/mark/structures.py
++++ b/src/_pytest/mark/structures.py
+@@ -360,6 +360,20 @@ def get_unpacked_marks(obj: object) -> Iterable[Mark]:
+     mark_list = getattr(obj, "pytestmark", [])
+     if not isinstance(mark_list, list):
+         mark_list = [mark_list]
++    
++    # If this is a class, also consider marks from parent classes in the MRO
++    if inspect.isclass(obj):
++        # Get all parent classes in the MRO except the class itself and 'object'
++        for parent in obj.__mro__[1:-1]:  # Skip the class itself (index 0) and 'object' (last)
++            parent_marks = getattr(parent, "pytestmark", [])
++            if parent_marks:
++                if not isinstance(parent_marks, list):
++                    parent_marks = [parent_marks]
++                # Add parent marks that aren't already in the list
++                for mark in parent_marks:
++                    if mark not in mark_list:
++                        mark_list.append(mark)
++    
+     return normalize_mark_list(mark_list)
+ 
+ 
