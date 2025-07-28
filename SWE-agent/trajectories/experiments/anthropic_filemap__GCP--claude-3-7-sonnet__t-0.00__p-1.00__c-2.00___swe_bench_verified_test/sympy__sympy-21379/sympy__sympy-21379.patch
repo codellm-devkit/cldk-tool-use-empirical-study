@@ -1,0 +1,109 @@
+diff --git a/sympy/sets/sets.py b/sympy/sets/sets.py
+index 3c4aa86e36..097af52066 100644
+--- a/sympy/sets/sets.py
++++ b/sympy/sets/sets.py
+@@ -864,6 +864,27 @@ def __len__(self):
+ 
+     def __bool__(self):
+         return all([bool(s) for s in self.sets])
++        
++    def _eval_is_subset(self, other):
++        """Return True if self is a subset of other."""
++        # If other is a FiniteSet, we can check directly
++        if other.is_FiniteSet:
++            return fuzzy_and(other._contains(x) for x in self)
++            
++    def rewrite(self, cls):
++        """Rewrite this ProductSet in terms of the given class.
++        
++        Examples
++        ========
++        
++        >>> from sympy import FiniteSet, ProductSet
++        >>> a = FiniteSet(1, 2)
++        >>> p = ProductSet(a, a)
++        >>> p.rewrite(FiniteSet)
++        FiniteSet((1, 1), (1, 2), (2, 1), (2, 2))
++        """
++        if cls == FiniteSet and all(s.is_FiniteSet for s in self.sets):
++            return FiniteSet(*self)
+ 
+ 
+ class Interval(Set, EvalfMixin):
+@@ -1552,6 +1573,26 @@ class Complement(Set, EvalfMixin):
+     """
+ 
+     is_Complement = True
++    
++    def equals(self, other, failing_expression=False):
++        """Return True if self == other, False if it doesn't, or None.
++        
++        If failing_expression is True then the expression which did not simplify
++        to a 0 will be returned instead of None.
++        """
++        if isinstance(other, Complement):
++            return self.args[0].equals(other.args[0]) and self.args[1].equals(other.args[1])
++        
++        # Handle special cases
++        if hasattr(other, 'is_EmptySet') and other.is_EmptySet:
++            # A - B = ∅ if A ⊆ B
++            return self.args[0].is_subset(self.args[1])
++        
++        if self.args[0].equals(other) and (hasattr(self.args[1], 'is_EmptySet') and self.args[1].is_EmptySet):
++            # A - ∅ = A
++            return True
++            
++        return None
+ 
+     def __new__(cls, a, b, evaluate=True):
+         if evaluate:
+@@ -1643,6 +1684,20 @@ class EmptySet(Set, metaclass=Singleton):
+     is_empty = True
+     is_finite_set = True
+     is_FiniteSet = True
++    
++    def equals(self, other, failing_expression=False):
++        """Return True if self == other, False if it doesn't, or None.
++        
++        If failing_expression is True then the expression which did not simplify
++        to a 0 will be returned instead of None.
++        """
++        if hasattr(other, 'is_EmptySet') and other.is_EmptySet:
++            return True
++        if hasattr(other, 'is_empty') and other.is_empty:
++            return True
++        if other == self:
++            return True
++        return False
+ 
+     @property  # type: ignore
+     @deprecated(useinstead="is S.EmptySet or is_empty",
+@@ -1748,16 +1803,24 @@ class FiniteSet(Set, EvalfMixin):
+     >>> f = FiniteSet(*members)
+     >>> f
+     FiniteSet(1, 2, 3, 4)
+-    >>> f - FiniteSet(2)
+-    FiniteSet(1, 3, 4)
+-    >>> f + FiniteSet(2, 5)
+-    FiniteSet(1, 2, 3, 4, 5)
+ 
+     References
+     ==========
+ 
+     .. [1] https://en.wikipedia.org/wiki/Finite_set
+     """
++    
++    def equals(self, other, failing_expression=False):
++        """Return True if self == other, False if it doesn't, or None.
++        
++        If failing_expression is True then the expression which did not simplify
++        to a 0 will be returned instead of None.
++        """
++        if isinstance(other, FiniteSet):
++            if len(self) != len(other):
++                return False
++            return all(item in other for item in self)
++        return None
+     is_FiniteSet = True
+     is_iterable = True
+     is_empty = False

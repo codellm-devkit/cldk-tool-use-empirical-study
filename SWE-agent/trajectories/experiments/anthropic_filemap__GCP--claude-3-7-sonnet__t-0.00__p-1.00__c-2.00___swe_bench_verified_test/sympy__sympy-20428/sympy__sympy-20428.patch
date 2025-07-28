@@ -1,0 +1,74 @@
+diff --git a/sympy/polys/factortools.py b/sympy/polys/factortools.py
+index c6a5f9f063..3390f5cb84 100644
+--- a/sympy/polys/factortools.py
++++ b/sympy/polys/factortools.py
+@@ -1151,18 +1151,28 @@ def dmp_ext_factor(f, u, K):
+ 
+     factors = dmp_factor_list_include(r, u, K.dom)
+ 
+-    if len(factors) == 1:
+-        factors = [f]
+-    else:
+-        H = dmp_raise([K.one, s*K.unit], u, 0, K)
+-
+-        for i, (factor, _) in enumerate(factors):
+-            h = dmp_convert(factor, u, K.dom, K)
+-            h, _, g = dmp_inner_gcd(h, g, u, K)
+-            h = dmp_compose(h, H, u, K)
+-            factors[i] = h
+-
+-    return lc, dmp_trial_division(F, factors, u, K)
++    # Always process all factors from the base domain, regardless of how many there are
++    H = dmp_raise([K.one, s*K.unit], u, 0, K)
++    processed_factors = []
++
++    for factor, _ in factors:
++        h = dmp_convert(factor, u, K.dom, K)
++        h, _, g = dmp_inner_gcd(h, g, u, K)
++        h = dmp_compose(h, H, u, K)
++        processed_factors.append(h)
++    
++    # If no factors were processed (which shouldn't happen), use the original polynomial
++    if not processed_factors:
++        processed_factors = [f]
++    
++    # Perform trial division to determine the multiplicities
++    result = dmp_trial_division(F, processed_factors, u, K)
++    
++    # Make sure we have at least one factor
++    if not result:
++        result = [(f, 1)]
++        
++    return lc, result
+ 
+ 
+ def dup_gf_factor(f, K):
+diff --git a/sympy/polys/polytools.py b/sympy/polys/polytools.py
+index 68b69d1a24..8030839dc3 100644
+--- a/sympy/polys/polytools.py
++++ b/sympy/polys/polytools.py
+@@ -5925,6 +5925,24 @@ def _symbolic_factor_list(expr, opt, method):
+             func = getattr(poly, method + '_list')
+ 
+             _coeff, _factors = func()
++            
++            # Special handling for algebraic extensions
++            if 'extension' in opt and len(poly.gens) > 1 and poly.domain.is_Algebraic:
++                # Try factoring with respect to each variable
++                for var in poly.gens:
++                    # Create a new polynomial with the current variable first
++                    new_gens = (var,) + tuple(g for g in poly.gens if g != var)
++                    new_poly = Poly(poly.as_expr(), *new_gens, domain=poly.domain)
++                    
++                    # Get the factors with respect to this variable
++                    new_func = getattr(new_poly, method + '_list')
++                    _, new_factors = new_func()
++                    
++                    # Add any new factors that aren't already in _factors
++                    for f, k in new_factors:
++                        if not any(f.as_expr() == existing_f.as_expr() for existing_f, _ in _factors):
++                            _factors.append((f, k))
++            
+             if _coeff is not S.One:
+                 if exp.is_Integer:
+                     coeff *= _coeff**exp

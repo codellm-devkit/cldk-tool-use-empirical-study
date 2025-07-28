@@ -1,0 +1,83 @@
+diff --git a/sympy/printing/pycode.py b/sympy/printing/pycode.py
+index b669a2c783..a84d41a67a 100644
+--- a/sympy/printing/pycode.py
++++ b/sympy/printing/pycode.py
+@@ -234,7 +234,7 @@ def _print_ComplexInfinity(self, expr):
+ 
+     def _print_Mod(self, expr):
+         PREC = precedence(expr)
+-        return ('{} % {}'.format(*map(lambda x: self.parenthesize(x, PREC), expr.args)))
++        return '{} % {}'.format(*map(lambda x: self.parenthesize(x, PREC), expr.args))
+ 
+     def _print_Piecewise(self, expr):
+         result = []
+@@ -428,6 +428,69 @@ def _hprint_Pow(self, expr, rational=False, sqrt='math.sqrt'):
+ 
+ class PythonCodePrinter(AbstractPythonCodePrinter):
+ 
++    def _print_Mul(self, expr):
++        # Check if any of the arguments is a Mod
++        if any(arg.func.__name__ == 'Mod' for arg in expr.args if hasattr(arg, 'func')):
++            # If we have a Mod, we need to handle it specially to ensure correct precedence
++            from sympy.core.mul import _keep_coeff
++            from sympy import Mul, S, Pow
++            
++            prec = precedence(expr)
++            
++            c, e = expr.as_coeff_Mul()
++            if c < 0 and len(expr.args) == 2 and hasattr(expr.args[1], 'func') and expr.args[1].func.__name__ == 'Mod':
++                # Special case for -Mod(x, y)
++                # According to the PR description, we want to generate (-x % y)
++                mod_expr = expr.args[1]
++                return '(-{}) % {}'.format(self._print(mod_expr.args[0]), self._print(mod_expr.args[1]))
++            elif c < 0:
++                expr = _keep_coeff(-c, e)
++                sign = "-"
++            else:
++                sign = ""
++                
++            a = []  # items in the numerator
++            b = []  # items that are in the denominator (if any)
++            
++            if self.order not in ('old', 'none'):
++                args = expr.as_ordered_factors()
++            else:
++                # use make_args in case expr was something like -x -> x
++                args = Mul.make_args(expr)
++                
++            # Gather args for numerator/denominator
++            for item in args:
++                if item.is_commutative and item.is_Pow and item.exp.is_Rational and item.exp.is_negative:
++                    if item.exp != -1:
++                        b.append(Pow(item.base, -item.exp, evaluate=False))
++                    else:
++                        b.append(Pow(item.base, -item.exp))
++                else:
++                    a.append(item)
++                    
++            a = a or [S.One]
++            
++            # Special handling for Mod
++            a_str = []
++            for x in a:
++                if hasattr(x, 'func') and x.func.__name__ == 'Mod':
++                    # Parenthesize Mod to ensure correct precedence
++                    a_str.append('(' + self._print(x) + ')')
++                else:
++                    a_str.append(self.parenthesize(x, prec))
++                    
++            b_str = [self.parenthesize(x, prec) for x in b]
++            
++            if not b:
++                return sign + '*'.join(a_str)
++            elif len(b) == 1:
++                return sign + '*'.join(a_str) + "/" + b_str[0]
++            else:
++                return sign + '*'.join(a_str) + "/(%s)" % '*'.join(b_str)
++        else:
++            # If no Mod, use the default implementation
++            return super()._print_Mul(expr)
++
+     def _print_sign(self, e):
+         return '(0.0 if {e} == 0 else {f}(1, {e}))'.format(
+             f=self._module_format('math.copysign'), e=self._print(e.args[0]))

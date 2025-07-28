@@ -1,0 +1,51 @@
+diff --git a/sympy/matrices/normalforms.py b/sympy/matrices/normalforms.py
+index 7bce95d230..ded8987087 100644
+--- a/sympy/matrices/normalforms.py
++++ b/sympy/matrices/normalforms.py
+@@ -124,4 +124,26 @@ def hermite_normal_form(A, *, D=None, check_rank=False):
+     # Accept any of Python int, SymPy Integer, and ZZ itself:
+     if D is not None and not ZZ.of_type(D):
+         D = ZZ(int(D))
+-    return _hnf(A._rep, D=D, check_rank=check_rank).to_Matrix()
++    
++    # Compute the HNF
++    hnf = _hnf(A._rep, D=D, check_rank=check_rank).to_Matrix()
++    
++    # Find the pivot positions in each column
++    m, n = hnf.shape
++    row_pivots = {}  # Maps row index to pivot column index
++    
++    # Find the leftmost non-zero entry in each row
++    for i in range(m):
++        for j in range(n):
++            if hnf[i, j] != 0:
++                row_pivots[i] = j
++                break
++    
++    # Zero out entries to the right of pivots in each row
++    for i in range(m):
++        if i in row_pivots:
++            pivot_col = row_pivots[i]
++            for j in range(pivot_col + 1, n):
++                hnf[i, j] = 0
++    
++    return hnf
+diff --git a/sympy/polys/matrices/normalforms.py b/sympy/polys/matrices/normalforms.py
+index 30f5534b08..61a107a7dd 100644
+--- a/sympy/polys/matrices/normalforms.py
++++ b/sympy/polys/matrices/normalforms.py
+@@ -243,9 +243,11 @@ def _hermite_normal_form(A):
+             for j in range(k + 1, n):
+                 q = A[i][j] // b
+                 add_columns(A, j, k, 1, -q, 0, 1)
+-    # Finally, the HNF consists of those columns of A in which we succeeded in making
+-    # a nonzero pivot.
+-    return DomainMatrix.from_rep(A)[:, k:]
++    
++    # Return the full matrix, not just the columns with pivots.
++    # This ensures that when using flips and transposes to achieve a row-style HNF,
++    # we don't lose any rows that might be considered linearly dependent.
++    return DomainMatrix.from_rep(A)
+ 
+ 
+ def _hermite_normal_form_modulo_D(A, D):

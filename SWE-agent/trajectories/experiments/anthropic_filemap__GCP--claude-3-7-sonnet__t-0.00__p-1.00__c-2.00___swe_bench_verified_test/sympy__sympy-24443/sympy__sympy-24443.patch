@@ -1,0 +1,32 @@
+diff --git a/sympy/physics/units/unitsystem.py b/sympy/physics/units/unitsystem.py
+index 3daf84c108..4a0f366917 100644
+--- a/sympy/physics/units/unitsystem.py
++++ b/sympy/physics/units/unitsystem.py
+@@ -9,6 +9,8 @@
+ from sympy.core.mul import Mul
+ from sympy.core.power import Pow
+ from sympy.core.singleton import S
++from sympy.functions.elementary.exponential import exp, log
++from sympy.functions.elementary.trigonometric import TrigonometricFunction, InverseTrigonometricFunction
+ from sympy.physics.units.dimensions import _QuantityMapper
+ from sympy.physics.units.quantities import Quantity
+ 
+@@ -192,6 +194,18 @@ def _collect_factor_and_dimension(self, expr):
+         elif isinstance(expr, Function):
+             fds = [self._collect_factor_and_dimension(
+                 arg) for arg in expr.args]
++            
++            # For functions like exp, log, sin, cos, atan2, etc., the argument must be dimensionless
++            # and the result is also dimensionless
++            if isinstance(expr, (exp, log, TrigonometricFunction, InverseTrigonometricFunction)):
++                for i, (factor, dim) in enumerate(fds):
++                    if not self.get_dimension_system().is_dimensionless(dim):
++                        raise ValueError(
++                            'Dimension of "{}" is {}, '
++                            'but it should be {}'.format(
++                                expr.args[i], dim, Dimension(1)))
++                return expr.func(*(f[0] for f in fds)), Dimension(1)
++            
+             return (expr.func(*(f[0] for f in fds)),
+                     *(d[1] for d in fds))
+         elif isinstance(expr, Dimension):
