@@ -5,13 +5,11 @@ Structure‑aware search for SWE‑Agent.
 
 Commands
 --------
-* `locate_entity` – locate a class / function / method definition.
-* `find_code`     – locate function / method blocks containing a snippet.
+* `find_file`     – search for a filename or module path under a directory.
+* `search_entity` – search for a class/function/method in a file.
+* `find_code`     – locate function/method blocks that contain a code snippet.
 
-The tool automatically regenerates a **symbol table** using
-`codeanalyzer-python` (analysis‑level 1) **only** when a project‑wide hash of
-`.py` files changes.  Output styling mirrors `str_replace_editor` so the agent
-understands the response.
+These commands reuse previous analysis when possible for efficiency.
 """
 from __future__ import annotations
 
@@ -21,183 +19,187 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-# ---------------------------------------------------------------------------
-# Constants shared with str_replace_editor
-# ---------------------------------------------------------------------------
+MAX_RESPONSE_LEN = 16000
 TRUNCATED_MESSAGE = (
     "<response clipped><NOTE>To save on context, only part of the code has been "
     "shown. Use `str_replace_editor view --view_range` to inspect full block.</NOTE>"
 )
-MAX_RESPONSE_LEN = 16000
 
 
 # ---------------------------------------------------------------------------
-# Helpers – hash & safe subprocess execution
+# Command: find_file
 # ---------------------------------------------------------------------------
+def find_file(query: str, directory: Path) -> str:
+    """Find matching Python files from a name or module path (e.g. utils or a.b.c)."""
+    potential_names = {query}
+    if not query.endswith(".py"):
+        potential_names.add(query + ".py")
+        if "." in query:
+            mod_path = Path(*query.split("."))
+            potential_names.add(str(mod_path.with_suffix(".py")))
 
-def project_sha256(root: Path) -> str:
-    sha = hashlib.sha256()
-    for py in sorted(root.rglob("*.py")):
-        try:
-            st = py.stat()
-        except FileNotFoundError:
-            continue
-        sha.update(str(py.relative_to(root)).encode())
-        sha.update(str(st.st_mtime_ns).encode())
-        sha.update(str(st.st_size).encode())
-    return sha.hexdigest()
+    matches = []
+    for name in potential_names:
+        matches.extend(directory.rglob(name))
 
-
-def run_cmd(cmd: List[str]) -> subprocess.CompletedProcess[str]:
-    """Run command and return CompletedProcess.  Propagate CalledProcessError."""
-    return subprocess.run(cmd, capture_output=True, text=True, check=True)
+    matches = sorted(p for p in set(matches))
+    if not matches:
+        return f"<ERROR>No match for `{query}` found in `{directory}`.</ERROR>"
+    return "Found the following paths:\n" + "\n".join(str(m) for m in matches)
 
 
 # ---------------------------------------------------------------------------
-# Symbol‑table search engine
+# Command: search_entity
 # ---------------------------------------------------------------------------
-class SymbolTableSearch:
-    def __init__(self, project_root: Path):
-        self.project_root = project_root.resolve()
-        self.output_dir = self.project_root / ".codeanalyzer_output"
-        self.output_json = self.output_dir / "analysis.json"
-        self.hash_file = self.output_dir / ".project_hash"
-        self.symbol_table = self._load_or_build()
-        self._entity_index: Dict[str, Dict[str, Any]] = {}
-        self._index_entities()
+def search_entity(file_path: Path, entity: str) -> str:
+    symbol_table = run_codeanalyzer_on_file(file_path)
+    key = get_best_key(symbol_table, file_path)
+    mod = symbol_table.get(key)
+    if not mod:
+        return f"<ERROR>Could not locate module info for `{file_path}`.</ERROR>"
 
-    # ---------------- private helpers ----------------
-    def _load_or_build(self) -> Dict[str, Any]:
-        cur = project_sha256(self.project_root)
-        if self.output_json.exists() and self.hash_file.exists():
-            if self.hash_file.read_text() == cur:
-                return json.loads(self.output_json.read_text())["symbol_table"]
+    for fn in mod.get("functions", {}).values():
+        if fn["name"] == entity:
+            return format_code_block(fn["code"], fn["start_line"], fn["end_line"], descriptor=entity)
 
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        cmd_cli = [
-            "codeanalyzer",
-            "--input",
-            str(self.project_root),
-            "--analysis-level",
-            "1",
-            "--output",
-            str(self.output_dir),
-            "--format",
-            "json",
-        ]
-        try:
-            run_cmd(cmd_cli)
-        except FileNotFoundError:
-            # fall back to `python -m codeanalyzer`
-            cmd_cli = [
-                sys.executable,
-                "-m",
-                "codeanalyzer",
-                "--input",
-                str(self.project_root),
-                "--analysis-level",
-                "1",
-                "--output",
-                str(self.output_dir),
+    for cls in mod.get("classes", {}).values():
+        if cls["name"] == entity:
+            header = format_code_block(cls["code"], cls["start_line"], cls["end_line"], descriptor=entity)
+            methods = [
+                format_code_block(m["code"], m["start_line"], m["end_line"], descriptor=f"{entity}.{mname}")
+                for mname, m in cls.get("methods", {}).items()
             ]
-            run_cmd(cmd_cli)
-        except subprocess.CalledProcessError as e:
-            print(f"<ERROR>codeanalyzer failed. STDERR:\n{e.stderr}")
-            sys.exit(10)
+            return header + "\n\n" + "\n\n".join(methods)
+        for mname, m in cls.get("methods", {}).items():
+            if mname == entity or f"{cls['name']}.{mname}" == entity:
+                return format_code_block(m["code"], m["start_line"], m["end_line"], descriptor=f"{cls['name']}.{mname}")
 
-        if not self.output_json.exists():
-            print("<ERROR>analysis.json not produced by codeanalyzer.")
-            sys.exit(11)
-        self.hash_file.write_text(cur)
-        return json.loads(self.output_json.read_text())["symbol_table"]
-
-    def _index_entities(self):
-        for fp, module in self.symbol_table.items():
-            for fn_name, fn in module.get("functions", {}).items():
-                self._entity_index[fn_name] = {**fn, "file": fp, "kind": "function"}
-            for cls in module.get("classes", {}).values():
-                self._entity_index[cls["name"]] = {**cls, "file": fp, "kind": "class"}
-                for m_name, m in cls.get("methods", {}).items():
-                    fq = f"{cls['name']}.{m_name}"
-                    self._entity_index[fq] = {**m, "file": fp, "kind": "method"}
-                    if m_name not in self._entity_index:
-                        self._entity_index[m_name] = {**m, "file": fp, "kind": "method"}
-
-    # ---------------- user‑facing API ----------------
-    def locate_entity(self, name: str) -> str:
-        node = self._entity_index.get(name) or next(
-            (v for k, v in self._entity_index.items() if k.endswith(f".{name}")),
-            None,
-        )
-        if not node:
-            return (
-                f"<ERROR>Entity `{name}` not found.</ERROR>\n"
-                "<HINT>Use fully‑qualified names like `MyClass.my_method` or run directory views to discover names.</HINT>"
-            )
-        return self._block_to_text(node, descriptor=name)
-
-    def find_code(self, snippet: str) -> str:
-        norm = lambda s: "".join(s.split())
-        target = norm(snippet)
-        hits: List[Dict[str, Any]] = []
-        for fp, mod in self.symbol_table.items():
-            for fn in mod.get("functions", {}).values():
-                if target in norm(fn["code"]):
-                    hits.append({**fn, "file": fp})
-            for cls in mod.get("classes", {}).values():
-                for method in cls.get("methods", {}).values():
-                    if target in norm(method["code"]):
-                        hits.append({**method, "file": fp})
-        if not hits:
-            return "<ERROR>No function/method contains the provided snippet.</ERROR>"
-        return "\n\n".join(self._block_to_text(h, descriptor="matched block") for h in hits)
-
-    # ---------------- formatting ----------------
-    def _block_to_text(self, node: Dict[str, Any], *, descriptor: str) -> str:
-        code = node["code"]
-        if len(code) > MAX_RESPONSE_LEN:
-            code = code[:MAX_RESPONSE_LEN] + "\n" + TRUNCATED_MESSAGE
-        start, end = node["start_line"], node["end_line"]
-        numbered = "\n".join(f"{i+start:6}\t{ln}" for i, ln in enumerate(code.splitlines()))
-        return f"Here's the definition for {descriptor} in {node['file']} (lines {start}-{end}):\n" + numbered
+    return f"<ERROR>Entity `{entity}` not found in `{file_path.name}`.</ERROR>"
 
 
 # ---------------------------------------------------------------------------
-# CLI wrapper (called by SWE‑Agent)
+# Command: find_code
 # ---------------------------------------------------------------------------
+def find_code(file_path: Path, snippet: str) -> str:
+    norm = lambda s: "".join(s.split())
+    target = norm(snippet)
+    symbol_table = run_codeanalyzer_on_file(file_path)
+    key = get_best_key(symbol_table, file_path)
+    mod = symbol_table.get(key)
+    if not mod:
+        return f"<ERROR>Could not locate module info for `{file_path}`.</ERROR>"
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="structure‑aware search tool")
-    parser.add_argument("command", choices=["locate_entity", "find_code"], help="Sub‑command")
-    parser.add_argument("project", help="Absolute path to project root")
-    parser.add_argument("--entity", type=str, nargs="?", help="Entity name when using locate_entity")
-    parser.add_argument("--code_snippet", type=str, nargs="?", help="Snippet when using find_code")
+    hits = []
+
+    for fn in mod.get("functions", {}).values():
+        if target in norm(fn["code"]):
+            hits.append((fn["code"], fn["start_line"], fn["end_line"], fn["name"]))
+
+    for cls in mod.get("classes", {}).values():
+        for mname, m in cls.get("methods", {}).items():
+            if target in norm(m["code"]):
+                hits.append((m["code"], m["start_line"], m["end_line"], f"{cls['name']}.{mname}"))
+
+    if not hits:
+        return f"<ERROR>No code matches found in `{file_path.name}` for the given snippet.</ERROR>"
+
+    return "\n\n".join(format_code_block(code, start, end, descriptor=name) for code, start, end, name in hits)
+
+
+# ---------------------------------------------------------------------------
+# Utility: Run codeanalyzer on a single file with caching
+# ---------------------------------------------------------------------------
+def run_codeanalyzer_on_file(file_path: Path) -> Dict[str, Any]:
+    file_path = file_path.resolve()
+    file_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+    mtime = file_path.stat().st_mtime
+    project_root = file_path.parent
+    output_dir = project_root / ".codeanalyzer_output_single"
+    output_dir.mkdir(exist_ok=True)
+
+    default_json = output_dir / "analysis.json"
+    out_file = output_dir / f"{file_path.stem}_analysis.json"
+
+    if out_file.exists():
+        data = json.loads(out_file.read_text())
+        symbol_table = data.get("symbol_table", {})
+        key = get_best_key(symbol_table, file_path)
+        mod = symbol_table.get(key)
+        if mod.get("content_hash") == file_hash:
+            return symbol_table
+
+    try:
+        subprocess.run([
+            "codeanalyzer",
+            "--input", str(project_root),
+            "--file-name", str(file_path),
+            "--analysis-level", "1",
+            "--output", str(output_dir),
+            "--format", "json"
+        ], capture_output=True, text=True, check=True)
+        print(f"<INFO>Code analysis completed for {file_path}.</INFO>")
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"<ERROR>codeanalyzer failed:\nSTDOUT:\n{e.stdout}\nSTDERR:\n{e.stderr}")
+
+    if not default_json.exists():
+        raise RuntimeError(f"<ERROR>Expected analysis output not found: {default_json}</ERROR>")
+
+    default_json.rename(out_file)
+    return json.loads(out_file.read_text()).get("symbol_table", {})
+
+
+def get_best_key(symbol_table: Dict[str, Any], file_path: Path) -> str:
+    candidates = [k for k in symbol_table if k.endswith(file_path.name)]
+    return candidates[0] if candidates else file_path.name
+
+
+# ---------------------------------------------------------------------------
+# Utility: Format code block with line numbers
+# ---------------------------------------------------------------------------
+def format_code_block(code: str, start: int, end: int, descriptor: str) -> str:
+    if len(code) > MAX_RESPONSE_LEN:
+        code = code[:MAX_RESPONSE_LEN] + "\n" + TRUNCATED_MESSAGE
+    numbered = "\n".join(f"{i+start:6}\t{ln}" for i, ln in enumerate(code.splitlines()))
+    return f"Definition for `{descriptor}` (lines {start}-{end}):\n" + numbered
+
+
+# ---------------------------------------------------------------------------
+# CLI wrapper
+# ---------------------------------------------------------------------------
+def main():
+    parser = argparse.ArgumentParser(description="structure-aware search tool")
+    parser.add_argument("command", choices=["find_file", "search_entity", "find_code"], help="Sub-command")
+    parser.add_argument("value", help="Target to search for (file name, entity, or snippet)")
+    parser.add_argument("--path", type=str, default=".", help="Root search directory")
+    parser.add_argument("--file", type=str, help="File to operate on (for entity/snippet)")
     args = parser.parse_args()
 
-    proj = Path(args.project)
-    if not proj.is_dir():
-        print(f"<ERROR>Project path `{proj}` is not a directory.</ERROR>")
-        sys.exit(2)
+    root = Path(args.path).resolve()
+    if not root.exists():
+        print(f"<ERROR>Invalid path: {root}</ERROR>")
+        sys.exit(1)
 
-    searcher = SymbolTableSearch(proj)
-
-    if args.command == "locate_entity":
-        if not args.entity:
-            print("<ERROR>Missing <entity> argument for locate_entity.</ERROR>")
+    if args.command == "find_file":
+        print(find_file(args.value, root))
+    else:
+        if not args.file:
+            print("<ERROR>`--file` is required for this operation.</ERROR>")
+            sys.exit(2)
+        file_path = root / args.file
+        if not file_path.exists():
+            print(f"<ERROR>File not found: {file_path}</ERROR>")
             sys.exit(3)
-        print(searcher.locate_entity(args.entity))
-    else:  # find_code
-        if not args.code_snippet:
-            print("<ERROR>Missing <code_snippet> argument for find_code.</ERROR>")
+        try:
+            if args.command == "search_entity":
+                print(search_entity(file_path, args.value))
+            else:
+                print(find_code(file_path, args.value))
+        except RuntimeError as err:
+            print(err)
             sys.exit(4)
-        print(searcher.find_code(args.code_snippet))
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except subprocess.CalledProcessError as exc:
-        print(f"<ERROR>Subprocess failed: {exc.stderr}")
-        sys.exit(5)
+    main()

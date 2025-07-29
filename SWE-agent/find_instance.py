@@ -3,7 +3,7 @@ from datasets import load_dataset
 
 if len(sys.argv) != 2:
     sys.exit(f"Usage: {sys.argv[0]} <instance_id>")
-# pydata__xarray-3305
+# sample instance: pydata__xarray-3305, astropy__astropy-7166, pydata__xarray-3095
 target_id = sys.argv[1]
 
 # Ensure you have run `huggingface-cli login` if the dataset requires authentication.

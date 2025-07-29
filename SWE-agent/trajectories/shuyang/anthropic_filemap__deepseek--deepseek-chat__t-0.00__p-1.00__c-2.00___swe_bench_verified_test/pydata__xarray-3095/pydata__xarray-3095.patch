@@ -1,0 +1,46 @@
+diff --git a/xarray/core/indexing.py b/xarray/core/indexing.py
+index e262d9ee..e30a1a8a 100644
+--- a/xarray/core/indexing.py
++++ b/xarray/core/indexing.py
+@@ -1241,6 +1241,9 @@ class PandasIndexAdapter(ExplicitlyIndexedNDArrayMixin):
+                 dtype = np.dtype('O')
+             else:
+                 dtype = array.dtype
++                # Explicitly preserve unicode dtype
++                if isinstance(dtype, str) and dtype.startswith('<U'):
++                    dtype = np.dtype(dtype)
+         self._dtype = dtype
+ 
+     @property
+diff --git a/xarray/core/variable.py b/xarray/core/variable.py
+index 379be8f5..b3cc12e2 100644
+--- a/xarray/core/variable.py
++++ b/xarray/core/variable.py
+@@ -809,7 +809,10 @@ class Variable(common.AbstractArray, arithmetic.SupportsArithmetic,
+                     data = data.copy()
+                 elif not isinstance(data, PandasIndexAdapter):
+                     # pandas.Index is immutable
+-                    data = np.array(data)
++                    dtype = getattr(data, 'dtype', None)
++                    if isinstance(dtype, str) and dtype.startswith('<U'):
++                        dtype = np.dtype(dtype)
++                    data = np.array(data, dtype=dtype)
+         else:
+             data = as_compatible_data(data)
+             if self.shape != data.shape:
+@@ -1850,7 +1853,14 @@ class IndexVariable(Variable):
+ 
+         # Unlike in Variable, always eagerly load values into memory
+         if not isinstance(self._data, PandasIndexAdapter):
+-            self._data = PandasIndexAdapter(self._data)
++            dtype = getattr(data, 'dtype', None)
++            if isinstance(dtype, str) and dtype.startswith('<U'):
++                dtype = np.dtype(dtype)
++                self._data = np.array(data, dtype=dtype)
++            else:
++                self._data = PandasIndexAdapter(self._data, dtype=dtype)
++        elif isinstance(self._data, PandasIndexAdapter) and hasattr(data, 'dtype') and isinstance(data.dtype, str) and data.dtype.startswith('<U'):
++            self._data = np.array(data, dtype=np.dtype(data.dtype))
+ 
+     def load(self):
+         # data is already loaded into memory for IndexVariable

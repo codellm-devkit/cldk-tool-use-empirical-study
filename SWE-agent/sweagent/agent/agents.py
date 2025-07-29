@@ -778,6 +778,18 @@ class DefaultAgent(AbstractAgent):
             {"role": "assistant", "content": output, "agent": self.name, "message_type": "assistant"},
             {"role": "user", "content": error_template, "agent": self.name, "message_type": "user"},
         ]
+    
+    # def _cleanup_codeanalyzer_outputs(self):
+    #     import shlex
+    #     if self._env and self._env.repo:
+    #         repo_root = f"/{self._env.repo.repo_name}"
+    #         for dir_name in [".codeanalyzer", ".codeanalyzer_output", ".codeanalyzer_output_single"]:
+    #             full_path = f"{repo_root}/{dir_name}"
+    #             try:
+    #                 self.logger.info(f"Removing {full_path} before submission")
+    #                 self._env.execute_command(f"rm -rf {shlex.quote(full_path)}", check=False)
+    #             except Exception as e:
+    #                 self.logger.warning(f"Failed to remove {full_path}: {e}")
 
     def attempt_autosubmission_after_error(self, step: StepOutput) -> StepOutput:
         """For most exceptions, we attempt to still extract the patch and submit that.
@@ -812,6 +824,7 @@ class DefaultAgent(AbstractAgent):
         repo_name = "/"
         if self._env.repo is not None:
             repo_name = f"/{self._env.repo.repo_name}"
+        # self._cleanup_codeanalyzer_outputs()
         submission_command = "git add -A && git diff --cached > /root/model.patch"
         self.logger.info("Executing submission command %s in %s", submission_command, repo_name)
         try:
@@ -1015,6 +1028,9 @@ class DefaultAgent(AbstractAgent):
                 step.thought = step.output
             # Attach the step object to the exception
             e.step = step  # type: ignore
+            # print(e)
+            # from pdb import set_trace
+            # set_trace()
             raise
 
     def forward_with_handling(self, history: list[dict[str, str]]) -> StepOutput:
@@ -1240,6 +1256,7 @@ class DefaultAgent(AbstractAgent):
         while not step_output.done:
             step_output = self.step()
             self.save_trajectory()
+        # self._cleanup_codeanalyzer_outputs()
         self._chook.on_run_done(trajectory=self.trajectory, info=self.info)
 
         self.logger.info("Trajectory saved to %s", self.traj_path)
