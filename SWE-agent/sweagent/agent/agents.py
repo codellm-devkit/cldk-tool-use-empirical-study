@@ -1028,9 +1028,9 @@ class DefaultAgent(AbstractAgent):
                 step.thought = step.output
             # Attach the step object to the exception
             e.step = step  # type: ignore
-            # print(e)
-            # from pdb import set_trace
-            # set_trace()
+            print(e)
+            from pdb import set_trace
+            set_trace()
             raise
 
     def forward_with_handling(self, history: list[dict[str, str]]) -> StepOutput:
