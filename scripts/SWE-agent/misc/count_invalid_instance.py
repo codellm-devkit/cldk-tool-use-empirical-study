@@ -1,7 +1,7 @@
 import os
 from datasets import load_dataset
 
-PATH_TO_TRAJ = "trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test"
+PATH_TO_TRAJ = "../../../SWE-agent/trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test"
 
 def count_invalid_instance(root_path):
     dataset = load_dataset("princeton-nlp/SWE-bench_Verified", split="test")

@@ -60,7 +60,7 @@ if __name__ == "__main__":
     #     print(f"Error: {instance_dir} is not a valid directory.")
     #     sys.exit(1)
 
-    instance_dir = "trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/astropy__astropy-8872"
+    instance_dir = "../../../SWE-agent/trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/astropy__astropy-8872"
     # Find .traj file
     traj_file = None
     for fname in os.listdir(instance_dir):
@@ -81,9 +81,9 @@ if __name__ == "__main__":
 
     parser = CommandParser()
     parser.load_tool_yaml_files([
-        "tools/edit_anthropic/config.yaml",
-        "tools/review_on_submit_m/config.yaml",
-        "tools/registry/config.yaml"
+        "../../../SWE-agent/tools/edit_anthropic/config.yaml",
+        "../../../SWE-agent/tools/review_on_submit_m/config.yaml",
+        "../../../SWE-agent/tools/registry/config.yaml"
     ])
 
     check_replace(traj_data, parser)

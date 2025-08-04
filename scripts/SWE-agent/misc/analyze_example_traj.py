@@ -58,14 +58,14 @@ def analyze_first_actions(traj_path, output_path, num_steps=1):
 
 if __name__ == "__main__":
     # before_traj_path = '/home/shuyang/cldk-tool-use-empirical-study/SWE-agent/trajectories/shuyang/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/pydata__xarray-3305/pydata__xarray-3305.traj'
-    # before_output_path = './motivating_example/sweagent_anthropic_filemap__deepseek_pydata_xarray-3305.json'
+    # before_output_path = '../motivating_example/sweagent_anthropic_filemap__deepseek_pydata_xarray-3305.json'
     # if not os.path.exists(os.path.dirname(before_output_path)):
     #     os.makedirs(os.path.dirname(before_output_path))
     # analyze_first_actions(before_traj_path, before_output_path)
     # print(f"Analysis saved to {before_output_path}")
 
     after_traj_path = '/home/shuyang/cldk-tool-use-empirical-study/SWE-agent/trajectories/shuyang/structural_search__deepseek--deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test/pydata__xarray-3305/pydata__xarray-3305.traj'
-    after_output_path = './motivating_example/sweagent_structural_searcher__deepseek_pydata_xarray-3305.json'
+    after_output_path = '../motivating_example/sweagent_structural_searcher__deepseek_pydata_xarray-3305.json'
     if not os.path.exists(os.path.dirname(after_output_path)):
         os.makedirs(os.path.dirname(after_output_path))
     analyze_first_actions(after_traj_path, after_output_path)

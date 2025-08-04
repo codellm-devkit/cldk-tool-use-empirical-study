@@ -5,16 +5,21 @@ import subprocess
 import sys
 
 from zss import Node, simple_distance
-
 import tree_sitter_python as tspython
-from tree_sitter import Language, Parser
+from tree_sitter import Language, Parser, Node as TSNode
 
-# ---------------------- Build Tree-sitter Language ----------------------
+try:
+    import black
+except ImportError:
+    black = None
+
 LANGUAGE: Language = Language(tspython.language())
 PARSER: Parser = Parser(LANGUAGE)
 
-
 class CSTNode:
+    """
+    A wrapper around tree-sitter nodes to provide a more convenient interface for working with the concrete syntax tree (CST) of Python code.
+    """
     def __init__(self, node: TSNode, source_code: bytes):
         self.node = node
         self.code = source_code
@@ -23,7 +28,7 @@ class CSTNode:
         return self.code[self.node.start_byte:self.node.end_byte].decode()
 
     def children(self):
-        return [CSTNode(c, self.code) for c in self.node.children]
+        return [CSTNode(c, self.code) for c in self.node.children if c.type != ","]
 
     def label(self):
         return self.node.type
@@ -31,31 +36,56 @@ class CSTNode:
     def byte_range(self):
         return self.node.start_byte, self.node.end_byte
 
-    def find_all_matching_subtrees(self, query: 'CSTNode', strategy: str = "exact") -> list[CSTNode]:
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, CSTNode):
+            return NotImplemented
+        return self.node.id == other.node.id
+
+    def walk_tree(self):
+        stack = [self.node]
+        while stack:
+            current = stack.pop()
+            yield CSTNode(current, self.code)
+            stack.extend(reversed(current.children))
+
+    def find_all_matching_subtrees(self, query: CSTNode, strategy: str = "exact") -> list[CSTNode]:
+        # Find all subtrees in the current CST that match the query node.
+        if strategy not in {"exact", "similar", "rule"}:
+            print(f"Invalid match strategy: {strategy}. Use 'exact', 'similar', or 'rule'.")
+            sys.exit(52)
+            
         matches = []
+        print(f"<DEBUG> Checking query:\n{query.label()} - {query.text().strip()}")
 
-        def dfs(n: 'CSTNode'):
+        for candidate in self.walk_tree():
+            # print(f"<DEBUG> Checking candidate:\n{candidate.label()} - {candidate.text().strip()}")
+
             if strategy == "exact":
-                if n.label() == query.label() and n.text().strip() == query.text().strip():
-                    matches.append(n)
+                if candidate.label() == query.label() and candidate.text().strip() == query.text().strip():
+                    matches.append(candidate)
             elif strategy == "similar":
-                score = CSTRewriter.compute_similarity_zss(n, query)
-                if score > 0.9:
-                    matches.append(n)
+                if candidate.label() == query.label():
+                    score = CSTRewriter.compute_similarity_zss(candidate, query)
+                    if score > 0.9:
+                        matches.append(candidate)
             elif strategy == "rule":
-                if n.label() == query.label() and len(n.children()) == len(query.children()):
-                    matches.append(n)
-            for c in n.children():
-                dfs(c)
+                if candidate.label() == query.label() and len(candidate.children()) == len(query.children()):
+                    matches.append(candidate)
 
-        dfs(self)
+        print(f"<DEBUG> Found {len(matches)} matches:\n" + "\n".join(f"{m.label()} - {m.text().strip()}" for m in matches))
         return matches
 
 
 class CSTRewriter:
     @staticmethod
-    def normalize_code(code: str) -> str:
-        return code.strip()
+    def normalize_code(code: str, lint: bool = True) -> str:
+        code = code.strip()
+        if lint and black:
+            try:
+                code = black.format_str(code, mode=black.Mode())
+            except Exception:
+                pass
+        return code
 
     @staticmethod
     def parse_to_cst(code: str) -> CSTNode:
@@ -88,15 +118,31 @@ class CSTRewriter:
         return 1 + sum(CSTRewriter.count_nodes(c) for c in cst.children())
 
     @staticmethod
-    def structured_replace(full_code: str, root: CSTNode, matches: list[CSTNode], replacement_node: CSTNode) -> str:
-        def walk(node: CSTNode):
-            if any(node.node == match.node for match in matches):
-                return replacement_node.text()
-            if not node.children():
-                return node.text()
-            return ''.join(walk(child) for child in node.children())
+    def structured_replace(full_code: str, root: CSTNode, targets: list[CSTNode], replacement_node: CSTNode) -> str:
+        """
+        Replace target CSTNodes within the root CST by regenerating the full code recursively.
+        Ensures the output is structurally valid Python code.
+        """
+        target_ids = {t.node.id for t in targets}
 
-        return walk(root)
+        def reconstruct(node: CSTNode) -> str:
+            if node.node.id in target_ids:
+                return replacement_node.text()
+            elif not node.node.children:
+                return node.text()
+            else:
+                parts = []
+                prev_end = node.node.start_byte
+                for child in node.node.children:
+                    cst_child = CSTNode(child, node.code)
+                    parts.append(node.code[prev_end:child.start_byte].decode("utf-8"))  # interstitial whitespace/punct
+                    parts.append(reconstruct(cst_child))
+                    prev_end = child.end_byte
+                parts.append(node.code[prev_end:node.node.end_byte].decode("utf-8"))  # trailing content
+                return ''.join(parts)
+
+        return reconstruct(root)
+
 
     @staticmethod
     def verify_code(code: str, filename: Optional[str] = None) -> bool:
@@ -153,7 +199,15 @@ class CSTRewriter:
         full_cst = cls.parse_to_cst(full_code_norm)
         snippet_cst = cls.parse_to_cst(snippet_code)
 
-        matches = full_cst.find_all_matching_subtrees(snippet_cst, strategy=match_strategy)
+        print(f"<DEBUG> Full CST: {full_cst.node}\n")
+        print(f"Full code:\n{full_cst.text()}\n")
+        print(f"<DEBUG> Snippet CST: {snippet_cst.node}\n")
+        print(f"Snippet code:\n{snippet_cst.text()}\n")
+
+        snippet_body_nodes = list(snippet_cst.walk_tree())
+        snippet_body = snippet_body_nodes[1] if len(snippet_body_nodes) > 1 else snippet_cst
+        matches = full_cst.find_all_matching_subtrees(snippet_body, strategy=match_strategy)
+
         if not matches:
             print("<ERROR> No matching subtree found.")
             sys.exit(53)
@@ -167,10 +221,13 @@ class CSTRewriter:
                 sys.exit(54)
 
             replacement_cst = cls.parse_to_cst(replacement)
+            replacement_nodes = list(replacement_cst.walk_tree())
+            replacement_body = replacement_nodes[1] if len(replacement_nodes) > 1 else replacement_cst
             targets = matches if replace_all else [matches[0]]
 
-            new_code = cls.structured_replace(full_code, full_cst, targets, replacement_cst)
+            new_code = cls.structured_replace(full_code, full_cst, targets, replacement_body)
 
+            # print(f"<DEBUG> New code:\n{new_code}\n")
             tmp_path = path.with_suffix(".tmp.py")
             tmp_path.write_text(new_code)
 
@@ -181,3 +238,102 @@ class CSTRewriter:
             path.write_text(new_code)
             tmp_path.unlink(missing_ok=True)
             return new_code
+
+
+import tempfile
+from pathlib import Path
+import os
+
+
+def write_temp_file(content: str) -> Path:
+    path = tempfile.NamedTemporaryFile(delete=False, suffix=".py").name
+    Path(path).write_text(content)
+    return Path(path)
+
+def delete_temp_file(path: Path):
+    if path.exists():
+        try:
+            path.unlink()
+        except Exception as e:
+            print(f"Warning: Failed to delete temporary file {path}: {e}")
+
+def test_single_replace():
+    original = """
+def greet():
+    print("hello")
+    print("hello")
+"""
+    snippet = 'print("hello")'
+    replacement = 'print("hi")'
+
+    path = write_temp_file(original)
+    print(path)
+    CSTRewriter.apply_rw(
+        file_path=str(path),
+        snippet=snippet,
+        mode="replace",
+        replacement=replacement,
+        match_strategy="exact",
+        replace_all=False,
+    )
+
+    result = path.read_text()
+    print(result)
+    assert result.count('print("hi")') == 1
+    assert result.count('print("hello")') == 1
+    delete_temp_file(path)
+    print("✅ test_single_replace passed.")
+
+
+def test_multi_replace():
+    original = """
+def greet():
+    print("hello")
+    print("hello")
+"""
+    snippet = 'print("hello")'
+    replacement = 'print("hi")'
+
+    path = write_temp_file(original)
+    CSTRewriter.apply_rw(
+        file_path=str(path),
+        snippet=snippet,
+        mode="replace",
+        replacement=replacement,
+        match_strategy="exact",
+        replace_all=True,
+    )
+
+    result = path.read_text()
+    assert result.count('print("hi")') == 2
+    assert 'print("hello")' not in result
+    delete_temp_file(path)
+    print("✅ test_multi_replace passed.")
+
+
+def test_extract_all():
+    original = """
+def f():
+    x = 1
+    x = 1
+"""
+    snippet = "x = "
+    path = write_temp_file(original)
+
+    extracted = CSTRewriter.apply_rw(
+        file_path=str(path),
+        snippet=snippet,
+        mode="extract",
+        match_strategy="exact",
+        replace_all=True,
+    )
+
+    assert extracted.count("x = ") == 2
+    delete_temp_file(path)
+    print("✅ test_extract_all passed.")
+
+
+if __name__ == "__main__":
+    test_single_replace()
+    test_multi_replace()
+    test_extract_all()
