@@ -65,7 +65,7 @@ if __name__ == "__main__":
     # eval_report = sys.argv[2]
     user = getpass.getuser()
     root_dir = f"../../SWE-agent/trajectories/{user}/anthropic_filemap__deepseek/deepseek-chat__t-0.00__p-1.00__c-2.00___swe_bench_verified_test"
-    eval_report = "../../SWE-agent/sb-cli-reports/Subset.swe_bench_verified__test__evaluate_swev.json"
+    eval_report = "../../SWE-agent/sb-cli-reports/Subset.swe_bench_verified__test__deepseek_chat_edit_anthropic.json"
     patch_metrics_path = os.path.join(root_dir, "patch_metrics.jsonl")
 
     batch_generate_graphs(root_dir, eval_report, patch_metrics_path)
